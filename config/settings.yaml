@@ -1,0 +1,26 @@
+market:
+  market_id: "BIST"
+  universe_file: "config/universes/bist100.csv"
+  index_ticker: "XU100"
+  provider_suffix: ".IS"
+  currency: "TRY"
+
+data:
+  start_date: "2020-01-01"
+  end_date: "2026-03-01"
+  download_interval: "1d"
+  store_raw_close: true
+
+preprocessing:
+  min_coverage_pct: 0.90
+  anomaly_return_threshold: 0.30
+  forward_fill: false
+
+analysis:
+  correlation_method: "pearson"
+  annualization_factor: 252
+  corr_min_periods: 200
+
+validation:
+  enabled: true
+  sample_size: 10

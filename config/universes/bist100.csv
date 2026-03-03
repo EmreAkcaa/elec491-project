@@ -1,0 +1,103 @@
+ticker,company_name,sector,provider_symbol
+AEFES,Anadolu Efes Biracilik ve Malt Sanayii,Beverages,AEFES.IS
+AGESA,Agesa Hayat ve Emeklilik,Insurance,AGESA.IS
+AGHOL,AG Anadolu Grubu Holding,Conglomerates,AGHOL.IS
+AKBNK,Akbank,Banking,AKBNK.IS
+AKFGY,Akfen Gayrimenkul Yatirim Ortakligi,REIT,AKFGY.IS
+AKSA,Aksa Akrilik Kimya Sanayii,Chemicals,AKSA.IS
+AKSEN,Aksa Enerji Uretim,Energy,AKSEN.IS
+ALARK,Alarko Holding,Conglomerates,ALARK.IS
+ALFAS,Alfa Solar Enerji,Energy,ALFAS.IS
+ANHYT,Anadolu Hayat Emeklilik,Insurance,ANHYT.IS
+ARCLK,Arcelik,Consumer Durables,ARCLK.IS
+ASELS,Aselsan Elektronik Sanayi ve Ticaret,Defense,ASELS.IS
+ASUZU,Anadolu Isuzu Otomotiv Sanayi,Automotive,ASUZU.IS
+AYGAZ,Aygaz,Energy,AYGAZ.IS
+BERA,Bera Holding,Conglomerates,BERA.IS
+BIMAS,BIM Birlesik Magazalar,Retail,BIMAS.IS
+BIOEN,Biotrend Cevre ve Enerji Yatirimlari,Energy,BIOEN.IS
+BRISA,Brisa Bridgestone Sabanci Lastik Sanayi,Automotive,BRISA.IS
+BRSAN,Borusan Mannesmann Boru Sanayi ve Ticaret,Steel,BRSAN.IS
+BRYAT,Borusan Yatirim ve Pazarlama,Conglomerates,BRYAT.IS
+BTCIM,Baticiement,Building Materials,BTCIM.IS
+BUCIM,Bursa Cimento Fabrikasi,Building Materials,BUCIM.IS
+CCOLA,Coca-Cola Icecek,Beverages,CCOLA.IS
+CEMTS,Cemtas Celik Makina Sanayi ve Ticaret,Steel,CEMTS.IS
+CIMSA,Cimsa Cimento Sanayi ve Ticaret,Building Materials,CIMSA.IS
+CWENE,CW Enerji Muhendislik Ticaret ve Sanayi,Energy,CWENE.IS
+DOAS,Dogus Otomotiv Servis ve Ticaret,Automotive,DOAS.IS
+DOHOL,Dogan Sirketler Grubu Holding,Conglomerates,DOHOL.IS
+ECILC,Eczacibasi Ilac Sanayi,Pharmaceuticals,ECILC.IS
+EGEEN,Ege Endustri ve Ticaret,Automotive,EGEEN.IS
+EKGYO,Emlak Konut Gayrimenkul Yatirim Ortakligi,REIT,EKGYO.IS
+ENKAI,Enka Insaat ve Sanayi,Construction,ENKAI.IS
+ENJSA,Enerjisa Enerji,Energy,ENJSA.IS
+EREGL,Eregli Demir ve Celik Fabrikalari,Steel,EREGL.IS
+EUPWR,Eupwr Enerji,Energy,EUPWR.IS
+FROTO,Ford Otomotiv Sanayi,Automotive,FROTO.IS
+GARAN,Turkiye Garanti Bankasi,Banking,GARAN.IS
+GESAN,Girisim Elektrik Taahhut Ticaret ve Sanayi,Energy,GESAN.IS
+GUBRF,Gubre Fabrikalari,Chemicals,GUBRF.IS
+HALKB,Turkiye Halk Bankasi,Banking,HALKB.IS
+HEKTS,Hektas Ticaret,Chemicals,HEKTS.IS
+ISCTR,Turkiye Is Bankasi,Banking,ISCTR.IS
+ISGYO,Is Gayrimenkul Yatirim Ortakligi,REIT,ISGYO.IS
+KCHOL,Koc Holding,Conglomerates,KCHOL.IS
+KONTR,Kontrolmatik Teknoloji Enerji ve Muhendislik,Technology,KONTR.IS
+KOZAA,Koza Anadolu Metal Madencilik Isletmeleri,Mining,KOZAA.IS
+KOZAL,Koza Altin Isletmeleri,Mining,KOZAL.IS
+KRDMD,Kardemir Karabuk Demir Celik Sanayi ve Ticaret,Steel,KRDMD.IS
+KZBGY,Kuzey Boru Gayrimenkul Yatirim Ortakligi,REIT,KZBGY.IS
+LOGO,Logo Yazilim Sanayi ve Ticaret,Technology,LOGO.IS
+MAVI,Mavi Giyim Sanayi ve Ticaret,Retail,MAVI.IS
+MGROS,Migros Ticaret,Retail,MGROS.IS
+MPARK,MLP Saglik Hizmetleri,Healthcare,MPARK.IS
+ODAS,Odas Elektrik Uretim Sanayi Ticaret,Energy,ODAS.IS
+OTKAR,Otokar Otomotiv ve Savunma Sanayi,Defense,OTKAR.IS
+OYAKC,Oyak Cimento Fabrikalari,Building Materials,OYAKC.IS
+PETKM,Petkim Petrokimya Holding,Chemicals,PETKM.IS
+PGSUS,Pegasus Hava Tasimaciligi,Airlines,PGSUS.IS
+SAHOL,Haci Omer Sabanci Holding,Conglomerates,SAHOL.IS
+SASA,Sasa Polyester Sanayi,Chemicals,SASA.IS
+SISE,Turkiye Sise ve Cam Fabrikalari,Industrials,SISE.IS
+SKBNK,Sekerbank,Banking,SKBNK.IS
+SMRTG,Smart Gunes Enerjisi Teknolojileri,Energy,SMRTG.IS
+SOKM,Sok Marketler Ticaret,Retail,SOKM.IS
+TABGD,Tab Gida Sanayi ve Ticaret,Food,TABGD.IS
+TAVHL,TAV Havalimanlari Holding,Transportation,TAVHL.IS
+TCELL,Turkcell Iletisim Hizmetleri,Telecommunications,TCELL.IS
+THYAO,Turk Hava Yollari,Airlines,THYAO.IS
+TKFEN,Tekfen Holding,Construction,TKFEN.IS
+TKNSA,Teknosa Ic ve Dis Ticaret,Retail,TKNSA.IS
+TOASO,Tofas Turk Otomobil Fabrikasi,Automotive,TOASO.IS
+TTKOM,Turk Telekomunikasyon,Telecommunications,TTKOM.IS
+TTRAK,Turk Traktor ve Ziraat Makineleri,Industrials,TTRAK.IS
+TUPRS,Tupras Turkiye Petrol Rafinerileri,Energy,TUPRS.IS
+TURSG,Turkiye Sigorta,Insurance,TURSG.IS
+ULKER,Ulker Biskuvi Sanayi,Food,ULKER.IS
+VAKBN,Turkiye Vakiflar Bankasi,Banking,VAKBN.IS
+VESBE,Vestel Beyaz Esya Sanayi ve Ticaret,Consumer Durables,VESBE.IS
+VESTL,Vestel Elektronik Sanayi ve Ticaret,Consumer Durables,VESTL.IS
+YKBNK,Yapi ve Kredi Bankasi,Banking,YKBNK.IS
+ZOREN,Zorlu Enerji Elektrik Uretim,Energy,ZOREN.IS
+AKFYE,Akfen Yenilenebilir Enerji,Energy,AKFYE.IS
+BASGZ,Basaksehir Futbol Sportif Sanayi ve Ticaret,Sports,BASGZ.IS
+BINHO,BIN Holding,Conglomerates,BINHO.IS
+CANTE,Cantek Holding,Energy,CANTE.IS
+DGATE,D-Gate Elektrik Elektronik,Technology,DGATE.IS
+EBEBK,Ebebek Magazacilik,Retail,EBEBK.IS
+EUREN,Europower Enerji,Energy,EUREN.IS
+GENIL,Gen Ilac ve Saglik Urunleri Sanayi,Pharmaceuticals,GENIL.IS
+INDES,Indes Bilisim Teknolojileri Dagitim,Technology,INDES.IS
+KAYSE,Kayseri Seker Fabrikasi,Food,KAYSE.IS
+KLSER,Kaleseramik Canakkale Kalebodur Seramik Sanayi,Building Materials,KLSER.IS
+KMPUR,KM Cevre Hizmetleri ve Muhendislik,Industrials,KMPUR.IS
+MIATK,Mia Teknoloji,Technology,MIATK.IS
+ONRYT,Onritmik Teknoloji,Technology,ONRYT.IS
+PAPIL,Papilon Savunma,Defense,PAPIL.IS
+PENTA,Penta Teknoloji Urunleri Dagitim,Technology,PENTA.IS
+QUAGR,QUA Granite Hayal Yapi ve Urunleri Sanayi,Building Materials,QUAGR.IS
+REEDR,Reedr Teknoloji,Technology,REEDR.IS
+TRILC,Turk Ilac ve Serum Sanayi,Pharmaceuticals,TRILC.IS
+TUREX,Tureks Turizm Tasimicilik,Transportation,TUREX.IS
+YEOTK,Yeo Teknoloji Enerji ve Sanayi,Technology,YEOTK.IS

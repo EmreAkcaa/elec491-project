@@ -1,0 +1,22 @@
+{
+  "run_timestamp": "2026-03-03T23:39:19.215037",
+  "config": {
+    "start_date": "2020-01-01",
+    "end_date": "2026-03-01",
+    "min_coverage_pct": 0.9,
+    "correlation_method": "pearson",
+    "corr_min_periods": 200
+  },
+  "universe_count": 102,
+  "tickers_after_filter": 73,
+  "trading_days": 1543,
+  "market_summary": {
+    "avg_pairwise_corr": 0.3645,
+    "median_pairwise_corr": 0.3627,
+    "std_pairwise_corr": 0.0939,
+    "min_pairwise_corr": 0.0661,
+    "max_pairwise_corr": 0.8595,
+    "n_pairs": 2628,
+    "n_tickers": 73
+  }
+}
