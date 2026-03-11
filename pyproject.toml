@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=16.0",
     "pyyaml>=6.0",
     "isyatirimhisse>=2.1",
+    "networkx>=3.2",
 ]
 
 [project.optional-dependencies]

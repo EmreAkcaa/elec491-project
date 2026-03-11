@@ -6,8 +6,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.figure_factory as ff
 import plotly.graph_objects as go
 import streamlit as st
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import squareform
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
@@ -79,6 +82,52 @@ def load_xu100():
             return df.iloc[:, 0]
         return df.iloc[:, 0]
     return pd.Series(dtype=float)
+
+
+@st.cache_data
+def load_linkage():
+    """Load linkage matrix and labels for dendrogram."""
+    Z_path = DATA_RESULTS / "linkage_matrix.npy"
+    labels_path = DATA_RESULTS / "linkage_labels.json"
+    if Z_path.exists() and labels_path.exists():
+        Z = np.load(Z_path)
+        with open(labels_path) as f:
+            labels = json.load(f)
+        return Z, labels
+    return None, None
+
+
+@st.cache_data
+def load_dendrogram_order():
+    path = DATA_RESULTS / "dendrogram_order.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
+@st.cache_data
+def load_cluster_assignments():
+    path = DATA_RESULTS / "cluster_assignments.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_mst_edges():
+    path = DATA_RESULTS / "mst_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_mst_metrics():
+    path = DATA_RESULTS / "mst_node_metrics.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
 
 
 @st.cache_data
@@ -242,19 +291,33 @@ with col_hist:
         st.plotly_chart(fig_hist, use_container_width=True)
 
 
-# ---------- correlation heatmap ----------
+# ---------- correlation heatmap (cluster-reordered) ----------
 
 st.markdown("---")
 st.subheader("Pearson Correlation Heatmap")
 
-# Recompute for the selected window
+# Recompute correlation for the selected window
 corr = compute_corr_for_window(returns.to_json(orient="split", date_format="iso"), dynamic_min_periods)
+
+# Try to reorder by dendrogram leaf order for better block-diagonal structure
+leaf_order = load_dendrogram_order()
+use_clustering_order = st.checkbox("Reorder by hierarchical clustering", value=True)
+
+if use_clustering_order and leaf_order is not None:
+    # Only use tickers that exist in both the correlation matrix and the leaf order
+    valid_order = [t for t in leaf_order if t in corr.columns]
+    if valid_order:
+        corr_display = corr.loc[valid_order, valid_order]
+    else:
+        corr_display = corr
+else:
+    corr_display = corr
 
 fig_heat = go.Figure(
     data=go.Heatmap(
-        z=corr.values,
-        x=corr.columns.tolist(),
-        y=corr.index.tolist(),
+        z=corr_display.values,
+        x=corr_display.columns.tolist(),
+        y=corr_display.index.tolist(),
         colorscale="RdBu_r",
         zmid=0,
         zmin=-1,
@@ -262,15 +325,171 @@ fig_heat = go.Figure(
         hovertemplate="(%{x}, %{y}): %{z:.3f}<extra></extra>",
     )
 )
-n_tickers = len(corr)
+n_tickers = len(corr_display)
 fig_heat.update_layout(
     height=max(600, n_tickers * 8),
     width=max(600, n_tickers * 8),
     margin=dict(l=0, r=0, t=0, b=0),
     xaxis=dict(tickfont=dict(size=7), dtick=1),
-    yaxis=dict(tickfont=dict(size=7), dtick=1),
+    yaxis=dict(tickfont=dict(size=7), dtick=1, autorange="reversed"),
 )
 st.plotly_chart(fig_heat, use_container_width=True)
+
+
+# ---------- dendrogram & cluster view ----------
+
+st.markdown("---")
+col_dendro, col_clusters = st.columns([3, 2])
+
+with col_dendro:
+    st.subheader("Dendrogram")
+    Z_loaded, labels_loaded = load_linkage()
+    if Z_loaded is not None:
+        # Build dendrogram using plotly figure_factory
+        fig_dendro = ff.create_dendrogram(
+            np.eye(len(labels_loaded)),
+            orientation="bottom",
+            labels=labels_loaded,
+            linkagefun=lambda x: Z_loaded,
+        )
+        fig_dendro.update_layout(
+            height=500,
+            margin=dict(l=10, r=10, t=10, b=100),
+            xaxis=dict(tickfont=dict(size=7), tickangle=-90),
+            yaxis_title="Distance",
+        )
+        st.plotly_chart(fig_dendro, use_container_width=True)
+    else:
+        st.info("Run the clustering pipeline to generate the dendrogram.")
+
+with col_clusters:
+    st.subheader("Cluster Memberships")
+    cluster_df = load_cluster_assignments()
+    if not cluster_df.empty:
+        n_clusters = cluster_df["cluster_id"].nunique()
+        st.metric("Number of Clusters", n_clusters)
+
+        # Display cluster table sorted by cluster then ticker
+        display_clusters = cluster_df.sort_values(
+            ["cluster_id", "ticker"]
+        ).reset_index(drop=True)
+        st.dataframe(display_clusters, use_container_width=True, height=400, hide_index=True)
+
+        # Cluster-sector cross-tab
+        st.markdown("**Cluster vs Sector**")
+        if "sector" in cluster_df.columns:
+            crosstab = pd.crosstab(
+                cluster_df["cluster_id"], cluster_df["sector"]
+            )
+            st.dataframe(crosstab, use_container_width=True)
+    else:
+        st.info("Run the clustering pipeline to see cluster assignments.")
+
+
+# ---------- MST network graph ----------
+
+st.markdown("---")
+st.subheader("Minimum Spanning Tree")
+
+mst_edges = load_mst_edges()
+mst_metrics = load_mst_metrics()
+
+if not mst_edges.empty and not mst_metrics.empty:
+    col_mst_graph, col_mst_table = st.columns([3, 2])
+
+    with col_mst_graph:
+        # Build networkx graph for layout computation
+        import networkx as nx
+
+        G = nx.Graph()
+        sector_map = dict(zip(mst_metrics["ticker"], mst_metrics["sector"]))
+        degree_map = dict(zip(mst_metrics["ticker"], mst_metrics["degree"]))
+
+        for _, row in mst_edges.iterrows():
+            G.add_edge(row["source"], row["target"], weight=row["distance"])
+
+        # Use spring layout with distance-based weights
+        pos = nx.spring_layout(G, seed=42, k=2.0, iterations=100)
+
+        # Build edge traces
+        edge_x, edge_y = [], []
+        for u, v in G.edges():
+            x0, y0 = pos[u]
+            x1, y1 = pos[v]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            line=dict(width=0.8, color="#888"),
+            hoverinfo="none",
+            mode="lines",
+        )
+
+        # Build node traces — color by sector, size by degree
+        sectors = list(set(sector_map.values()) - {None, np.nan})
+        sectors.sort()
+        color_map = {s: px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
+                     for i, s in enumerate(sectors)}
+
+        node_x, node_y, node_text, node_color, node_size = [], [], [], [], []
+        for node in G.nodes():
+            x, y = pos[node]
+            node_x.append(x)
+            node_y.append(y)
+            sec = sector_map.get(node, "Unknown")
+            deg = degree_map.get(node, 1)
+            node_text.append(f"{node}<br>Sector: {sec}<br>Degree: {deg}")
+            node_color.append(color_map.get(sec, "#999"))
+            node_size.append(8 + deg * 5)
+
+        node_trace = go.Scatter(
+            x=node_x, y=node_y,
+            mode="markers+text",
+            text=[n for n in G.nodes()],
+            textposition="top center",
+            textfont=dict(size=7),
+            hovertext=node_text,
+            hoverinfo="text",
+            marker=dict(
+                size=node_size,
+                color=node_color,
+                line=dict(width=1, color="white"),
+            ),
+        )
+
+        fig_mst = go.Figure(data=[edge_trace, node_trace])
+        fig_mst.update_layout(
+            showlegend=False,
+            height=700,
+            margin=dict(l=0, r=0, t=0, b=0),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            plot_bgcolor="white",
+        )
+
+        # Add sector color legend manually
+        for sec in sectors:
+            fig_mst.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode="markers",
+                marker=dict(size=10, color=color_map[sec]),
+                name=sec,
+                showlegend=True,
+            ))
+        fig_mst.update_layout(showlegend=True, legend=dict(font=dict(size=9)))
+
+        st.plotly_chart(fig_mst, use_container_width=True)
+
+    with col_mst_table:
+        st.markdown("**Hub Stocks (by degree)**")
+        display_metrics = mst_metrics.copy()
+        display_metrics["betweenness_centrality"] = display_metrics[
+            "betweenness_centrality"
+        ].map(lambda x: f"{x:.4f}")
+        st.dataframe(display_metrics, use_container_width=True, height=500, hide_index=True)
+else:
+    st.info("Run the clustering pipeline to generate the MST network.")
 
 
 # ---------- top/bottom pairs & corr distribution ----------

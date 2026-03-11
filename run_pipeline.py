@@ -17,6 +17,7 @@ def main():
     from src.data_validation import validate_sample
     from src.preprocessing import run_preprocessing
     from src.analysis import run_analysis
+    from src.clustering import run_clustering
 
     logger.info("========== StoNeCoAl Pipeline ==========")
 
@@ -27,6 +28,7 @@ def main():
     validate_sample(config)
     run_preprocessing(config)
     run_analysis(config)
+    run_clustering(config)
 
     logger.info("========== Pipeline Complete ==========")
 
