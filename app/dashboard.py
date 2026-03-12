@@ -48,11 +48,25 @@ def compute_corr_for_window(returns_json: str, min_periods: int):
 # ---------- sidebar navigation ----------
 
 st.sidebar.markdown("## Navigate")
-if st.sidebar.button("📊 Overview", use_container_width=True, type="secondary"):
-    st.switch_page("dashboard.py")
-if st.sidebar.button("🔗 Pair Analysis", use_container_width=True, type="primary"):
-    st.switch_page("pages/1_Pair_Analysis.py")
+_nav = st.sidebar.radio(
+    "Go to",
+    ["📊 Market Overview", "🔗 Pair Analysis"],
+    key="nav_selection",
+    label_visibility="collapsed",
+)
 st.sidebar.markdown("---")
+
+# ---------- pair analysis view ----------
+if _nav == "🔗 Pair Analysis":
+    adj_close = load_adj_close()
+    full_returns = load_log_returns()
+    coverage_df = load_coverage()
+    min_date = adj_close.index.min().date()
+    max_date = adj_close.index.max().date()
+    from pair_analysis import render as _render_pair
+    _render_pair(adj_close, full_returns, coverage_df, min_date, max_date)
+    st.stop()
+
 st.sidebar.header("Settings")
 
 adj_close = load_adj_close()
