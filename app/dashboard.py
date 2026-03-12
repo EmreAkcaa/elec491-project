@@ -1,6 +1,5 @@
-"""StoNeCoAl — Single-page Streamlit dashboard for BIST-100 analysis."""
+"""StoNeCoAl — BIST-100 Correlation Analysis dashboard (Overview page)."""
 
-import json
 import sys
 from pathlib import Path
 
@@ -10,8 +9,8 @@ import plotly.express as px
 import plotly.figure_factory as ff
 import plotly.graph_objects as go
 import streamlit as st
-from scipy.cluster.hierarchy import linkage, leaves_list
-from scipy.spatial.distance import squareform
+from scipy.cluster.hierarchy import linkage, leaves_list  # noqa: F401
+from scipy.spatial.distance import squareform  # noqa: F401
 
 try:
     import networkx as nx
@@ -19,133 +18,31 @@ try:
 except ImportError:
     HAS_NETWORKX = False
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_APP_DIR      = Path(__file__).resolve().parent   # app/
+_PROJECT_ROOT = _APP_DIR.parent
+for _p in (str(_PROJECT_ROOT), str(_APP_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-# Ensure the project root is on the import path so `src.*` imports work
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
-DATA_RAW = PROJECT_ROOT / "data" / "raw"
+# All loaders and shared utilities live in utils.py (single source of truth)
+from utils import (  # noqa: E402
+    PROJECT_ROOT, DATA_PROCESSED, DATA_RESULTS, DATA_RAW,
+    load_adj_close, load_log_returns, load_summary_stats, load_batch_corr,
+    load_coverage, load_top_bottom, load_metadata, load_fetch_metadata,
+    load_xu100, load_linkage, load_dendrogram_order, load_cluster_assignments,
+    load_mst_edges, load_mst_metrics,
+    draw_event_markers, event_marker_manager_ui,
+)
 
 st.set_page_config(page_title="StoNeCoAl — BIST-100", layout="wide")
 st.title("StoNeCoAl — BIST-100 Correlation Analysis")
 
 
-# ---------- helpers ----------
-
-@st.cache_data
-def load_adj_close():
-    return pd.read_parquet(DATA_PROCESSED / "adj_close.parquet")
-
-
-@st.cache_data
-def load_log_returns():
-    return pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
-
-
-@st.cache_data
-def load_summary_stats():
-    return pd.read_parquet(DATA_RESULTS / "summary_stats.parquet")
-
-
-@st.cache_data
-def load_batch_corr():
-    return pd.read_parquet(DATA_RESULTS / "pearson_corr.parquet")
-
-
-@st.cache_data
-def load_coverage():
-    return pd.read_csv(DATA_PROCESSED / "coverage_report.csv")
-
-
-@st.cache_data
-def load_top_bottom():
-    return pd.read_csv(DATA_RESULTS / "top_bottom_pairs.csv")
-
-
-@st.cache_data
-def load_metadata():
-    meta_path = DATA_RESULTS / "pipeline_metadata.json"
-    if meta_path.exists():
-        with open(meta_path) as f:
-            return json.load(f)
-    return {}
-
-
-@st.cache_data
-def load_fetch_metadata():
-    meta_path = DATA_RAW / "fetch_metadata.json"
-    if meta_path.exists():
-        with open(meta_path) as f:
-            return json.load(f)
-    return {}
-
-
-@st.cache_data
-def load_xu100():
-    path = DATA_RAW / "xu100.parquet"
-    if path.exists():
-        df = pd.read_parquet(path)
-        if "Adj Close" in df.columns:
-            return df["Adj Close"]
-        elif isinstance(df.columns, pd.MultiIndex):
-            return df.iloc[:, 0]
-        return df.iloc[:, 0]
-    return pd.Series(dtype=float)
-
-
-@st.cache_data
-def load_linkage():
-    """Load linkage matrix and labels for dendrogram."""
-    Z_path = DATA_RESULTS / "linkage_matrix.npy"
-    labels_path = DATA_RESULTS / "linkage_labels.json"
-    if Z_path.exists() and labels_path.exists():
-        Z = np.load(Z_path)
-        with open(labels_path) as f:
-            labels = json.load(f)
-        return Z, labels
-    return None, None
-
-
-@st.cache_data
-def load_dendrogram_order():
-    path = DATA_RESULTS / "dendrogram_order.json"
-    if path.exists():
-        with open(path) as f:
-            return json.load(f)
-    return None
-
-
-@st.cache_data
-def load_cluster_assignments():
-    path = DATA_RESULTS / "cluster_assignments.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
-
-
-@st.cache_data
-def load_mst_edges():
-    path = DATA_RESULTS / "mst_edges.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
-
-
-@st.cache_data
-def load_mst_metrics():
-    path = DATA_RESULTS / "mst_node_metrics.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
-
-
 @st.cache_data
 def compute_corr_for_window(returns_json: str, min_periods: int):
     """Recompute correlation for a date-filtered window."""
-    returns = pd.read_json(returns_json, orient="split")
-    return returns.corr(method="pearson", min_periods=min_periods)
+    _ret = pd.read_json(returns_json, orient="split")
+    return _ret.corr(method="pearson", min_periods=min_periods)
 
 
 # ---------- sidebar ----------
@@ -568,49 +465,7 @@ from src.rolling_correlation import (
     compute_rolling_market_stats,
     compute_rolling_pair_correlation,
     compute_rolling_sector_stats,
-    DEFAULT_EVENTS,
 )
-
-_DASH_OPTIONS = {
-    "Dashed": "dash",
-    "Solid": "solid",
-    "Dotted": "dot",
-    "Long Dash": "longdash",
-    "Dash-Dot": "dashdot",
-}
-_DASH_LABELS = {v: k for k, v in _DASH_OPTIONS.items()}
-
-
-def _draw_event_markers(fig, show_defaults, custom_events, date_min, date_max):
-    """Render vertical event-marker lines onto a plotly figure."""
-    events = []
-    if show_defaults:
-        for ev in DEFAULT_EVENTS:
-            events.append({"date": ev["date"], "label": ev["label"],
-                           "color": "#E53935", "dash": "dash", "width": 1.0})
-    events.extend(custom_events)
-    for ev in events:
-        ev_date = pd.Timestamp(ev["date"])
-        if date_min <= ev_date <= date_max:
-            fig.add_shape(
-                type="line", x0=ev_date, x1=ev_date,
-                y0=0, y1=1, yref="paper",
-                line=dict(dash=ev["dash"], color=ev["color"], width=ev["width"]),
-                opacity=0.75,
-            )
-            fig.add_annotation(
-                x=ev_date, y=1, yref="paper",
-                text=ev["label"], showarrow=False,
-                font=dict(size=9, color=ev["color"]), yshift=10,
-            )
-
-
-# ---------- event marker manager (session state) ----------
-
-if "rc_custom_events" not in st.session_state:
-    st.session_state.rc_custom_events = []
-if "rc_show_defaults" not in st.session_state:
-    st.session_state.rc_show_defaults = True
 
 rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
 with rc_col1:
@@ -625,60 +480,8 @@ with rc_col4:
 
 rc_expanding = rc_window_type == "expanding"
 
-# ---------- event marker manager UI ----------
-with st.expander("Event Markers", expanded=False):
-    st.session_state.rc_show_defaults = st.checkbox(
-        "Show default macro events (COVID-19, Russia-Ukraine War, Turkey Earthquakes)",
-        value=st.session_state.rc_show_defaults,
-    )
-
-    if st.session_state.rc_custom_events:
-        st.markdown("**Custom events**")
-        for _i, _cev in enumerate(st.session_state.rc_custom_events):
-            _style_label = _DASH_LABELS.get(_cev["dash"], _cev["dash"])
-            _c1, _c2 = st.columns([6, 1])
-            with _c1:
-                st.markdown(
-                    f"<span style='color:{_cev['color']}'>▌</span> "
-                    f"**{_cev['label']}** &nbsp; {_cev['date']} &nbsp;·&nbsp; "
-                    f"{_style_label}, {_cev['width']}px",
-                    unsafe_allow_html=True,
-                )
-            with _c2:
-                if st.button("✕ Remove", key=f"rm_ev_{_i}"):
-                    st.session_state.rc_custom_events.pop(_i)
-                    st.rerun()
-
-    st.markdown("**Add a new event marker**")
-    with st.form("add_event_form", clear_on_submit=True):
-        _fa, _fb = st.columns(2)
-        with _fa:
-            _ev_date = st.date_input(
-                "Date", value=min(pd.Timestamp.today().date(), max_date),
-                min_value=min_date, max_value=max_date, key="new_ev_date",
-            )
-            _ev_label = st.text_input("Caption / label", value="", placeholder="e.g. Fed Rate Hike", key="new_ev_label")
-        with _fb:
-            _ev_color = st.color_picker("Line color", value="#E53935", key="new_ev_color")
-            _ev_style = st.selectbox(
-                "Line style",
-                list(_DASH_OPTIONS.keys()),
-                index=0,
-                key="new_ev_style",
-            )
-        _ev_width = st.slider(
-            "Line thickness (px)", min_value=0.5, max_value=5.0,
-            value=1.5, step=0.5, key="new_ev_width",
-        )
-        if st.form_submit_button("Add Event Marker"):
-            st.session_state.rc_custom_events.append({
-                "date": str(_ev_date),
-                "label": _ev_label.strip() or str(_ev_date),
-                "color": _ev_color,
-                "dash": _DASH_OPTIONS[_ev_style],
-                "width": _ev_width,
-            })
-            st.rerun()
+# Event markers — shared utility, scoped to "rc" prefix
+show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
 
 tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Analysis", "Sector Breakdown"])
 
@@ -729,9 +532,8 @@ with tab_market:
             mode="lines", name="Median", line=dict(color="orange", width=1.5, dash="dot"),
         ))
 
-        _draw_event_markers(
-            fig_rc, st.session_state.rc_show_defaults,
-            st.session_state.rc_custom_events,
+        draw_event_markers(
+            fig_rc, show_defaults, custom_events,
             market_stats.index.min(), market_stats.index.max(),
         )
 
@@ -806,9 +608,8 @@ with tab_pair:
 
         _valid = pair_corr.dropna()
         if not _valid.empty:
-            _draw_event_markers(
-                fig_pair, st.session_state.rc_show_defaults,
-                st.session_state.rc_custom_events,
+            draw_event_markers(
+                fig_pair, show_defaults, custom_events,
                 _valid.index.min(), _valid.index.max(),
             )
 
@@ -874,9 +675,8 @@ with tab_sector:
                 line=dict(color="steelblue", width=2),
             ))
 
-            _draw_event_markers(
-                fig_sec, st.session_state.rc_show_defaults,
-                st.session_state.rc_custom_events,
+            draw_event_markers(
+                fig_sec, show_defaults, custom_events,
                 sector_stats.index.min(), sector_stats.index.max(),
             )
 
