@@ -654,8 +654,8 @@ with st.expander("Event Markers", expanded=False):
         _fa, _fb = st.columns(2)
         with _fa:
             _ev_date = st.date_input(
-                "Date", value=pd.Timestamp.today().date(), key="new_ev_date",
-                min_value=min_date, max_value=max_date,
+                "Date", value=min(pd.Timestamp.today().date(), max_date),
+                min_value=min_date, max_value=max_date, key="new_ev_date",
             )
             _ev_label = st.text_input("Caption / label", value="", placeholder="e.g. Fed Rate Hike", key="new_ev_label")
         with _fb:
