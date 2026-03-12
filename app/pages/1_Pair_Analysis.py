@@ -63,6 +63,10 @@ max_date = adj_close.index.max().date()
 # ---------------------------------------------------------------------------
 # Sidebar — ticker & window selection
 # ---------------------------------------------------------------------------
+st.sidebar.markdown("## Pages")
+st.sidebar.page_link("dashboard.py", label="📊 Overview")
+st.sidebar.page_link("pages/1_Pair_Analysis.py", label="🔗 Pair Analysis", icon=None)
+st.sidebar.markdown("---")
 st.sidebar.header("Pair Selection")
 ticker_list = sorted(full_returns.columns.tolist())
 

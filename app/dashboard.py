@@ -45,8 +45,12 @@ def compute_corr_for_window(returns_json: str, min_periods: int):
     return _ret.corr(method="pearson", min_periods=min_periods)
 
 
-# ---------- sidebar ----------
+# ---------- sidebar navigation ----------
 
+st.sidebar.markdown("## Pages")
+st.sidebar.page_link("dashboard.py", label="📊 Overview", icon=None)
+st.sidebar.page_link("pages/1_Pair_Analysis.py", label="🔗 Pair Analysis")
+st.sidebar.markdown("---")
 st.sidebar.header("Settings")
 
 adj_close = load_adj_close()
