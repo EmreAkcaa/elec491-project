@@ -574,7 +574,7 @@ with tab_market:
             ev_date = pd.Timestamp(ev["date"])
             if market_stats.index.min() <= ev_date <= market_stats.index.max():
                 fig_rc.add_vline(
-                    x=ev_date, line_dash="dash", line_color="red", opacity=0.6,
+                    x=str(ev_date.date()), line_dash="dash", line_color="red", opacity=0.6,
                     annotation_text=ev["label"], annotation_font_size=9,
                     annotation_position="top left",
                 )
@@ -646,7 +646,7 @@ with tab_pair:
             ev_date = pd.Timestamp(ev["date"])
             if pair_corr.dropna().index.min() <= ev_date <= pair_corr.dropna().index.max():
                 fig_pair.add_vline(
-                    x=ev_date, line_dash="dash", line_color="red", opacity=0.6,
+                    x=str(ev_date.date()), line_dash="dash", line_color="red", opacity=0.6,
                     annotation_text=ev["label"], annotation_font_size=9,
                 )
 
@@ -708,7 +708,7 @@ with tab_sector:
             for ev in DEFAULT_EVENTS:
                 ev_date = pd.Timestamp(ev["date"])
                 if sector_stats.index.min() <= ev_date <= sector_stats.index.max():
-                    fig_sec.add_vline(x=ev_date, line_dash="dash", line_color="red", opacity=0.6,
+                    fig_sec.add_vline(x=str(ev_date.date()), line_dash="dash", line_color="red", opacity=0.6,
                                       annotation_text=ev["label"], annotation_font_size=9)
 
             fig_sec.update_layout(
