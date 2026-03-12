@@ -571,6 +571,47 @@ from src.rolling_correlation import (
     DEFAULT_EVENTS,
 )
 
+_DASH_OPTIONS = {
+    "Dashed": "dash",
+    "Solid": "solid",
+    "Dotted": "dot",
+    "Long Dash": "longdash",
+    "Dash-Dot": "dashdot",
+}
+_DASH_LABELS = {v: k for k, v in _DASH_OPTIONS.items()}
+
+
+def _draw_event_markers(fig, show_defaults, custom_events, date_min, date_max):
+    """Render vertical event-marker lines onto a plotly figure."""
+    events = []
+    if show_defaults:
+        for ev in DEFAULT_EVENTS:
+            events.append({"date": ev["date"], "label": ev["label"],
+                           "color": "#E53935", "dash": "dash", "width": 1.0})
+    events.extend(custom_events)
+    for ev in events:
+        ev_date = pd.Timestamp(ev["date"])
+        if date_min <= ev_date <= date_max:
+            fig.add_shape(
+                type="line", x0=ev_date, x1=ev_date,
+                y0=0, y1=1, yref="paper",
+                line=dict(dash=ev["dash"], color=ev["color"], width=ev["width"]),
+                opacity=0.75,
+            )
+            fig.add_annotation(
+                x=ev_date, y=1, yref="paper",
+                text=ev["label"], showarrow=False,
+                font=dict(size=9, color=ev["color"]), yshift=10,
+            )
+
+
+# ---------- event marker manager (session state) ----------
+
+if "rc_custom_events" not in st.session_state:
+    st.session_state.rc_custom_events = []
+if "rc_show_defaults" not in st.session_state:
+    st.session_state.rc_show_defaults = True
+
 rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
 with rc_col1:
     rc_window = st.selectbox("Window (days)", [60, 120, 252, 504], index=2, key="rc_win")
@@ -583,6 +624,61 @@ with rc_col4:
     rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
 
 rc_expanding = rc_window_type == "expanding"
+
+# ---------- event marker manager UI ----------
+with st.expander("Event Markers", expanded=False):
+    st.session_state.rc_show_defaults = st.checkbox(
+        "Show default macro events (COVID-19, Russia-Ukraine War, Turkey Earthquakes)",
+        value=st.session_state.rc_show_defaults,
+    )
+
+    if st.session_state.rc_custom_events:
+        st.markdown("**Custom events**")
+        for _i, _cev in enumerate(st.session_state.rc_custom_events):
+            _style_label = _DASH_LABELS.get(_cev["dash"], _cev["dash"])
+            _c1, _c2 = st.columns([6, 1])
+            with _c1:
+                st.markdown(
+                    f"<span style='color:{_cev['color']}'>▌</span> "
+                    f"**{_cev['label']}** &nbsp; {_cev['date']} &nbsp;·&nbsp; "
+                    f"{_style_label}, {_cev['width']}px",
+                    unsafe_allow_html=True,
+                )
+            with _c2:
+                if st.button("✕ Remove", key=f"rm_ev_{_i}"):
+                    st.session_state.rc_custom_events.pop(_i)
+                    st.rerun()
+
+    st.markdown("**Add a new event marker**")
+    with st.form("add_event_form", clear_on_submit=True):
+        _fa, _fb = st.columns(2)
+        with _fa:
+            _ev_date = st.date_input(
+                "Date", value=pd.Timestamp.today().date(), key="new_ev_date",
+                min_value=min_date, max_value=max_date,
+            )
+            _ev_label = st.text_input("Caption / label", value="", placeholder="e.g. Fed Rate Hike", key="new_ev_label")
+        with _fb:
+            _ev_color = st.color_picker("Line color", value="#E53935", key="new_ev_color")
+            _ev_style = st.selectbox(
+                "Line style",
+                list(_DASH_OPTIONS.keys()),
+                index=0,
+                key="new_ev_style",
+            )
+        _ev_width = st.slider(
+            "Line thickness (px)", min_value=0.5, max_value=5.0,
+            value=1.5, step=0.5, key="new_ev_width",
+        )
+        if st.form_submit_button("Add Event Marker"):
+            st.session_state.rc_custom_events.append({
+                "date": str(_ev_date),
+                "label": _ev_label.strip() or str(_ev_date),
+                "color": _ev_color,
+                "dash": _DASH_OPTIONS[_ev_style],
+                "width": _ev_width,
+            })
+            st.rerun()
 
 tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Analysis", "Sector Breakdown"])
 
@@ -633,16 +729,11 @@ with tab_market:
             mode="lines", name="Median", line=dict(color="orange", width=1.5, dash="dot"),
         ))
 
-        # Event markers
-        for ev in DEFAULT_EVENTS:
-            ev_date = pd.Timestamp(ev["date"])
-            if market_stats.index.min() <= ev_date <= market_stats.index.max():
-                fig_rc.add_shape(type="line", x0=ev_date, x1=ev_date,
-                                 y0=0, y1=1, yref="paper",
-                                 line=dict(dash="dash", color="red", width=1), opacity=0.6)
-                fig_rc.add_annotation(x=ev_date, y=1, yref="paper",
-                                      text=ev["label"], showarrow=False,
-                                      font=dict(size=9, color="red"), yshift=10)
+        _draw_event_markers(
+            fig_rc, st.session_state.rc_show_defaults,
+            st.session_state.rc_custom_events,
+            market_stats.index.min(), market_stats.index.max(),
+        )
 
         fig_rc.update_layout(
             height=450,
@@ -713,15 +804,13 @@ with tab_pair:
         ))
         fig_pair.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
 
-        for ev in DEFAULT_EVENTS:
-            ev_date = pd.Timestamp(ev["date"])
-            if pair_corr.dropna().index.min() <= ev_date <= pair_corr.dropna().index.max():
-                fig_pair.add_shape(type="line", x0=ev_date, x1=ev_date,
-                                   y0=0, y1=1, yref="paper",
-                                   line=dict(dash="dash", color="red", width=1), opacity=0.6)
-                fig_pair.add_annotation(x=ev_date, y=1, yref="paper",
-                                        text=ev["label"], showarrow=False,
-                                        font=dict(size=9, color="red"), yshift=10)
+        _valid = pair_corr.dropna()
+        if not _valid.empty:
+            _draw_event_markers(
+                fig_pair, st.session_state.rc_show_defaults,
+                st.session_state.rc_custom_events,
+                _valid.index.min(), _valid.index.max(),
+            )
 
         fig_pair.update_layout(
             height=400,
@@ -785,15 +874,11 @@ with tab_sector:
                 line=dict(color="steelblue", width=2),
             ))
 
-            for ev in DEFAULT_EVENTS:
-                ev_date = pd.Timestamp(ev["date"])
-                if sector_stats.index.min() <= ev_date <= sector_stats.index.max():
-                    fig_sec.add_shape(type="line", x0=ev_date, x1=ev_date,
-                                      y0=0, y1=1, yref="paper",
-                                      line=dict(dash="dash", color="red", width=1), opacity=0.6)
-                    fig_sec.add_annotation(x=ev_date, y=1, yref="paper",
-                                           text=ev["label"], showarrow=False,
-                                           font=dict(size=9, color="red"), yshift=10)
+            _draw_event_markers(
+                fig_sec, st.session_state.rc_show_defaults,
+                st.session_state.rc_custom_events,
+                sector_stats.index.min(), sector_stats.index.max(),
+            )
 
             fig_sec.update_layout(
                 height=400,
