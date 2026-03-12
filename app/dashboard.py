@@ -12,7 +12,12 @@ import plotly.graph_objects as go
 import streamlit as st
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import squareform
-import networkx as nx
+
+try:
+    import networkx as nx
+    HAS_NETWORKX = True
+except ImportError:
+    HAS_NETWORKX = False
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -400,7 +405,7 @@ st.subheader("Minimum Spanning Tree")
 mst_edges = load_mst_edges()
 mst_metrics = load_mst_metrics()
 
-if not mst_edges.empty and not mst_metrics.empty:
+if not mst_edges.empty and not mst_metrics.empty and HAS_NETWORKX:
     col_mst_graph, col_mst_table = st.columns([3, 2])
 
     with col_mst_graph:
@@ -491,6 +496,8 @@ if not mst_edges.empty and not mst_metrics.empty:
             "betweenness_centrality"
         ].map(lambda x: f"{x:.4f}")
         st.dataframe(display_metrics, use_container_width=True, height=500, hide_index=True)
+elif not HAS_NETWORKX:
+    st.warning("Install `networkx` to display the MST network graph (`pip install networkx`).")
 else:
     st.info("Run the clustering pipeline to generate the MST network.")
 
