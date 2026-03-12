@@ -47,9 +47,11 @@ def compute_corr_for_window(returns_json: str, min_periods: int):
 
 # ---------- sidebar navigation ----------
 
-st.sidebar.markdown("## Pages")
-st.sidebar.page_link("dashboard.py", label="📊 Overview", icon=None)
-st.sidebar.page_link("pages/1_Pair_Analysis.py", label="🔗 Pair Analysis")
+st.sidebar.markdown("## Navigate")
+if st.sidebar.button("📊 Overview", use_container_width=True, type="secondary"):
+    st.switch_page("dashboard.py")
+if st.sidebar.button("🔗 Pair Analysis", use_container_width=True, type="primary"):
+    st.switch_page("pages/1_Pair_Analysis.py")
 st.sidebar.markdown("---")
 st.sidebar.header("Settings")
 
