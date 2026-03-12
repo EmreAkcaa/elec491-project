@@ -219,6 +219,11 @@ col_left, col_right = st.columns(2)
 
 with col_left:
     st.subheader("Data Coverage")
+    st.caption(
+        "Each bar shows the percentage of trading days with available price data for a given ticker. "
+        "Stocks below the **90% threshold** (red dashed line) were excluded from the analysis to ensure "
+        "statistical reliability. Longer bars indicate more complete price histories."
+    )
     coverage = load_coverage()
     fig_cov = px.bar(
         coverage.sort_values("coverage_pct"),
@@ -234,6 +239,12 @@ with col_left:
 
 with col_right:
     st.subheader("Normalized Prices")
+    st.caption(
+        "All stock prices are rebased to **100** at the start of the selected window, allowing direct "
+        "comparison of relative performance. The bold **black line** is the XU100 (BIST-100 index). "
+        "Stocks above 100 outperformed their starting price; stocks below 100 lost value. "
+        "Convergence/divergence of lines hints at correlation or decoupling among stocks."
+    )
     # Normalize to 100 at start
     norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
     # Add XU100 if available
@@ -275,6 +286,12 @@ col_stats, col_hist = st.columns(2)
 
 with col_stats:
     st.subheader("Descriptive Statistics")
+    st.caption(
+        "Key risk-return metrics for each stock computed from daily **log returns**. "
+        "**Annualized return** and **volatility** are scaled by √252 trading days. "
+        "**Skewness** < 0 means more frequent large drops; **kurtosis** > 3 (excess) signals fat tails "
+        "— i.e., extreme daily moves occur more often than a normal distribution would predict."
+    )
     summary = load_summary_stats()
     display_cols = [
         "ticker", "count", "annualized_return", "annualized_vol",
@@ -289,6 +306,11 @@ with col_stats:
 
 with col_hist:
     st.subheader("Return Distribution")
+    st.caption(
+        "Histogram of daily **log returns** for the selected ticker. A bell-shaped curve centered near zero "
+        "indicates typical market behavior. Look for **fat tails** (bars far from center) signaling extreme "
+        "moves, and **skewness** (asymmetry) showing whether the stock tends to have larger up or down days."
+    )
     selected_ticker = st.selectbox("Ticker", sorted(returns.columns.tolist()))
     if selected_ticker:
         ticker_returns = returns[selected_ticker].dropna()
@@ -306,6 +328,12 @@ with col_hist:
 
 st.markdown("---")
 st.subheader("Pearson Correlation Heatmap")
+st.caption(
+    "A pairwise **Pearson correlation matrix** of daily log returns. Values range from **-1** (perfect inverse movement) "
+    "to **+1** (perfect co-movement). Red/warm colors indicate positive correlation; blue/cool colors indicate negative. "
+    "When **'Reorder by hierarchical clustering'** is enabled, tickers are rearranged so that highly correlated groups "
+    "appear as block-diagonal clusters along the main diagonal — making sector-driven patterns easy to spot."
+)
 
 # Recompute correlation for the selected window
 corr = compute_corr_for_window(returns.to_json(orient="split", date_format="iso"), dynamic_min_periods)
@@ -354,6 +382,12 @@ col_dendro, col_clusters = st.columns([3, 2])
 
 with col_dendro:
     st.subheader("Dendrogram")
+    st.caption(
+        "A **hierarchical clustering dendrogram** built from the correlation-based distance matrix "
+        "(d = √(2(1-ρ))). Stocks that merge at **lower heights** (bottom of the tree) are more similar in their "
+        "return behavior. Vertical lines show the merge distance — a large jump indicates two distinct groups being joined. "
+        "This reveals the natural grouping structure of the market, often aligning with BIST industry sectors."
+    )
     Z_loaded, labels_loaded = load_linkage()
     if Z_loaded is not None:
         # Build dendrogram using plotly figure_factory
@@ -375,6 +409,12 @@ with col_dendro:
 
 with col_clusters:
     st.subheader("Cluster Memberships")
+    st.caption(
+        "Stocks are grouped into clusters by cutting the dendrogram at an **automatic threshold** "
+        "(70% of the maximum merge distance). Each row shows a stock's cluster assignment and its BIST sector. "
+        "The **Cluster vs Sector** cross-tab below reveals whether correlation-driven clusters coincide with "
+        "official sector classifications — a mismatch may indicate hidden economic linkages."
+    )
     cluster_df = load_cluster_assignments()
     if not cluster_df.empty:
         n_clusters = cluster_df["cluster_id"].nunique()
@@ -401,6 +441,14 @@ with col_clusters:
 
 st.markdown("---")
 st.subheader("Minimum Spanning Tree")
+st.caption(
+    "The **Minimum Spanning Tree (MST)** connects all stocks using the shortest total correlation-based distance, "
+    "filtering out redundant links to reveal the backbone structure of the market. Each node is a stock, colored by "
+    "**sector** and sized by **degree** (number of connections). Hub nodes with many connections are influential — "
+    "they act as bridges transmitting correlation across the market. Edge lengths reflect correlation distance: "
+    "shorter edges = higher correlation. The **betweenness centrality** in the table quantifies how often a stock "
+    "lies on the shortest path between other stocks — high values indicate systemic importance."
+)
 
 mst_edges = load_mst_edges()
 mst_metrics = load_mst_metrics()
@@ -506,6 +554,15 @@ else:
 
 st.markdown("---")
 st.subheader("Rolling Correlation Analysis")
+st.caption(
+    "Tracks how **pairwise correlations evolve over time** using a sliding window. This reveals whether stocks "
+    "move together more during crises (correlation spikes) or decouple during calm periods. "
+    "**Window**: number of past trading days used for each calculation. "
+    "**Step**: how many days to skip between calculations (higher = faster but coarser). "
+    "**Method**: Pearson measures linear co-movement; Spearman captures monotonic (rank-based) relationships. "
+    "**Window type**: *Rolling* = fixed-size lookback; *Expanding* = growing window from start; *EWM* = exponentially "
+    "weighted, giving more weight to recent data."
+)
 
 from src.rolling_correlation import (
     compute_rolling_market_stats,
@@ -531,6 +588,13 @@ tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Analysis", 
 
 # --- Tab 1: Market correlation over time ---
 with tab_market:
+    st.caption(
+        "**Market Overview** — Aggregates all pairwise correlations into summary statistics at each time step. "
+        "The **blue line** is the mean correlation, the **orange dotted line** is the median, and the **shaded band** "
+        "shows the interquartile range (Q25–Q75). When the band narrows and the mean rises, it signals a "
+        "**correlation regime shift** — typically during market stress when stocks move in lockstep. "
+        "Red dashed vertical lines mark major macro events (COVID, earthquakes, etc.)."
+    )
 
     @st.cache_data
     def _compute_market_stats(ret_json, window, step, method, expanding):
@@ -613,6 +677,12 @@ with tab_market:
 
 # --- Tab 2: Pair rolling correlation ---
 with tab_pair:
+    st.caption(
+        "**Pair Analysis** — Select two stocks to see how their correlation changes over time. "
+        "A correlation near **+1** means they consistently move together; near **0** means no linear relationship; "
+        "near **-1** means they move in opposite directions. The **normalized price comparison** (expandable below) "
+        "overlays both stocks' rebased prices so you can visually verify convergence/divergence periods."
+    )
     ticker_list = sorted(returns.columns.tolist())
     pc1, pc2 = st.columns(2)
     with pc1:
@@ -677,6 +747,13 @@ with tab_pair:
 
 # --- Tab 3: Sector breakdown ---
 with tab_sector:
+    st.caption(
+        "**Sector Breakdown** — Compares average **intra-sector** correlation (stocks within the same BIST sector) "
+        "vs. **inter-sector** correlation (stocks from different sectors). Intra-sector correlation is typically "
+        "higher because companies in the same industry share common risk factors. When the two lines converge, "
+        "it suggests a market-wide factor (macro shock, sentiment) is dominating sector-specific effects. "
+        "Expand **'Per-sector intra-correlation'** to see which sectors are internally cohesive over time."
+    )
     cluster_df_for_sectors = load_cluster_assignments()
     if not cluster_df_for_sectors.empty and "sector" in cluster_df_for_sectors.columns:
         sec_map = dict(zip(cluster_df_for_sectors["ticker"], cluster_df_for_sectors["sector"]))
@@ -753,6 +830,12 @@ col_pairs, col_dist = st.columns(2)
 
 with col_pairs:
     st.subheader("Top 10 / Bottom 10 Correlated Pairs")
+    st.caption(
+        "The **most correlated** pairs move almost identically — often from the same sector or holding-subsidiary "
+        "relationships. The **least correlated** (or most negatively correlated) pairs move independently or inversely, "
+        "making them candidates for **portfolio diversification**. Sector columns help identify whether high correlation "
+        "is sector-driven or reflects a deeper economic link."
+    )
     pairs = load_top_bottom()
     top_pairs = pairs[pairs["rank_type"] == "top"][
         ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
@@ -767,6 +850,13 @@ with col_pairs:
 
 with col_dist:
     st.subheader("Correlation Distribution")
+    st.caption(
+        "Distribution of all unique pairwise correlations (upper triangle of the matrix). "
+        "A right-skewed distribution centered above zero is typical for stocks in the same national market — "
+        "most pairs have positive co-movement due to shared macro factors. The **red dashed line** is the mean "
+        "and the **blue dotted line** is the median. A wide spread indicates a diverse market; "
+        "a narrow, high-mean distribution signals high systemic correlation."
+    )
     # Upper triangle
     mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
     upper_vals = corr.where(mask).stack().values
@@ -788,6 +878,13 @@ with col_dist:
 # ---------- market summary metric ----------
 
 st.markdown("---")
+st.subheader("Market Summary")
+st.caption(
+    "Aggregate statistics of the full-period pairwise correlation matrix. "
+    "**Avg Pairwise Corr** is the market-wide average co-movement — higher values mean the market behaves "
+    "more as a single unit. **Std Dev** measures dispersion of correlations: low std dev = uniform correlation, "
+    "high std dev = mixture of tightly and loosely linked stocks. **Min/Max** show the extremes."
+)
 market_summary = pipe_meta.get("market_summary", {})
 if market_summary:
     cols = st.columns(5)
