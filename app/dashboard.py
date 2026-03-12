@@ -1,6 +1,7 @@
 """StoNeCoAl — Single-page Streamlit dashboard for BIST-100 analysis."""
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -11,8 +12,13 @@ import plotly.graph_objects as go
 import streamlit as st
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import squareform
+import networkx as nx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# Ensure the project root is on the import path so `src.*` imports work
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
 DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
@@ -398,9 +404,6 @@ if not mst_edges.empty and not mst_metrics.empty:
     col_mst_graph, col_mst_table = st.columns([3, 2])
 
     with col_mst_graph:
-        # Build networkx graph for layout computation
-        import networkx as nx
-
         G = nx.Graph()
         sector_map = dict(zip(mst_metrics["ticker"], mst_metrics["sector"]))
         degree_map = dict(zip(mst_metrics["ticker"], mst_metrics["degree"]))
