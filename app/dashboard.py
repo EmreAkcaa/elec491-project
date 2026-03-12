@@ -573,11 +573,12 @@ with tab_market:
         for ev in DEFAULT_EVENTS:
             ev_date = pd.Timestamp(ev["date"])
             if market_stats.index.min() <= ev_date <= market_stats.index.max():
-                fig_rc.add_vline(
-                    x=str(ev_date.date()), line_dash="dash", line_color="red", opacity=0.6,
-                    annotation_text=ev["label"], annotation_font_size=9,
-                    annotation_position="top left",
-                )
+                fig_rc.add_shape(type="line", x0=ev_date, x1=ev_date,
+                                 y0=0, y1=1, yref="paper",
+                                 line=dict(dash="dash", color="red", width=1), opacity=0.6)
+                fig_rc.add_annotation(x=ev_date, y=1, yref="paper",
+                                      text=ev["label"], showarrow=False,
+                                      font=dict(size=9, color="red"), yshift=10)
 
         fig_rc.update_layout(
             height=450,
@@ -645,10 +646,12 @@ with tab_pair:
         for ev in DEFAULT_EVENTS:
             ev_date = pd.Timestamp(ev["date"])
             if pair_corr.dropna().index.min() <= ev_date <= pair_corr.dropna().index.max():
-                fig_pair.add_vline(
-                    x=str(ev_date.date()), line_dash="dash", line_color="red", opacity=0.6,
-                    annotation_text=ev["label"], annotation_font_size=9,
-                )
+                fig_pair.add_shape(type="line", x0=ev_date, x1=ev_date,
+                                   y0=0, y1=1, yref="paper",
+                                   line=dict(dash="dash", color="red", width=1), opacity=0.6)
+                fig_pair.add_annotation(x=ev_date, y=1, yref="paper",
+                                        text=ev["label"], showarrow=False,
+                                        font=dict(size=9, color="red"), yshift=10)
 
         fig_pair.update_layout(
             height=400,
@@ -708,8 +711,12 @@ with tab_sector:
             for ev in DEFAULT_EVENTS:
                 ev_date = pd.Timestamp(ev["date"])
                 if sector_stats.index.min() <= ev_date <= sector_stats.index.max():
-                    fig_sec.add_vline(x=str(ev_date.date()), line_dash="dash", line_color="red", opacity=0.6,
-                                      annotation_text=ev["label"], annotation_font_size=9)
+                    fig_sec.add_shape(type="line", x0=ev_date, x1=ev_date,
+                                      y0=0, y1=1, yref="paper",
+                                      line=dict(dash="dash", color="red", width=1), opacity=0.6)
+                    fig_sec.add_annotation(x=ev_date, y=1, yref="paper",
+                                           text=ev["label"], showarrow=False,
+                                           font=dict(size=9, color="red"), yshift=10)
 
             fig_sec.update_layout(
                 height=400,
