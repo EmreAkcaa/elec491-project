@@ -18,6 +18,7 @@ def main():
     from src.preprocessing import run_preprocessing
     from src.analysis import run_analysis
     from src.clustering import run_clustering
+    from src.rolling_correlation import run_rolling_analysis
 
     logger.info("========== StoNeCoAl Pipeline ==========")
 
@@ -29,6 +30,7 @@ def main():
     run_preprocessing(config)
     run_analysis(config)
     run_clustering(config)
+    run_rolling_analysis(config)
 
     logger.info("========== Pipeline Complete ==========")
 

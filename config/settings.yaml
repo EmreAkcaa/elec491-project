@@ -24,3 +24,9 @@ analysis:
 validation:
   enabled: true
   sample_size: 10
+
+rolling:
+  windows: [60, 120, 252]
+  step: 5
+  method: "pearson"
+  min_periods_ratio: 0.6

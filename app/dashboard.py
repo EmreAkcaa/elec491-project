@@ -492,6 +492,243 @@ else:
     st.info("Run the clustering pipeline to generate the MST network.")
 
 
+# ---------- rolling correlation analysis ----------
+
+st.markdown("---")
+st.subheader("Rolling Correlation Analysis")
+
+from src.rolling_correlation import (
+    compute_rolling_market_stats,
+    compute_rolling_pair_correlation,
+    compute_rolling_sector_stats,
+    DEFAULT_EVENTS,
+)
+
+rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
+with rc_col1:
+    rc_window = st.selectbox("Window (days)", [60, 120, 252, 504], index=2, key="rc_win")
+with rc_col2:
+    rc_step = st.selectbox("Step", [1, 5, 21], index=1, key="rc_step",
+                           format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}[x])
+with rc_col3:
+    rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
+with rc_col4:
+    rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
+
+rc_expanding = rc_window_type == "expanding"
+
+tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Analysis", "Sector Breakdown"])
+
+# --- Tab 1: Market correlation over time ---
+with tab_market:
+
+    @st.cache_data
+    def _compute_market_stats(ret_json, window, step, method, expanding):
+        ret = pd.read_json(ret_json, orient="split")
+        return compute_rolling_market_stats(
+            ret, window=window, step=step, method=method, expanding=expanding,
+        )
+
+    with st.spinner("Computing rolling market stats..."):
+        market_stats = _compute_market_stats(
+            returns.to_json(orient="split", date_format="iso"),
+            rc_window, rc_step, rc_method, rc_expanding,
+        )
+
+    if not market_stats.empty:
+        fig_rc = go.Figure()
+
+        # IQR band (q25 - q75)
+        fig_rc.add_trace(go.Scatter(
+            x=market_stats.index, y=market_stats["q75_corr"],
+            mode="lines", line=dict(width=0), showlegend=False,
+        ))
+        fig_rc.add_trace(go.Scatter(
+            x=market_stats.index, y=market_stats["q25_corr"],
+            mode="lines", line=dict(width=0), fill="tonexty",
+            fillcolor="rgba(99,110,250,0.15)", name="IQR (Q25-Q75)",
+        ))
+
+        # Average and median
+        fig_rc.add_trace(go.Scatter(
+            x=market_stats.index, y=market_stats["avg_corr"],
+            mode="lines", name="Mean", line=dict(color="royalblue", width=2),
+        ))
+        fig_rc.add_trace(go.Scatter(
+            x=market_stats.index, y=market_stats["median_corr"],
+            mode="lines", name="Median", line=dict(color="orange", width=1.5, dash="dot"),
+        ))
+
+        # Event markers
+        for ev in DEFAULT_EVENTS:
+            ev_date = pd.Timestamp(ev["date"])
+            if market_stats.index.min() <= ev_date <= market_stats.index.max():
+                fig_rc.add_vline(
+                    x=ev_date, line_dash="dash", line_color="red", opacity=0.6,
+                    annotation_text=ev["label"], annotation_font_size=9,
+                    annotation_position="top left",
+                )
+
+        fig_rc.update_layout(
+            height=450,
+            yaxis_title=f"Pairwise {rc_method.title()} Correlation",
+            xaxis_title="Date",
+            margin=dict(l=0, r=0, t=30, b=0),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        st.plotly_chart(fig_rc, use_container_width=True)
+
+        # Min/max range chart
+        with st.expander("Min / Max range"):
+            fig_mm = go.Figure()
+            fig_mm.add_trace(go.Scatter(
+                x=market_stats.index, y=market_stats["max_corr"],
+                mode="lines", line=dict(width=0), showlegend=False,
+            ))
+            fig_mm.add_trace(go.Scatter(
+                x=market_stats.index, y=market_stats["min_corr"],
+                mode="lines", line=dict(width=0), fill="tonexty",
+                fillcolor="rgba(255,127,14,0.15)", name="Min-Max Range",
+            ))
+            fig_mm.add_trace(go.Scatter(
+                x=market_stats.index, y=market_stats["avg_corr"],
+                mode="lines", name="Mean", line=dict(color="royalblue", width=1.5),
+            ))
+            fig_mm.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0),
+                                 yaxis_title="Correlation")
+            st.plotly_chart(fig_mm, use_container_width=True)
+    else:
+        st.warning("Not enough data for the selected window size.")
+
+# --- Tab 2: Pair rolling correlation ---
+with tab_pair:
+    ticker_list = sorted(returns.columns.tolist())
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        pair_a = st.selectbox("Ticker A", ticker_list, index=0, key="pair_a")
+    with pc2:
+        default_b = min(1, len(ticker_list) - 1)
+        pair_b = st.selectbox("Ticker B", ticker_list, index=default_b, key="pair_b")
+
+    if pair_a and pair_b and pair_a != pair_b:
+        @st.cache_data
+        def _compute_pair(ret_json, a, b, window, method, wtype):
+            ret = pd.read_json(ret_json, orient="split")
+            return compute_rolling_pair_correlation(
+                ret, a, b, window=window, method=method, window_type=wtype,
+            )
+
+        with st.spinner("Computing pair correlation..."):
+            pair_corr = _compute_pair(
+                returns.to_json(orient="split", date_format="iso"),
+                pair_a, pair_b, rc_window, rc_method, rc_window_type,
+            )
+
+        fig_pair = go.Figure()
+        fig_pair.add_trace(go.Scatter(
+            x=pair_corr.index, y=pair_corr.values,
+            mode="lines", name=f"{pair_a} — {pair_b}",
+            line=dict(color="royalblue", width=1.5),
+        ))
+        fig_pair.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
+
+        for ev in DEFAULT_EVENTS:
+            ev_date = pd.Timestamp(ev["date"])
+            if pair_corr.dropna().index.min() <= ev_date <= pair_corr.dropna().index.max():
+                fig_pair.add_vline(
+                    x=ev_date, line_dash="dash", line_color="red", opacity=0.6,
+                    annotation_text=ev["label"], annotation_font_size=9,
+                )
+
+        fig_pair.update_layout(
+            height=400,
+            yaxis_title=f"{rc_method.title()} Correlation",
+            yaxis=dict(range=[-1.05, 1.05]),
+            margin=dict(l=0, r=0, t=10, b=0),
+        )
+        st.plotly_chart(fig_pair, use_container_width=True)
+
+        # Show normalized price spread below
+        if pair_a in prices_window.columns and pair_b in prices_window.columns:
+            with st.expander("Normalized price comparison"):
+                pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
+                pb = prices_window[pair_b] / prices_window[pair_b].iloc[0] * 100
+                fig_spread = go.Figure()
+                fig_spread.add_trace(go.Scatter(x=pa.index, y=pa, name=pair_a, mode="lines"))
+                fig_spread.add_trace(go.Scatter(x=pb.index, y=pb, name=pair_b, mode="lines"))
+                fig_spread.update_layout(height=300, yaxis_title="Normalized (100)",
+                                         margin=dict(l=0, r=0, t=10, b=0))
+                st.plotly_chart(fig_spread, use_container_width=True)
+    elif pair_a == pair_b:
+        st.info("Select two different tickers.")
+
+# --- Tab 3: Sector breakdown ---
+with tab_sector:
+    cluster_df_for_sectors = load_cluster_assignments()
+    if not cluster_df_for_sectors.empty and "sector" in cluster_df_for_sectors.columns:
+        sec_map = dict(zip(cluster_df_for_sectors["ticker"], cluster_df_for_sectors["sector"]))
+
+        @st.cache_data
+        def _compute_sector(ret_json, sec_map_items, window, step, method):
+            ret = pd.read_json(ret_json, orient="split")
+            return compute_rolling_sector_stats(
+                ret, dict(sec_map_items), window=window, step=step, method=method,
+            )
+
+        with st.spinner("Computing sector stats..."):
+            sector_stats = _compute_sector(
+                returns.to_json(orient="split", date_format="iso"),
+                tuple(sec_map.items()), rc_window, rc_step, rc_method,
+            )
+
+        if not sector_stats.empty:
+            # Intra vs inter
+            fig_sec = go.Figure()
+            fig_sec.add_trace(go.Scatter(
+                x=sector_stats.index, y=sector_stats["intra_sector_avg"],
+                mode="lines", name="Intra-Sector Avg",
+                line=dict(color="crimson", width=2),
+            ))
+            fig_sec.add_trace(go.Scatter(
+                x=sector_stats.index, y=sector_stats["inter_sector_avg"],
+                mode="lines", name="Inter-Sector Avg",
+                line=dict(color="steelblue", width=2),
+            ))
+
+            for ev in DEFAULT_EVENTS:
+                ev_date = pd.Timestamp(ev["date"])
+                if sector_stats.index.min() <= ev_date <= sector_stats.index.max():
+                    fig_sec.add_vline(x=ev_date, line_dash="dash", line_color="red", opacity=0.6,
+                                      annotation_text=ev["label"], annotation_font_size=9)
+
+            fig_sec.update_layout(
+                height=400,
+                yaxis_title="Average Correlation",
+                margin=dict(l=0, r=0, t=30, b=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            )
+            st.plotly_chart(fig_sec, use_container_width=True)
+
+            # Per-sector breakdown
+            intra_cols = [c for c in sector_stats.columns if c.startswith("intra_") and c not in ("intra_sector_avg",)]
+            if intra_cols:
+                with st.expander("Per-sector intra-correlation"):
+                    fig_per = go.Figure()
+                    for col in intra_cols:
+                        sector_name = col.replace("intra_", "")
+                        fig_per.add_trace(go.Scatter(
+                            x=sector_stats.index, y=sector_stats[col],
+                            mode="lines", name=sector_name,
+                        ))
+                    fig_per.update_layout(height=400, yaxis_title="Intra-Sector Correlation",
+                                          margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_per, use_container_width=True)
+        else:
+            st.warning("Not enough data for sector stats with this window.")
+    else:
+        st.info("Run the clustering pipeline to enable sector breakdown.")
+
+
 # ---------- top/bottom pairs & corr distribution ----------
 
 st.markdown("---")

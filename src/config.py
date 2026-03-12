@@ -52,6 +52,14 @@ class ValidationConfig:
 
 
 @dataclass
+class RollingConfig:
+    windows: list = field(default_factory=lambda: [60, 120, 252])
+    step: int = 5
+    method: str = "pearson"
+    min_periods_ratio: float = 0.6
+
+
+@dataclass
 class PipelineConfig:
     market: MarketConfig
     data: DataConfig
@@ -60,6 +68,7 @@ class PipelineConfig:
     validation: ValidationConfig
     universe: pd.DataFrame = field(repr=False)
     universe_metadata: dict = field(default_factory=dict)
+    rolling: RollingConfig = field(default_factory=RollingConfig)
 
     @property
     def tickers(self) -> list[str]:
@@ -123,6 +132,8 @@ def load_config(
     universe_path = PROJECT_ROOT / raw["market"]["universe_file"]
     universe_df, universe_meta = _load_universe(universe_path)
 
+    rolling_raw = raw.get("rolling", {})
+
     config = PipelineConfig(
         market=MarketConfig(**raw["market"]),
         data=DataConfig(**raw["data"]),
@@ -131,6 +142,7 @@ def load_config(
         validation=ValidationConfig(**raw["validation"]),
         universe=universe_df,
         universe_metadata=universe_meta,
+        rolling=RollingConfig(**rolling_raw),
     )
 
     return config
