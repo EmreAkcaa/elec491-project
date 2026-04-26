@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//mnt/c/Users/Rutkay/Desktop/ELEC491/**)",
+      "Bash(pip install:*)",
+      "Bash(=3.2)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -m pytest tests/test_clustering.py -v 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && where uv 2>&1 && uv run python -m pytest tests/test_clustering.py -v 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && pip install \"numpy<2\" 2>&1 | tail -5)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && pip install \"scipy>=1.13\" 2>&1 | tail -5)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -m pytest tests/ -v 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -c \"\nimport logging\nlogging.basicConfig\\(level=logging.INFO, format='%\\(asctime\\)s [%\\(levelname\\)s] %\\(name\\)s: %\\(message\\)s'\\)\nfrom src.config import load_config\nfrom src.clustering import run_clustering\nconfig = load_config\\(\\)\nrun_clustering\\(config\\)\n\" 2>&1)",
+      "Bash(ls -la \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\\\\data\\\\results\"/*.csv \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\\\\data\\\\results\"/*.json \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\\\\data\\\\results\"/*.npy 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -m pytest tests/ -v --tb=short 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -m pytest tests/test_rolling_correlation.py -v 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -c \"\nimport sys\nsys.path.insert\\(0, '.'\\)\nfrom src.rolling_correlation import compute_rolling_market_stats, DEFAULT_EVENTS\nprint\\('Rolling import OK'\\)\nimport networkx as nx\nprint\\(f'NetworkX {nx.__version__} OK'\\)\n\" 2>&1)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/dashboard.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/dashboard.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -c \"import ast; ast.parse\\(open\\('app/dashboard.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -c \"\nimport ast\nfor f in ['app/utils.py', 'app/dashboard.py', 'app/pages/1_Pair_Analysis.py']:\n    ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\)\n    print\\(f'OK: {f}'\\)\n\")",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -c \"\nimport ast\nfor f in ['app/dashboard.py', 'app/pages/1_Pair_Analysis.py']:\n    ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\)\n    print\\('OK:', f\\)\n\")",
+      "Bash(cd \"C:\\\\Users\\\\Rutkay\\\\Desktop\\\\ELEC491\\\\Repo_2\" && python -c \"\nimport ast\nfor f in ['app/dashboard.py', 'app/pair_analysis.py']:\n    ast.parse\\(open\\(f, encoding='utf-8'\\).read\\(\\)\\)\n    print\\('OK:', f\\)\n\")",
+      "Bash(python:*)",
+      "Bash(cd:*)",
+      "Bash(where uv:*)"
+    ]
+  }
+}

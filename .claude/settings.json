@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls c:/Users/Rutkay/Desktop/ELEC491/Repo_2/data/results/rolling_*)",
+      "Bash(streamlit run:*)",
+      "Bash(taskkill //F //IM streamlit.exe)",
+      "Bash(taskkill //F //IM \"streamlit\")",
+      "Bash(mkdir -p ~/.streamlit)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8501)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(python3)",
+      "Bash(pip show:*)",
+      "Bash(ls .venv/Scripts/pytest*)",
+      "Bash(ls venv/Scripts/pytest*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "WebSearch"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Rutkay\\.claude"
+    ]
+  }
+}

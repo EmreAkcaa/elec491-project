@@ -1,74 +1,74 @@
 ticker,cluster_id,sector
 AEFES,5,Beverages
-PAPIL,27,Defense
-CCOLA,28,Beverages
-BTCIM,26,Building Materials
-TKFEN,6,Construction
-SASA,15,Chemicals
-PGSUS,5,Airlines
-OYAKC,5,Building Materials
-TURSG,21,Insurance
+AGHOL,5,Conglomerates
+AKSA,13,Chemicals
 EREGL,5,Steel
 FROTO,5,Automotive
+BTCIM,26,Building Materials
+CCOLA,28,Beverages
+PAPIL,27,Defense
+TURSG,21,Insurance
+TKFEN,6,Construction
+OYAKC,5,Building Materials
+PGSUS,5,Airlines
+SASA,15,Chemicals
 MAVI,5,Retail
-AKSA,13,Chemicals
-AGHOL,5,Conglomerates
-ODAS,5,Energy
-SOKM,5,Retail
-MPARK,20,Healthcare
-AGESA,1,Insurance
-PETKM,5,Chemicals
-SAHOL,5,Conglomerates
-LOGO,18,Technology
-KRDMD,5,Steel
-SISE,5,Industrials
-SKBNK,5,Banking
-THYAO,5,Airlines
-TAVHL,5,Transportation
-INDES,4,Technology
-ZOREN,5,Energy
-YKBNK,5,Banking
-VESTL,5,Consumer Durables
-VESBE,5,Consumer Durables
-VAKBN,5,Banking
-ULKER,5,Food
-DGATE,4,Technology
-TCELL,5,Telecommunications
-TUPRS,5,Energy
-TTRAK,5,Industrials
-TTKOM,5,Telecommunications
-TOASO,5,Automotive
-TKNSA,16,Retail
-ISGYO,9,REIT
-KCHOL,5,Conglomerates
-MGROS,5,Retail
-ISCTR,5,Banking
-DOAS,12,Automotive
-CEMTS,5,Steel
-BUCIM,5,Building Materials
 BRYAT,3,Conglomerates
-BRSAN,3,Steel
-BRISA,14,Automotive
-BERA,23,Conglomerates
-AYGAZ,5,Energy
+AKFGY,22,REIT
+AGESA,1,Insurance
+AKBNK,5,Banking
 ASUZU,19,Automotive
-ASELS,5,Defense
-ARCLK,5,Consumer Durables
+AKSEN,5,Energy
 ANHYT,2,Insurance
 ALARK,8,Conglomerates
-AKSEN,5,Energy
-AKFGY,22,REIT
-AKBNK,5,Banking
-CIMSA,5,Building Materials
-BIMAS,5,Retail
-HEKTS,17,Chemicals
-GARAN,5,Banking
-DOHOL,5,Conglomerates
-ECILC,24,Pharmaceuticals
-EGEEN,10,Automotive
-EKGYO,5,REIT
-ENJSA,5,Energy
 ENKAI,7,Construction
-HALKB,5,Banking
+EGEEN,10,Automotive
+BRSAN,3,Steel
+CEMTS,5,Steel
+ECILC,24,Pharmaceuticals
+DOHOL,5,Conglomerates
+CIMSA,5,Building Materials
+DOAS,12,Automotive
+GARAN,5,Banking
+BERA,23,Conglomerates
+BRISA,14,Automotive
+BIMAS,5,Retail
+BUCIM,5,Building Materials
+ASELS,5,Defense
+AYGAZ,5,Energy
+ARCLK,5,Consumer Durables
+YKBNK,5,Banking
+VAKBN,5,Banking
+ULKER,5,Food
+VESTL,5,Consumer Durables
+VESBE,5,Consumer Durables
+ENJSA,5,Energy
+EKGYO,5,REIT
 GUBRF,25,Chemicals
+MPARK,20,Healthcare
+ODAS,5,Energy
+MGROS,5,Retail
+LOGO,18,Technology
+ISGYO,9,REIT
+KCHOL,5,Conglomerates
+HEKTS,17,Chemicals
+HALKB,5,Banking
+THYAO,5,Airlines
+SOKM,5,Retail
+TCELL,5,Telecommunications
+TAVHL,5,Transportation
+SISE,5,Industrials
+SAHOL,5,Conglomerates
+SKBNK,5,Banking
+PETKM,5,Chemicals
+TKNSA,16,Retail
+INDES,4,Technology
+DGATE,4,Technology
+TUPRS,5,Energy
+TOASO,5,Automotive
+TTRAK,5,Industrials
+KRDMD,5,Steel
+ISCTR,5,Banking
+TTKOM,5,Telecommunications
+ZOREN,5,Energy
 OTKAR,11,Defense

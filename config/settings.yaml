@@ -30,3 +30,13 @@ rolling:
   step: 5
   method: "pearson"
   min_periods_ratio: 0.6
+
+dislocation:
+  zscore_window: 60
+  entry_zscore: 2.0
+  exit_zscore: 0.5
+  min_half_life: 5
+  max_half_life: 252
+  top_n_candidates: 20
+  lookback_window: 252
+  min_correlation: 0.5

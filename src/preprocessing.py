@@ -112,7 +112,7 @@ def flag_anomalies(
     Returns a DataFrame with columns: date, ticker, return_value.
     """
     mask = returns.abs() > threshold
-    anomalies = returns.where(mask).stack().reset_index()
+    anomalies = returns.where(mask).stack().dropna().reset_index()
     anomalies.columns = ["date", "ticker", "return_value"]
     anomalies = anomalies.sort_values("return_value", key=abs, ascending=False)
 

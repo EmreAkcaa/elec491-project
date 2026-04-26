@@ -15,6 +15,279 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from chart_themes import (
+    ChartTheme,
+    get_active_theme,
+    theme_to_layout,
+    theme_to_colors,
+)
+
+# ---------------------------------------------------------------------------
+# Theme & Style Constants
+# ---------------------------------------------------------------------------
+
+# Static fallback — used only at import time if nothing else is available.
+# All chart code should call get_colors() instead.
+COLORS = {
+    "primary": "#4361EE",
+    "secondary": "#E63946",
+    "tertiary": "#2EC4B6",
+    "muted": "#8D99AE",
+    "positive": "rgba(67,97,238,0.12)",
+    "negative": "rgba(230,57,70,0.12)",
+    "band": "rgba(141,153,174,0.12)",
+    "bg": "#FAFBFC",
+}
+
+SECTOR_PALETTE = [
+    "#4361EE", "#E63946", "#2EC4B6", "#FF9F1C", "#6A0572",
+    "#1B998B", "#E71D36", "#2B2D42", "#8338EC", "#FB5607",
+    "#3A86A8", "#FFBE0B", "#06D6A0", "#118AB2", "#073B4C",
+    "#EF476F", "#FFD166", "#06D6A0", "#118AB2", "#5E60CE",
+    "#48BFE3", "#56CFE1",
+]
+
+# Legacy constant kept for any third-party code that reads it directly.
+CHART_LAYOUT = dict(
+    font=dict(family="Inter, -apple-system, sans-serif", size=12, color="#2B2D42"),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    margin=dict(l=0, r=0, t=10, b=0),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+    xaxis=dict(gridcolor="rgba(141,153,174,0.15)", zeroline=False),
+    yaxis=dict(gridcolor="rgba(141,153,174,0.15)", zeroline=False),
+)
+
+
+def get_colors() -> dict[str, str]:
+    """Return color palette reflecting the active theme."""
+    return theme_to_colors(get_active_theme())
+
+
+def apply_chart_style(fig, height: int = 420, title: str = "", **overrides):
+    """Apply the active theme layout to any plotly figure."""
+    theme = get_active_theme()
+    layout = {**theme_to_layout(theme), "height": height, **overrides}
+    # Handle title — can be a string (from title param) or a dict (from overrides)
+    title_val = title or layout.get("title")
+    if title_val:
+        if isinstance(title_val, str):
+            layout["title"] = dict(
+                text=title_val,
+                font=dict(size=theme.title_font_size, family=theme.font_family),
+                x=0.01, xanchor="left", yanchor="top",
+            )
+        # else: title is already a dict from overrides, keep as-is
+        layout["margin"] = dict(layout.get("margin", {}))
+        layout["margin"]["t"] = max(layout["margin"].get("t", 10), 40)
+    fig.update_layout(**layout)
+    return fig
+
+
+def render_chart(
+    fig: go.Figure,
+    chart_id: str,
+    filename_base: str = "chart",
+    title_key: str = "",
+    default_title: str = "",
+    use_container_width: bool = True,
+) -> None:
+    """Render a Plotly figure with configured modebar, optional title, and export popover."""
+    from chart_export import render_export_popover, get_plotly_config
+
+    # Per-chart title input — only updates the title, does NOT re-apply full theme
+    if title_key:
+        user_title = st.text_input(
+            "Chart title",
+            value=st.session_state.get(f"_title_{title_key}", default_title),
+            key=f"_title_{title_key}",
+            label_visibility="collapsed",
+            placeholder="Add chart title...",
+        )
+        if user_title.strip():
+            theme = get_active_theme()
+            cur_margin = dict(fig.layout.margin.to_plotly_json())
+            cur_margin["t"] = max(cur_margin.get("t", 10), 40)
+            fig.update_layout(
+                title=dict(
+                    text=user_title.strip(),
+                    font=dict(size=theme.title_font_size, family=theme.font_family),
+                    x=0.01, xanchor="left", yanchor="top",
+                ),
+                margin=cur_margin,
+            )
+
+    config = get_plotly_config(chart_id)
+    st.plotly_chart(fig, use_container_width=use_container_width, config=config)
+    render_export_popover(fig, chart_id, filename_base)
+
+
+def inject_custom_css():
+    """Inject global CSS for consistent look & feel."""
+    st.markdown("""
+    <style>
+    /* ── Sidebar styling (chart settings panel) ──────────────── */
+    [data-testid="stSidebarNav"] {
+        display: none !important;
+    }
+    /* Ensure sidebar collapsed control (re-open arrow) is always visible */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: flex !important;
+        z-index: 999 !important;
+    }
+
+    /* ── Kill Streamlit top padding & deploy bar ─────────────── */
+    [data-testid="stAppViewContainer"] > .main {
+        padding-top: 0 !important;
+    }
+    .stMainBlockContainer {
+        padding-top: 1rem !important;
+    }
+    /* Hide deploy button and toolbar, keep sidebar toggle */
+    [data-testid="stStatusWidget"] {
+        display: none !important;
+    }
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        backdrop-filter: none !important;
+    }
+
+    /* ── Plotly modebar — subtle, reveal on hover ────────────── */
+    .js-plotly-plot .modebar {
+        opacity: 0.15 !important;
+        transition: opacity 0.2s ease !important;
+    }
+    .js-plotly-plot:hover .modebar {
+        opacity: 0.85 !important;
+    }
+    .js-plotly-plot .modebar-btn {
+        font-size: 16px !important;
+    }
+
+    /* ── Metric cards ────────────────────────────────────────── */
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, #f8f9fc 0%, #eef1f6 100%);
+        border: 1px solid #e2e6ee;
+        border-radius: 8px;
+        padding: 12px 16px 8px 16px;
+        box-shadow: 0 1px 3px rgba(43,45,66,0.06);
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #2B2D42;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #6c757d;
+    }
+
+    /* ── Segmented control — dark nav bar ────────────────────── */
+    div[data-testid="stSegmentedControl"] {
+        background: #1a1c2e;
+        border-radius: 8px;
+        padding: 4px;
+    }
+    div[data-testid="stSegmentedControl"] button {
+        color: #8D99AE !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+        font-size: 0.92rem !important;
+        padding: 8px 28px !important;
+        border: none !important;
+        transition: all 0.15s ease;
+    }
+    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+        background: #4361EE !important;
+        color: #ffffff !important;
+    }
+    div[data-testid="stSegmentedControl"] button:hover:not([aria-checked="true"]) {
+        color: #c8cdd6 !important;
+        background: rgba(67,97,238,0.08) !important;
+    }
+
+    /* ── Sub-tabs — clean underline style ────────────────────── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;
+        border-bottom: 2px solid #e9ecef;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600;
+        font-size: 0.88rem;
+        color: #8D99AE;
+        border-bottom: 2px solid transparent;
+        padding: 10px 20px;
+        margin-bottom: -2px;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: #4361EE;
+        border-bottom-color: #4361EE;
+    }
+    .stTabs [data-baseweb="tab-highlight"] {
+        background-color: #4361EE !important;
+    }
+
+    /* ── Popover panels ──────────────────────────────────────── */
+    [data-testid="stPopoverBody"] {
+        border: 1px solid #e2e6ee;
+        border-radius: 10px;
+        box-shadow: 0 4px 16px rgba(43,45,66,0.10);
+        padding: 4px;
+    }
+
+    /* ── Section dividers ────────────────────────────────────── */
+    .stMarkdown hr {
+        border: none;
+        border-top: 1px solid #e9ecef;
+        margin: 1.2rem 0;
+    }
+
+    /* ── Bordered containers — card appearance ───────────────── */
+    [data-testid="stVerticalBlock"] > div[data-testid="stExpander"],
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 10px;
+    }
+
+    /* ── Dataframe styling ───────────────────────────────────── */
+    .stDataFrame {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    /* ── Caption text ────────────────────────────────────────── */
+    .stCaption {
+        line-height: 1.5;
+    }
+
+    /* ── General polish ──────────────────────────────────────── */
+    .stSelectbox label, .stDateInput label, .stSlider label {
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: #555;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def page_header(title: str, subtitle: str, icon: str = ""):
+    """Render a styled page header with optional icon."""
+    if icon:
+        st.markdown(f"# {icon} {title}")
+    else:
+        st.markdown(f"# {title}")
+    st.caption(subtitle)
+
+
+def section_header(title: str, description: str = ""):
+    """Render a consistent section header."""
+    st.markdown("---")
+    st.subheader(title)
+    if description:
+        st.caption(description)
+
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -140,6 +413,116 @@ def load_mst_metrics() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+@st.cache_data
+def load_dislocation_candidates() -> pd.DataFrame:
+    path = DATA_RESULTS / "dislocation_candidates.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
+# EEE Analysis loaders
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def load_eigenvalue_spectrum() -> pd.DataFrame:
+    path = DATA_RESULTS / "eigenvalue_spectrum.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_denoised_corr() -> pd.DataFrame:
+    path = DATA_RESULTS / "denoised_corr.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_denoised_mst_edges() -> pd.DataFrame:
+    path = DATA_RESULTS / "denoised_mst_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_partial_corr() -> pd.DataFrame:
+    path = DATA_RESULTS / "partial_corr.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_partial_corr_edges() -> pd.DataFrame:
+    path = DATA_RESULTS / "partial_corr_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_glasso_metadata() -> dict:
+    path = DATA_RESULTS / "glasso_metadata.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+@st.cache_data
+def load_wavelet_metadata() -> dict:
+    path = DATA_RESULTS / "wavelet_metadata.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+@st.cache_data
+def load_wavelet_mst_edges(scale: int) -> pd.DataFrame:
+    path = DATA_RESULTS / f"wavelet_mst_edges_scale{scale}.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_wavelet_corr(scale: int) -> pd.DataFrame:
+    path = DATA_RESULTS / f"wavelet_corr_scale{scale}.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_te_edges() -> pd.DataFrame:
+    path = DATA_RESULTS / "te_network_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_te_node_roles() -> pd.DataFrame:
+    path = DATA_RESULTS / "te_node_roles.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_te_matrix() -> pd.DataFrame:
+    path = DATA_RESULTS / "transfer_entropy_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # Event markers
 # ---------------------------------------------------------------------------
@@ -205,7 +588,7 @@ def event_marker_manager_ui(
     min_date,
     max_date,
 ) -> tuple[bool, list]:
-    """Render an 'Event Markers' expander scoped to key_prefix.
+    """Render an 'Event Markers' popover scoped to key_prefix.
 
     Returns (show_defaults, custom_events) from session state.
     Each page/section gets its own independent event set via key_prefix.
@@ -218,7 +601,7 @@ def event_marker_manager_ui(
     if _key_evs not in st.session_state:
         st.session_state[_key_evs] = []
 
-    with st.expander("Event Markers", expanded=False):
+    with st.popover("Event Markers", icon=":material/flag:"):
         st.session_state[_key_show] = st.checkbox(
             "Show default macro events (COVID-19, Russia-Ukraine War, Turkey Earthquakes)",
             value=st.session_state[_key_show],

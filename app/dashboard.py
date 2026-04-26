@@ -1,5 +1,6 @@
-"""StoNeCoAl — BIST-100 Correlation Analysis dashboard (Overview page)."""
+"""StoNeCoAl — BIST-100 Correlation Analysis dashboard."""
 
+import io
 import sys
 from pathlib import Path
 
@@ -18,783 +19,1007 @@ try:
 except ImportError:
     HAS_NETWORKX = False
 
-_APP_DIR      = Path(__file__).resolve().parent   # app/
+_APP_DIR      = Path(__file__).resolve().parent
 _PROJECT_ROOT = _APP_DIR.parent
 for _p in (str(_PROJECT_ROOT), str(_APP_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# All loaders and shared utilities live in utils.py (single source of truth)
+from src.rolling_correlation import (  # noqa: E402
+    compute_rolling_market_stats,
+    compute_rolling_pair_correlation,
+    compute_rolling_sector_stats,
+    compute_window_correlation,
+)
+
 from utils import (  # noqa: E402
     PROJECT_ROOT, DATA_PROCESSED, DATA_RESULTS, DATA_RAW,
     load_adj_close, load_log_returns, load_summary_stats, load_batch_corr,
     load_coverage, load_top_bottom, load_metadata, load_fetch_metadata,
     load_xu100, load_linkage, load_dendrogram_order, load_cluster_assignments,
-    load_mst_edges, load_mst_metrics,
+    load_mst_edges, load_mst_metrics, load_dislocation_candidates,
     draw_event_markers, event_marker_manager_ui,
+    get_colors, SECTOR_PALETTE, CHART_LAYOUT, apply_chart_style, inject_custom_css,
+    section_header, render_chart,
 )
+from chart_themes import render_theme_sidebar  # noqa: E402
 
-st.set_page_config(page_title="StoNeCoAl — BIST-100", layout="wide")
-st.title("StoNeCoAl — BIST-100 Correlation Analysis")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Cached computation helpers (module-level to avoid Streamlit re-registration)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data
+def _compute_corr(returns_json: str, min_periods: int, method: str):
+    _ret = pd.read_json(io.StringIO(returns_json), orient="split")
+    return _ret.corr(method=method, min_periods=min_periods)
 
 
 @st.cache_data
-def compute_corr_for_window(returns_json: str, min_periods: int):
-    """Recompute correlation for a date-filtered window."""
-    _ret = pd.read_json(returns_json, orient="split")
-    return _ret.corr(method="pearson", min_periods=min_periods)
+def _pit_corr(ret_json, end_date_str, window, method):
+    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+    return compute_window_correlation(
+        ret, pd.Timestamp(end_date_str), window=window, method=method,
+    )
 
 
-# ---------- sidebar navigation ----------
+@st.cache_data
+def _mst_layout(_edges_json):
+    _G = nx.Graph()
+    for _, r in pd.read_json(io.StringIO(_edges_json), orient="split").iterrows():
+        _G.add_edge(r["source"], r["target"], weight=r["distance"])
+    return nx.kamada_kawai_layout(_G, weight="weight")
 
-st.sidebar.markdown("## Navigate")
-_nav = st.sidebar.radio(
-    "Go to",
-    ["📊 Market Overview", "🔗 Pair Analysis"],
-    key="nav_selection",
+
+@st.cache_data
+def _compute_market_stats(ret_json, window, step, method, expanding):
+    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+    return compute_rolling_market_stats(
+        ret, window=window, step=step, method=method, expanding=expanding,
+    )
+
+
+@st.cache_data
+def _compute_pair(ret_json, a, b, window, method, wtype):
+    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+    return compute_rolling_pair_correlation(
+        ret, a, b, window=window, method=method, window_type=wtype,
+    )
+
+
+@st.cache_data
+def _compute_sector(ret_json, sec_map_items, window, step, method):
+    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+    return compute_rolling_sector_stats(
+        ret, dict(sec_map_items), window=window, step=step, method=method,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Page config & global styling
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.set_page_config(
+    page_title="StoNeCoAl — BIST-100",
+    page_icon="<svg xmlns='http://www.w3.org/2000/svg'/>",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+inject_custom_css()
+
+with st.sidebar:
+    render_theme_sidebar()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Top Header & Navigation
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.markdown(
+    "<div style='display:flex; align-items:center; gap:12px; padding:0; margin:0;'>"
+    "<span style='font-size:1.3rem; font-weight:800; letter-spacing:-0.02em; "
+    "color:#2B2D42;'>StoNeCoAl</span>"
+    "<span style='font-size:0.72rem; color:#8D99AE; letter-spacing:0.06em;'>"
+    "BIST-100 NETWORK ANALYSIS</span></div>",
+    unsafe_allow_html=True,
+)
+
+# Handle deferred navigation from cross-page jump buttons
+if st.session_state.pop("_goto_pair_analysis", False):
+    st.session_state["nav_page"] = "Pair Analysis"
+
+_nav = st.segmented_control(
+    "Navigate",
+    ["Market Overview", "Pair Analysis"],
+    key="nav_page",
+    default="Market Overview",
     label_visibility="collapsed",
 )
-st.sidebar.markdown("---")
 
-# ---------- pair analysis view ----------
-if _nav == "🔗 Pair Analysis":
-    adj_close = load_adj_close()
-    full_returns = load_log_returns()
+# ══════════════════════════════════════════════════════════════════════════════
+# Shared Data Loading
+# ══════════════════════════════════════════════════════════════════════════════
+
+adj_close = load_adj_close()
+full_returns = load_log_returns()
+min_date = adj_close.index.min().date()
+max_date = adj_close.index.max().date()
+
+# ── Pair Analysis route ──────────────────────────────────────────────────────
+if _nav == "Pair Analysis":
     coverage_df = load_coverage()
-    min_date = adj_close.index.min().date()
-    max_date = adj_close.index.max().date()
     from pair_analysis import render as _render_pair
     _render_pair(adj_close, full_returns, coverage_df, min_date, max_date)
     st.stop()
 
-st.sidebar.header("Settings")
+# ══════════════════════════════════════════════════════════════════════════════
+# Market Overview — Inline Settings & Key Metrics
+# ══════════════════════════════════════════════════════════════════════════════
 
-adj_close = load_adj_close()
-full_returns = load_log_returns()
+pipe_meta = load_metadata()
+market_summary = pipe_meta.get("market_summary", {})
 
-min_date = adj_close.index.min().date()
-max_date = adj_close.index.max().date()
+_settings_col, m1, m2, m3, m4, m5 = st.columns([1, 1, 1, 1, 1, 1.5])
 
-date_range = st.sidebar.date_input(
-    "Date range",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date,
-)
+with _settings_col:
+    with st.popover("Settings", icon=":material/settings:", use_container_width=True):
+        date_range = st.date_input(
+            "Date range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+        )
+        with st.popover("Data Freshness", icon=":material/info:"):
+            fetch_meta = load_fetch_metadata()
+            if fetch_meta:
+                st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
+                st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
+                st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
+                if fetch_meta.get("failures"):
+                    st.write(f"**Failures:** {len(fetch_meta['failures'])}")
+            val_path = DATA_PROCESSED / "validation_report.csv"
+            if val_path.exists():
+                val_df = pd.read_csv(val_path)
+                n_pass = (val_df["status"] == "PASS").sum()
+                st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
 
 if len(date_range) == 2:
     start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
 else:
     start_dt, end_dt = pd.Timestamp(min_date), pd.Timestamp(max_date)
 
-# Filter data to selected window
 returns = full_returns.loc[start_dt:end_dt]
 prices_window = adj_close.loc[start_dt:end_dt]
-
-# Dynamic min_periods for dashboard
 window_length = len(returns)
 dynamic_min_periods = max(30, int(window_length * 0.6))
 
-# ---------- data freshness ----------
+m1.metric("Tickers", f"{returns.shape[1]}")
+m2.metric("Trading Days", f"{returns.shape[0]:,}")
+m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
+m4.metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
+m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
 
-with st.sidebar.expander("Data Freshness"):
-    fetch_meta = load_fetch_metadata()
-    pipe_meta = load_metadata()
-    if fetch_meta:
-        st.write(f"**Fetch timestamp:** {fetch_meta.get('timestamp', 'N/A')}")
-        st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
-        st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
-        if fetch_meta.get("failures"):
-            st.write(f"**Failures:** {len(fetch_meta['failures'])}")
+# Pre-serialize returns once for all cached computations
+_returns_json = returns.to_json(orient="split", date_format="iso")
 
-    # Validation status
-    val_path = DATA_PROCESSED / "validation_report.csv"
-    if val_path.exists():
-        val_df = pd.read_csv(val_path)
-        n_pass = (val_df["status"] == "PASS").sum()
-        n_total = len(val_df)
-        st.write(f"**Validation:** {n_pass}/{n_total} passed")
+# ══════════════════════════════════════════════════════════════════════════════
+# Market Overview — Sub-Tab Layout
+# ══════════════════════════════════════════════════════════════════════════════
+
+tab_data, tab_corr, tab_cluster, tab_rolling, tab_pairs, tab_eee = st.tabs([
+    "Data & Stats", "Correlation", "Clustering & Network",
+    "Rolling Analysis", "Pairs & Dislocations", "EEE Analysis",
+])
 
 
-# ---------- pipeline info ----------
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 1 — Data & Stats
+# ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("---")
-pipe_meta = load_metadata()
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Tickers (after filter)", f"{returns.shape[1]}/{pipe_meta.get('universe_count', '?')}")
-with col2:
-    st.metric("Trading Days (window)", f"{returns.shape[0]:,}")
-with col3:
-    st.metric("Last Run", pipe_meta.get("run_timestamp", "N/A")[:19] if pipe_meta.get("run_timestamp") else "N/A")
+with tab_data:
 
+    # ── Section 1: Coverage & Normalized Prices ─────────────────────────────
+    with st.container(border=True):
+        section_header(
+            "Data Coverage & Price Performance",
+            "Left: per-ticker data availability (90% threshold). "
+            "Right: all prices rebased to 100 — the bold black line is XU100.",
+        )
 
-# ---------- data coverage ----------
+        col_left, col_right = st.columns(2)
 
-st.markdown("---")
-col_left, col_right = st.columns(2)
-
-with col_left:
-    st.subheader("Data Coverage")
-    st.caption(
-        "Each bar shows the percentage of trading days with available price data for a given ticker. "
-        "Stocks below the **90% threshold** (red dashed line) were excluded from the analysis to ensure "
-        "statistical reliability. Longer bars indicate more complete price histories."
-    )
-    coverage = load_coverage()
-    fig_cov = px.bar(
-        coverage.sort_values("coverage_pct"),
-        x="coverage_pct",
-        y="ticker",
-        orientation="h",
-        labels={"coverage_pct": "Coverage %", "ticker": ""},
-        height=max(400, len(coverage) * 8),
-    )
-    fig_cov.add_vline(x=0.90, line_dash="dash", line_color="red", annotation_text="90% threshold")
-    fig_cov.update_layout(margin=dict(l=0, r=0, t=0, b=0), yaxis=dict(dtick=1, tickfont=dict(size=7)))
-    st.plotly_chart(fig_cov, use_container_width=True)
-
-with col_right:
-    st.subheader("Normalized Prices")
-    st.caption(
-        "All stock prices are rebased to **100** at the start of the selected window, allowing direct "
-        "comparison of relative performance. The bold **black line** is the XU100 (BIST-100 index). "
-        "Stocks above 100 outperformed their starting price; stocks below 100 lost value. "
-        "Convergence/divergence of lines hints at correlation or decoupling among stocks."
-    )
-    # Normalize to 100 at start
-    norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
-    # Add XU100 if available
-    xu100 = load_xu100()
-    if not xu100.empty:
-        xu100_window = xu100.loc[start_dt:end_dt]
-        if not xu100_window.empty:
-            norm_xu100 = xu100_window / xu100_window.iloc[0] * 100
-            norm_prices["XU100"] = norm_xu100
-
-    fig_prices = go.Figure()
-    for col in norm_prices.columns:
-        line_width = 2.5 if col == "XU100" else 0.5
-        opacity = 1.0 if col == "XU100" else 0.4
-        color = "black" if col == "XU100" else None
-        fig_prices.add_trace(
-            go.Scatter(
-                x=norm_prices.index,
-                y=norm_prices[col],
-                name=col,
-                mode="lines",
-                line=dict(width=line_width, color=color),
-                opacity=opacity,
+        with col_left:
+            coverage = load_coverage()
+            fig_cov = px.bar(
+                coverage.sort_values("coverage_pct"),
+                x="coverage_pct", y="ticker", orientation="h",
+                labels={"coverage_pct": "Coverage %", "ticker": ""},
+                color="coverage_pct",
+                color_continuous_scale=["#E63946", "#FF9F1C", "#2EC4B6"],
+                range_color=[0.7, 1.0],
             )
+            fig_cov.add_vline(x=0.90, line_dash="dash", line_color="#E63946",
+                              annotation_text="90% threshold", annotation_font_size=10)
+            apply_chart_style(fig_cov, height=max(400, len(coverage) * 8),
+                              coloraxis_showscale=False,
+                              margin=dict(l=60, r=10, t=10, b=30),
+                              yaxis=dict(dtick=1, tickfont=dict(size=7)))
+            render_chart(fig_cov, chart_id="mo_coverage", filename_base="data_coverage",
+                         title_key="mo_coverage", default_title="Data Coverage by Ticker")
+
+        with col_right:
+            norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
+            xu100 = load_xu100()
+            if not xu100.empty:
+                xu100_window = xu100.loc[start_dt:end_dt]
+                if not xu100_window.empty:
+                    norm_prices["XU100"] = xu100_window / xu100_window.iloc[0] * 100
+
+            fig_prices = go.Figure()
+            for col in norm_prices.columns:
+                is_index = col == "XU100"
+                fig_prices.add_trace(go.Scatter(
+                    x=norm_prices.index, y=norm_prices[col], name=col,
+                    mode="lines",
+                    line=dict(
+                        width=3.0 if is_index else 0.6,
+                        color="#2B2D42" if is_index else get_colors()["muted"],
+                    ),
+                    opacity=1.0 if is_index else 0.35,
+                    hovertemplate=f"{col}: %{{y:.1f}}<extra></extra>" if is_index else None,
+                    hoverinfo="skip" if not is_index else None,
+                ))
+            apply_chart_style(fig_prices, height=max(400, len(coverage) * 8),
+                              showlegend=False, yaxis_title="Normalized Price (base=100)")
+            render_chart(fig_prices, chart_id="mo_prices", filename_base="normalized_prices",
+                         title_key="mo_prices", default_title="Normalized Price Performance")
+
+    # ── Section 2: Descriptive Stats & Return Distribution ──────────────────
+    with st.container(border=True):
+        section_header(
+            "Descriptive Statistics & Returns",
+            "Left: per-stock risk-return metrics from daily log returns. "
+            "Right: histogram for a selected ticker — look for fat tails and skewness.",
         )
-    fig_prices.update_layout(
-        height=500,
-        showlegend=False,
-        margin=dict(l=0, r=0, t=0, b=0),
-        yaxis_title="Normalized Price (base=100)",
-    )
-    st.plotly_chart(fig_prices, use_container_width=True)
+
+        col_stats, col_hist = st.columns([3, 2])
+
+        with col_stats:
+            summary = load_summary_stats()
+            display_cols = [
+                "ticker", "count", "annualized_return", "annualized_vol",
+                "skewness", "kurtosis", "min_return", "max_return",
+            ]
+            display_df = summary[display_cols].copy()
+            for c in ["annualized_return", "annualized_vol", "min_return", "max_return"]:
+                display_df[c] = display_df[c].map(lambda x: f"{x:.4f}")
+            for c in ["skewness", "kurtosis"]:
+                display_df[c] = display_df[c].map(lambda x: f"{x:.2f}")
+            st.dataframe(display_df, use_container_width=True, height=420)
+
+        with col_hist:
+            selected_ticker = st.selectbox("Ticker", sorted(returns.columns.tolist()))
+            if selected_ticker:
+                ticker_returns = returns[selected_ticker].dropna()
+                fig_hist = go.Figure()
+                fig_hist.add_trace(go.Histogram(
+                    x=ticker_returns, nbinsx=80,
+                    marker_color=get_colors()["primary"], opacity=0.75,
+                    hovertemplate="Return: %{x:.4f}<br>Count: %{y}<extra></extra>",
+                ))
+                _mean_r = ticker_returns.mean()
+                fig_hist.add_vline(x=_mean_r, line_dash="dash", line_color=get_colors()["secondary"],
+                                   annotation_text=f"Mean: {_mean_r:.4f}", annotation_font_size=10)
+                apply_chart_style(fig_hist, height=420, xaxis_title="Daily Log Return",
+                                  yaxis_title="Frequency", showlegend=False,
+                                  margin=dict(l=0, r=0, t=10, b=0))
+                render_chart(fig_hist, chart_id="mo_hist", filename_base="return_distribution",
+                             title_key="mo_hist", default_title="Return Distribution")
+
+    # ── Section 9: Market Summary ───────────────────────────────────────────
+    with st.container(border=True):
+        section_header("Market Summary")
+        if market_summary:
+            cols = st.columns(5)
+            cols[0].metric("Avg Pairwise Corr", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
+            cols[1].metric("Median", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
+            cols[2].metric("Std Dev", f"{market_summary.get('std_pairwise_corr', 0):.4f}")
+            cols[3].metric("Min", f"{market_summary.get('min_pairwise_corr', 0):.4f}")
+            cols[4].metric("Max", f"{market_summary.get('max_pairwise_corr', 0):.4f}")
 
 
-# ---------- descriptive stats & return distribution ----------
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 2 — Correlation
+# ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("---")
-col_stats, col_hist = st.columns(2)
+with tab_corr:
 
-with col_stats:
-    st.subheader("Descriptive Statistics")
-    st.caption(
-        "Key risk-return metrics for each stock computed from daily **log returns**. "
-        "**Annualized return** and **volatility** are scaled by √252 trading days. "
-        "**Skewness** < 0 means more frequent large drops; **kurtosis** > 3 (excess) signals fat tails "
-        "— i.e., extreme daily moves occur more often than a normal distribution would predict."
-    )
-    summary = load_summary_stats()
-    display_cols = [
-        "ticker", "count", "annualized_return", "annualized_vol",
-        "skewness", "kurtosis", "min_return", "max_return",
-    ]
-    display_df = summary[display_cols].copy()
-    for c in ["annualized_return", "annualized_vol", "min_return", "max_return"]:
-        display_df[c] = display_df[c].map(lambda x: f"{x:.4f}")
-    for c in ["skewness", "kurtosis"]:
-        display_df[c] = display_df[c].map(lambda x: f"{x:.2f}")
-    st.dataframe(display_df, use_container_width=True, height=400)
-
-with col_hist:
-    st.subheader("Return Distribution")
-    st.caption(
-        "Histogram of daily **log returns** for the selected ticker. A bell-shaped curve centered near zero "
-        "indicates typical market behavior. Look for **fat tails** (bars far from center) signaling extreme "
-        "moves, and **skewness** (asymmetry) showing whether the stock tends to have larger up or down days."
-    )
-    selected_ticker = st.selectbox("Ticker", sorted(returns.columns.tolist()))
-    if selected_ticker:
-        ticker_returns = returns[selected_ticker].dropna()
-        fig_hist = px.histogram(
-            ticker_returns,
-            nbins=80,
-            labels={"value": "Log Return", "count": "Frequency"},
-            title=f"{selected_ticker} Daily Log Returns",
+    _heat_c1, _heat_c2 = st.columns(2)
+    with _heat_c1:
+        heat_method = st.selectbox(
+            "Correlation method", ["pearson", "spearman"],
+            key="heat_method",
         )
-        fig_hist.update_layout(showlegend=False, margin=dict(l=0, r=20, t=40, b=0))
-        st.plotly_chart(fig_hist, use_container_width=True)
+    with _heat_c2:
+        use_clustering_order = st.checkbox("Reorder by hierarchical clustering", value=True)
 
+    with st.status("Computing correlation matrix...", expanded=False) as _corr_st:
+        corr = _compute_corr(_returns_json, dynamic_min_periods, heat_method)
+        _corr_st.update(label="Correlation matrix ready", state="complete")
 
-# ---------- correlation heatmap (cluster-reordered) ----------
+    leaf_order = load_dendrogram_order()
 
-st.markdown("---")
-st.subheader("Pearson Correlation Heatmap")
-st.caption(
-    "A pairwise **Pearson correlation matrix** of daily log returns. Values range from **-1** (perfect inverse movement) "
-    "to **+1** (perfect co-movement). Red/warm colors indicate positive correlation; blue/cool colors indicate negative. "
-    "When **'Reorder by hierarchical clustering'** is enabled, tickers are rearranged so that highly correlated groups "
-    "appear as block-diagonal clusters along the main diagonal — making sector-driven patterns easy to spot."
-)
-
-# Recompute correlation for the selected window
-corr = compute_corr_for_window(returns.to_json(orient="split", date_format="iso"), dynamic_min_periods)
-
-# Try to reorder by dendrogram leaf order for better block-diagonal structure
-leaf_order = load_dendrogram_order()
-use_clustering_order = st.checkbox("Reorder by hierarchical clustering", value=True)
-
-if use_clustering_order and leaf_order is not None:
-    # Only use tickers that exist in both the correlation matrix and the leaf order
-    valid_order = [t for t in leaf_order if t in corr.columns]
-    if valid_order:
-        corr_display = corr.loc[valid_order, valid_order]
+    if use_clustering_order and leaf_order is not None:
+        valid_order = [t for t in leaf_order if t in corr.columns]
+        corr_display = corr.loc[valid_order, valid_order] if valid_order else corr
     else:
         corr_display = corr
-else:
-    corr_display = corr
 
-fig_heat = go.Figure(
-    data=go.Heatmap(
-        z=corr_display.values,
-        x=corr_display.columns.tolist(),
-        y=corr_display.index.tolist(),
-        colorscale="RdBu_r",
-        zmid=0,
-        zmin=-1,
-        zmax=1,
-        hovertemplate="(%{x}, %{y}): %{z:.3f}<extra></extra>",
-    )
-)
-n_tickers = len(corr_display)
-fig_heat.update_layout(
-    height=max(600, n_tickers * 8),
-    width=max(600, n_tickers * 8),
-    margin=dict(l=0, r=0, t=0, b=0),
-    xaxis=dict(tickfont=dict(size=7), dtick=1),
-    yaxis=dict(tickfont=dict(size=7), dtick=1, autorange="reversed"),
-)
-st.plotly_chart(fig_heat, use_container_width=True)
+    _corr_heatmap_tab, _corr_pit_tab = st.tabs(["Heatmap", "Point-in-Time Snapshot"])
 
-
-# ---------- dendrogram & cluster view ----------
-
-st.markdown("---")
-col_dendro, col_clusters = st.columns([3, 2])
-
-with col_dendro:
-    st.subheader("Dendrogram")
-    st.caption(
-        "A **hierarchical clustering dendrogram** built from the correlation-based distance matrix "
-        "(d = √(2(1-ρ))). Stocks that merge at **lower heights** (bottom of the tree) are more similar in their "
-        "return behavior. Vertical lines show the merge distance — a large jump indicates two distinct groups being joined. "
-        "This reveals the natural grouping structure of the market, often aligning with BIST industry sectors."
-    )
-    Z_loaded, labels_loaded = load_linkage()
-    if Z_loaded is not None:
-        # Build dendrogram using plotly figure_factory
-        fig_dendro = ff.create_dendrogram(
-            np.eye(len(labels_loaded)),
-            orientation="bottom",
-            labels=labels_loaded,
-            linkagefun=lambda x: Z_loaded,
-        )
-        fig_dendro.update_layout(
-            height=500,
-            margin=dict(l=10, r=10, t=10, b=100),
-            xaxis=dict(tickfont=dict(size=7), tickangle=-90),
-            yaxis_title="Distance",
-        )
-        st.plotly_chart(fig_dendro, use_container_width=True)
-    else:
-        st.info("Run the clustering pipeline to generate the dendrogram.")
-
-with col_clusters:
-    st.subheader("Cluster Memberships")
-    st.caption(
-        "Stocks are grouped into clusters by cutting the dendrogram at an **automatic threshold** "
-        "(70% of the maximum merge distance). Each row shows a stock's cluster assignment and its BIST sector. "
-        "The **Cluster vs Sector** cross-tab below reveals whether correlation-driven clusters coincide with "
-        "official sector classifications — a mismatch may indicate hidden economic linkages."
-    )
-    cluster_df = load_cluster_assignments()
-    if not cluster_df.empty:
-        n_clusters = cluster_df["cluster_id"].nunique()
-        st.metric("Number of Clusters", n_clusters)
-
-        # Display cluster table sorted by cluster then ticker
-        display_clusters = cluster_df.sort_values(
-            ["cluster_id", "ticker"]
-        ).reset_index(drop=True)
-        st.dataframe(display_clusters, use_container_width=True, height=400, hide_index=True)
-
-        # Cluster-sector cross-tab
-        st.markdown("**Cluster vs Sector**")
-        if "sector" in cluster_df.columns:
-            crosstab = pd.crosstab(
-                cluster_df["cluster_id"], cluster_df["sector"]
+    # ── Sub-tab: Full-period heatmap ──────────────────────────────────────
+    with _corr_heatmap_tab:
+        with st.container(border=True):
+            st.caption(
+                "Pairwise correlation matrix of daily log returns. "
+                "Toggle method and clustering reorder above.",
             )
-            st.dataframe(crosstab, use_container_width=True)
-    else:
-        st.info("Run the clustering pipeline to see cluster assignments.")
 
-
-# ---------- MST network graph ----------
-
-st.markdown("---")
-st.subheader("Minimum Spanning Tree")
-st.caption(
-    "The **Minimum Spanning Tree (MST)** connects all stocks using the shortest total correlation-based distance, "
-    "filtering out redundant links to reveal the backbone structure of the market. Each node is a stock, colored by "
-    "**sector** and sized by **degree** (number of connections). Hub nodes with many connections are influential — "
-    "they act as bridges transmitting correlation across the market. Edge lengths reflect correlation distance: "
-    "shorter edges = higher correlation. The **betweenness centrality** in the table quantifies how often a stock "
-    "lies on the shortest path between other stocks — high values indicate systemic importance."
-)
-
-mst_edges = load_mst_edges()
-mst_metrics = load_mst_metrics()
-
-if not mst_edges.empty and not mst_metrics.empty and HAS_NETWORKX:
-    col_mst_graph, col_mst_table = st.columns([3, 2])
-
-    with col_mst_graph:
-        G = nx.Graph()
-        sector_map = dict(zip(mst_metrics["ticker"], mst_metrics["sector"]))
-        degree_map = dict(zip(mst_metrics["ticker"], mst_metrics["degree"]))
-
-        for _, row in mst_edges.iterrows():
-            G.add_edge(row["source"], row["target"], weight=row["distance"])
-
-        # Use spring layout with distance-based weights
-        pos = nx.spring_layout(G, seed=42, k=2.0, iterations=100)
-
-        # Build edge traces
-        edge_x, edge_y = [], []
-        for u, v in G.edges():
-            x0, y0 = pos[u]
-            x1, y1 = pos[v]
-            edge_x.extend([x0, x1, None])
-            edge_y.extend([y0, y1, None])
-
-        edge_trace = go.Scatter(
-            x=edge_x, y=edge_y,
-            line=dict(width=0.8, color="#888"),
-            hoverinfo="none",
-            mode="lines",
-        )
-
-        # Build node traces — color by sector, size by degree
-        sectors = list(set(sector_map.values()) - {None, np.nan})
-        sectors.sort()
-        color_map = {s: px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
-                     for i, s in enumerate(sectors)}
-
-        node_x, node_y, node_text, node_color, node_size = [], [], [], [], []
-        for node in G.nodes():
-            x, y = pos[node]
-            node_x.append(x)
-            node_y.append(y)
-            sec = sector_map.get(node, "Unknown")
-            deg = degree_map.get(node, 1)
-            node_text.append(f"{node}<br>Sector: {sec}<br>Degree: {deg}")
-            node_color.append(color_map.get(sec, "#999"))
-            node_size.append(8 + deg * 5)
-
-        node_trace = go.Scatter(
-            x=node_x, y=node_y,
-            mode="markers+text",
-            text=[n for n in G.nodes()],
-            textposition="top center",
-            textfont=dict(size=7),
-            hovertext=node_text,
-            hoverinfo="text",
-            marker=dict(
-                size=node_size,
-                color=node_color,
-                line=dict(width=1, color="white"),
-            ),
-        )
-
-        fig_mst = go.Figure(data=[edge_trace, node_trace])
-        fig_mst.update_layout(
-            showlegend=False,
-            height=700,
-            margin=dict(l=0, r=0, t=0, b=0),
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            plot_bgcolor="white",
-        )
-
-        # Add sector color legend manually
-        for sec in sectors:
-            fig_mst.add_trace(go.Scatter(
-                x=[None], y=[None],
-                mode="markers",
-                marker=dict(size=10, color=color_map[sec]),
-                name=sec,
-                showlegend=True,
+            n_tickers = len(corr_display)
+            fig_heat = go.Figure(data=go.Heatmap(
+                z=corr_display.values,
+                x=corr_display.columns.tolist(),
+                y=corr_display.index.tolist(),
+                colorscale=get_colors().get("heatmap_cs", "RdBu_r"), zmid=0, zmin=-1, zmax=1,
+                hovertemplate="(%{x}, %{y}): %{z:.3f}<extra></extra>",
+                colorbar=dict(title="Corr", thickness=15, len=0.6),
             ))
-        fig_mst.update_layout(showlegend=True, legend=dict(font=dict(size=9)))
+            apply_chart_style(fig_heat,
+                height=max(700, n_tickers * 12),
+                margin=dict(l=0, r=0, t=0, b=0),
+                xaxis=dict(tickfont=dict(size=7), dtick=1),
+                yaxis=dict(tickfont=dict(size=7), dtick=1, autorange="reversed"),
+            )
+            render_chart(fig_heat, chart_id="mo_heatmap", filename_base="correlation_heatmap",
+                         title_key="mo_heatmap", default_title="Correlation Matrix")
 
-        st.plotly_chart(fig_mst, use_container_width=True)
+    # ── Sub-tab: Point-in-Time Correlation Snapshot ────────────────────────
+    with _corr_pit_tab:
+        with st.container(border=True):
+            st.caption(
+                "Slide to a specific date to see the correlation matrix for that rolling window. "
+                "Useful for comparing market structure during crises vs calm periods."
+            )
 
-    with col_mst_table:
-        st.markdown("**Hub Stocks (by degree)**")
-        display_metrics = mst_metrics.copy()
-        display_metrics["betweenness_centrality"] = display_metrics[
-            "betweenness_centrality"
-        ].map(lambda x: f"{x:.4f}")
-        st.dataframe(display_metrics, use_container_width=True, height=500, hide_index=True)
-elif not HAS_NETWORKX:
-    st.warning("Install `networkx` to display the MST network graph (`pip install networkx`).")
-else:
-    st.info("Run the clustering pipeline to generate the MST network.")
+            pit_c1, pit_c2, pit_c3 = st.columns(3)
+            with pit_c1:
+                pit_window = st.selectbox(
+                    "Window (days)", [60, 120, 252], index=2, key="pit_window",
+                )
+            with pit_c2:
+                pit_method = st.selectbox(
+                    "Method", ["pearson", "spearman"], key="pit_method",
+                )
+            with pit_c3:
+                trading_dates = returns.index.tolist()
+                valid_start = max(0, pit_window - 1)
+                pit_date = st.select_slider(
+                    "Snapshot date",
+                    options=trading_dates[valid_start:] if len(trading_dates) > valid_start else trading_dates,
+                    value=trading_dates[-1] if trading_dates else None,
+                    format_func=lambda d: d.strftime("%Y-%m-%d"),
+                    key="pit_date",
+                )
+
+            if pit_date is not None:
+                pit_corr = _pit_corr(
+                    _returns_json, pit_date.isoformat(), pit_window, pit_method,
+                )
+
+                if not pit_corr.empty:
+                    if use_clustering_order and leaf_order is not None:
+                        pit_valid = [t for t in leaf_order if t in pit_corr.columns]
+                        pit_display = pit_corr.loc[pit_valid, pit_valid] if pit_valid else pit_corr
+                    else:
+                        pit_display = pit_corr
+
+                    pit_mask = np.triu(np.ones(pit_display.shape, dtype=bool), k=1)
+                    pit_vals = pit_display.values[pit_mask]
+                    pit_vals = pit_vals[~np.isnan(pit_vals)]
+
+                    pm1, pm2, pm3, pm4 = st.columns(4)
+                    pm1.metric("Tickers in Window", len(pit_display))
+                    pm2.metric("Mean Corr", f"{np.mean(pit_vals):.4f}")
+                    pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
+                    pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
+
+                    n_pit = len(pit_display)
+                    fig_pit = go.Figure(data=go.Heatmap(
+                        z=pit_display.values,
+                        x=pit_display.columns.tolist(),
+                        y=pit_display.index.tolist(),
+                        colorscale=get_colors().get("heatmap_cs", "RdBu_r"), zmid=0, zmin=-1, zmax=1,
+                        hovertemplate="(%{x}, %{y}): %{z:.3f}<extra></extra>",
+                        colorbar=dict(title="Corr", thickness=15, len=0.6),
+                    ))
+                    apply_chart_style(fig_pit,
+                        height=max(700, n_pit * 12),
+                        margin=dict(l=0, r=0, t=0, b=0),
+                        xaxis=dict(tickfont=dict(size=7), dtick=1),
+                        yaxis=dict(tickfont=dict(size=7), dtick=1, autorange="reversed"),
+                    )
+                    render_chart(fig_pit, chart_id="mo_pit_heatmap", filename_base="pit_correlation",
+                                 title_key="mo_pit_heatmap", default_title="Point-in-Time Correlation")
+                else:
+                    st.warning("Not enough data for the selected date and window size.")
 
 
-# ---------- rolling correlation analysis ----------
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 3 — Clustering & Network
+# ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("---")
-st.subheader("Rolling Correlation Analysis")
-st.caption(
-    "Tracks how **pairwise correlations evolve over time** using a sliding window. This reveals whether stocks "
-    "move together more during crises (correlation spikes) or decouple during calm periods. "
-    "**Window**: number of past trading days used for each calculation. "
-    "**Step**: how many days to skip between calculations (higher = faster but coarser). "
-    "**Method**: Pearson measures linear co-movement; Spearman captures monotonic (rank-based) relationships. "
-    "**Window type**: *Rolling* = fixed-size lookback; *Expanding* = growing window from start; *EWM* = exponentially "
-    "weighted, giving more weight to recent data."
-)
+with tab_cluster:
 
-from src.rolling_correlation import (
-    compute_rolling_market_stats,
-    compute_rolling_pair_correlation,
-    compute_rolling_sector_stats,
-)
-
-rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
-with rc_col1:
-    rc_window = st.selectbox("Window (days)", [60, 120, 252, 504], index=2, key="rc_win")
-with rc_col2:
-    rc_step = st.selectbox("Step", [1, 5, 21], index=1, key="rc_step",
-                           format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}[x])
-with rc_col3:
-    rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
-with rc_col4:
-    rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
-
-rc_expanding = rc_window_type == "expanding"
-
-# Event markers — shared utility, scoped to "rc" prefix
-show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
-
-tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Analysis", "Sector Breakdown"])
-
-# --- Tab 1: Market correlation over time ---
-with tab_market:
-    st.caption(
-        "**Market Overview** — Aggregates all pairwise correlations into summary statistics at each time step. "
-        "The **blue line** is the mean correlation, the **orange dotted line** is the median, and the **shaded band** "
-        "shows the interquartile range (Q25–Q75). When the band narrows and the mean rises, it signals a "
-        "**correlation regime shift** — typically during market stress when stocks move in lockstep. "
-        "Red dashed vertical lines mark major macro events (COVID, earthquakes, etc.)."
-    )
-
-    @st.cache_data
-    def _compute_market_stats(ret_json, window, step, method, expanding):
-        ret = pd.read_json(ret_json, orient="split")
-        return compute_rolling_market_stats(
-            ret, window=window, step=step, method=method, expanding=expanding,
+    # ── Section 4: Dendrogram & Cluster Assignments ─────────────────────────
+    with st.container(border=True):
+        section_header(
+            "Hierarchical Clustering & Sector Validation",
+            "Dendrogram built from d = sqrt(2(1-rho)). Stocks merging at lower heights "
+            "have more similar return dynamics. Sector validation metrics (ARI, NMI) measure "
+            "how well statistical clusters align with Borsa Istanbul's official sector classifications.",
         )
 
-    with st.spinner("Computing rolling market stats..."):
-        market_stats = _compute_market_stats(
-            returns.to_json(orient="split", date_format="iso"),
-            rc_window, rc_step, rc_method, rc_expanding,
+        col_dendro, col_clusters = st.columns([3, 2])
+
+        with col_dendro:
+            Z_loaded, labels_loaded = load_linkage()
+            if Z_loaded is not None:
+                fig_dendro = ff.create_dendrogram(
+                    np.eye(len(labels_loaded)),
+                    orientation="bottom",
+                    labels=labels_loaded,
+                    linkagefun=lambda x: Z_loaded,
+                )
+                for trace in fig_dendro.data:
+                    trace.update(line=dict(color=get_colors()["primary"], width=1.2))
+                apply_chart_style(fig_dendro,
+                    height=500,
+                    margin=dict(l=10, r=10, t=10, b=100),
+                    xaxis=dict(tickfont=dict(size=7), tickangle=-90),
+                    yaxis_title="Distance",
+                )
+                render_chart(fig_dendro, chart_id="mo_dendrogram", filename_base="dendrogram",
+                             title_key="mo_dendrogram", default_title="Hierarchical Clustering")
+            else:
+                st.info("Run the clustering pipeline to generate the dendrogram.")
+
+        with col_clusters:
+            cluster_df = load_cluster_assignments()
+            if not cluster_df.empty:
+                n_clusters = cluster_df["cluster_id"].nunique()
+                st.metric("Clusters Found", n_clusters)
+
+                display_clusters = cluster_df.sort_values(["cluster_id", "ticker"]).reset_index(drop=True)
+                st.dataframe(display_clusters, use_container_width=True, height=350, hide_index=True)
+
+                if "sector" in cluster_df.columns:
+                    st.markdown("**Cluster vs Sector**")
+                    crosstab = pd.crosstab(cluster_df["cluster_id"], cluster_df["sector"])
+                    st.dataframe(crosstab, use_container_width=True)
+
+                    try:
+                        from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+                        _has_sklearn = True
+                    except ImportError:
+                        _has_sklearn = False
+
+                    if _has_sklearn:
+                        cluster_labels = cluster_df["cluster_id"].values
+                        sector_labels = cluster_df["sector"].values
+                        ari = adjusted_rand_score(sector_labels, cluster_labels)
+                        nmi = normalized_mutual_info_score(sector_labels, cluster_labels)
+
+                        st.markdown("**Sector Validation**")
+                        st.caption(
+                            "How well do statistical clusters match Borsa Istanbul's official "
+                            "sector classifications? ARI and NMI range from 0 (random) to 1 (perfect match)."
+                        )
+                        sv1, sv2, sv3 = st.columns(3)
+                        sv1.metric("Adjusted Rand Index", f"{ari:.3f}")
+                        sv2.metric("Normalized Mutual Info", f"{nmi:.3f}")
+                        sv3.metric("Sectors Represented", f"{cluster_df['sector'].nunique()}")
+
+                        _bank_keywords = ["Bank", "Finans"]
+                        bank_tickers = cluster_df[
+                            cluster_df["sector"].str.contains("|".join(_bank_keywords), case=False, na=False)
+                        ]
+                        if not bank_tickers.empty:
+                            bank_clusters = bank_tickers["cluster_id"].unique()
+                            n_bank_clusters = len(bank_clusters)
+                            bank_names = ", ".join(bank_tickers["ticker"].tolist())
+                            if n_bank_clusters == 1:
+                                st.success(
+                                    f"**Bank sanity check passed.** All {len(bank_tickers)} financial tickers "
+                                    f"({bank_names}) are in Cluster {bank_clusters[0]}."
+                                )
+                            else:
+                                st.warning(
+                                    f"**Bank sanity check:** {len(bank_tickers)} financial tickers span "
+                                    f"{n_bank_clusters} clusters ({', '.join(str(c) for c in sorted(bank_clusters))}). "
+                                    f"Tickers: {bank_names}"
+                                )
+
+                        st.markdown("**Cluster Purity**")
+                        st.caption(
+                            "Purity = fraction of the dominant sector within each cluster. "
+                            "A purity of 1.0 means every stock in the cluster belongs to the same sector."
+                        )
+                        purity_rows = []
+                        for cid, grp in cluster_df.groupby("cluster_id"):
+                            sector_counts = grp["sector"].value_counts()
+                            dominant = sector_counts.index[0]
+                            purity = sector_counts.iloc[0] / len(grp)
+                            purity_rows.append({
+                                "Cluster": cid,
+                                "Size": len(grp),
+                                "Dominant Sector": dominant,
+                                "Purity": f"{purity:.2f}",
+                                "Members": ", ".join(sorted(grp["ticker"].tolist())),
+                            })
+                        purity_df = pd.DataFrame(purity_rows)
+                        st.dataframe(purity_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Run the clustering pipeline to see cluster assignments.")
+
+    # ── Section 5: MST Network ──────────────────────────────────────────────
+    with st.container(border=True):
+        section_header(
+            "Minimum Spanning Tree",
+            "The MST reveals the backbone correlation structure. Nodes are colored by "
+            "sector and sized by degree. Hub stocks act as bridges across the market.",
         )
 
-    if not market_stats.empty:
-        fig_rc = go.Figure()
+        mst_edges = load_mst_edges()
+        mst_metrics = load_mst_metrics()
 
-        # IQR band (q25 - q75)
-        fig_rc.add_trace(go.Scatter(
-            x=market_stats.index, y=market_stats["q75_corr"],
-            mode="lines", line=dict(width=0), showlegend=False,
-        ))
-        fig_rc.add_trace(go.Scatter(
-            x=market_stats.index, y=market_stats["q25_corr"],
-            mode="lines", line=dict(width=0), fill="tonexty",
-            fillcolor="rgba(99,110,250,0.15)", name="IQR (Q25-Q75)",
-        ))
+        if not mst_edges.empty and not mst_metrics.empty and HAS_NETWORKX:
+            col_mst_graph, col_mst_table = st.columns([3, 2])
 
-        # Average and median
-        fig_rc.add_trace(go.Scatter(
-            x=market_stats.index, y=market_stats["avg_corr"],
-            mode="lines", name="Mean", line=dict(color="royalblue", width=2),
-        ))
-        fig_rc.add_trace(go.Scatter(
-            x=market_stats.index, y=market_stats["median_corr"],
-            mode="lines", name="Median", line=dict(color="orange", width=1.5, dash="dot"),
-        ))
+            with col_mst_graph:
+                G = nx.Graph()
+                sector_map = dict(zip(mst_metrics["ticker"], mst_metrics["sector"]))
+                degree_map = dict(zip(mst_metrics["ticker"], mst_metrics["degree"]))
 
-        draw_event_markers(
-            fig_rc, show_defaults, custom_events,
-            market_stats.index.min(), market_stats.index.max(),
-        )
+                for _, row in mst_edges.iterrows():
+                    G.add_edge(row["source"], row["target"], weight=row["distance"])
 
-        fig_rc.update_layout(
-            height=450,
-            yaxis_title=f"Pairwise {rc_method.title()} Correlation",
-            xaxis_title="Date",
-            margin=dict(l=0, r=0, t=30, b=0),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02),
-        )
-        st.plotly_chart(fig_rc, use_container_width=True)
+                with st.status("Computing MST layout...", expanded=False) as _mst_st:
+                    pos = _mst_layout(mst_edges.to_json(orient="split"))
+                    _mst_st.update(label="MST layout ready", state="complete")
 
-        # Min/max range chart
-        with st.expander("Min / Max range"):
-            fig_mm = go.Figure()
-            fig_mm.add_trace(go.Scatter(
-                x=market_stats.index, y=market_stats["max_corr"],
-                mode="lines", line=dict(width=0), showlegend=False,
-            ))
-            fig_mm.add_trace(go.Scatter(
-                x=market_stats.index, y=market_stats["min_corr"],
-                mode="lines", line=dict(width=0), fill="tonexty",
-                fillcolor="rgba(255,127,14,0.15)", name="Min-Max Range",
-            ))
-            fig_mm.add_trace(go.Scatter(
-                x=market_stats.index, y=market_stats["avg_corr"],
-                mode="lines", name="Mean", line=dict(color="royalblue", width=1.5),
-            ))
-            fig_mm.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0),
-                                 yaxis_title="Correlation")
-            st.plotly_chart(fig_mm, use_container_width=True)
-    else:
-        st.warning("Not enough data for the selected window size.")
+                edge_traces = []
+                for u, v, d in G.edges(data=True):
+                    x0, y0 = pos[u]
+                    x1, y1 = pos[v]
+                    edge_traces.append(go.Scatter(
+                        x=[x0, x1], y=[y0, y1],
+                        mode="lines",
+                        line=dict(width=1.8, color="#A0A8B8"),
+                        hoverinfo="text",
+                        hovertext=f"{u} — {v}  (d = {d['weight']:.3f})",
+                        showlegend=False,
+                    ))
 
-# --- Tab 2: Pair rolling correlation ---
-with tab_pair:
-    st.caption(
-        "**Pair Analysis** — Select two stocks to see how their correlation changes over time. "
-        "A correlation near **+1** means they consistently move together; near **0** means no linear relationship; "
-        "near **-1** means they move in opposite directions. The **normalized price comparison** (expandable below) "
-        "overlays both stocks' rebased prices so you can visually verify convergence/divergence periods."
-    )
-    ticker_list = sorted(returns.columns.tolist())
-    pc1, pc2 = st.columns(2)
-    with pc1:
-        pair_a = st.selectbox("Ticker A", ticker_list, index=0, key="pair_a")
-    with pc2:
-        default_b = min(1, len(ticker_list) - 1)
-        pair_b = st.selectbox("Ticker B", ticker_list, index=default_b, key="pair_b")
+                sectors = sorted(set(sector_map.values()) - {None, np.nan})
+                color_map = {s: SECTOR_PALETTE[i % len(SECTOR_PALETTE)]
+                             for i, s in enumerate(sectors)}
 
-    if pair_a and pair_b and pair_a != pair_b:
-        @st.cache_data
-        def _compute_pair(ret_json, a, b, window, method, wtype):
-            ret = pd.read_json(ret_json, orient="split")
-            return compute_rolling_pair_correlation(
-                ret, a, b, window=window, method=method, window_type=wtype,
-            )
+                node_x, node_y, node_text, node_color, node_size = [], [], [], [], []
+                for node in G.nodes():
+                    x, y = pos[node]
+                    node_x.append(x)
+                    node_y.append(y)
+                    sec = sector_map.get(node, "Unknown")
+                    deg = degree_map.get(node, 1)
+                    node_text.append(f"<b>{node}</b><br>Sector: {sec}<br>Degree: {deg}")
+                    node_color.append(color_map.get(sec, get_colors()["muted"]))
+                    node_size.append(14 + deg * 6)
 
-        with st.spinner("Computing pair correlation..."):
-            pair_corr = _compute_pair(
-                returns.to_json(orient="split", date_format="iso"),
-                pair_a, pair_b, rc_window, rc_method, rc_window_type,
-            )
+                node_trace = go.Scatter(
+                    x=node_x, y=node_y,
+                    mode="markers+text",
+                    text=[n for n in G.nodes()],
+                    textposition="top center",
+                    textfont=dict(size=9, color="#2B2D42"),
+                    hovertext=node_text, hoverinfo="text",
+                    marker=dict(
+                        size=node_size, color=node_color,
+                        line=dict(width=2, color="white"),
+                    ),
+                    showlegend=False,
+                )
 
-        fig_pair = go.Figure()
-        fig_pair.add_trace(go.Scatter(
-            x=pair_corr.index, y=pair_corr.values,
-            mode="lines", name=f"{pair_a} — {pair_b}",
-            line=dict(color="royalblue", width=1.5),
-        ))
-        fig_pair.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5)
+                fig_mst = go.Figure(data=edge_traces + [node_trace])
+                apply_chart_style(fig_mst,
+                    showlegend=True, height=750,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                               scaleanchor="x", scaleratio=1),
+                    legend=dict(font=dict(size=9), orientation="v",
+                                yanchor="top", y=0.99, xanchor="left", x=0.01,
+                                bgcolor="rgba(255,255,255,0.85)", borderwidth=1,
+                                bordercolor="#e2e6ee"),
+                )
+                for sec in sectors:
+                    fig_mst.add_trace(go.Scatter(
+                        x=[None], y=[None], mode="markers",
+                        marker=dict(size=10, color=color_map[sec]),
+                        name=sec, showlegend=True,
+                    ))
+                render_chart(fig_mst, chart_id="mo_mst", filename_base="mst_network",
+                             title_key="mo_mst", default_title="Minimum Spanning Tree")
 
-        _valid = pair_corr.dropna()
-        if not _valid.empty:
-            draw_event_markers(
-                fig_pair, show_defaults, custom_events,
-                _valid.index.min(), _valid.index.max(),
-            )
+            with col_mst_table:
+                st.markdown("**Hub Stocks (by degree)**")
+                display_metrics = mst_metrics.copy()
+                display_metrics["betweenness_centrality"] = display_metrics[
+                    "betweenness_centrality"
+                ].map(lambda x: f"{x:.4f}")
+                st.dataframe(display_metrics, use_container_width=True, height=500, hide_index=True)
 
-        fig_pair.update_layout(
-            height=400,
-            yaxis_title=f"{rc_method.title()} Correlation",
-            yaxis=dict(range=[-1.05, 1.05]),
-            margin=dict(l=0, r=0, t=10, b=0),
-        )
-        st.plotly_chart(fig_pair, use_container_width=True)
+                st.markdown("---")
+                st.markdown("**Quick Jump to Pair Analysis**")
+                _hub_tickers = mst_metrics.head(10)["ticker"].tolist()
+                _sel = st.selectbox("Select hub stock", _hub_tickers, key="mst_hub_jump")
+                if st.button("Analyze this pair", key="mst_jump_btn"):
+                    st.session_state["pa_ticker_a"] = _sel
+                    st.session_state["_goto_pair_analysis"] = True
+                    st.rerun()
 
-        # Show normalized price spread below
-        if pair_a in prices_window.columns and pair_b in prices_window.columns:
-            with st.expander("Normalized price comparison"):
-                pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
-                pb = prices_window[pair_b] / prices_window[pair_b].iloc[0] * 100
-                fig_spread = go.Figure()
-                fig_spread.add_trace(go.Scatter(x=pa.index, y=pa, name=pair_a, mode="lines"))
-                fig_spread.add_trace(go.Scatter(x=pb.index, y=pb, name=pair_b, mode="lines"))
-                fig_spread.update_layout(height=300, yaxis_title="Normalized (100)",
-                                         margin=dict(l=0, r=0, t=10, b=0))
-                st.plotly_chart(fig_spread, use_container_width=True)
-    elif pair_a == pair_b:
-        st.info("Select two different tickers.")
-
-# --- Tab 3: Sector breakdown ---
-with tab_sector:
-    st.caption(
-        "**Sector Breakdown** — Compares average **intra-sector** correlation (stocks within the same BIST sector) "
-        "vs. **inter-sector** correlation (stocks from different sectors). Intra-sector correlation is typically "
-        "higher because companies in the same industry share common risk factors. When the two lines converge, "
-        "it suggests a market-wide factor (macro shock, sentiment) is dominating sector-specific effects. "
-        "Expand **'Per-sector intra-correlation'** to see which sectors are internally cohesive over time."
-    )
-    cluster_df_for_sectors = load_cluster_assignments()
-    if not cluster_df_for_sectors.empty and "sector" in cluster_df_for_sectors.columns:
-        sec_map = dict(zip(cluster_df_for_sectors["ticker"], cluster_df_for_sectors["sector"]))
-
-        @st.cache_data
-        def _compute_sector(ret_json, sec_map_items, window, step, method):
-            ret = pd.read_json(ret_json, orient="split")
-            return compute_rolling_sector_stats(
-                ret, dict(sec_map_items), window=window, step=step, method=method,
-            )
-
-        with st.spinner("Computing sector stats..."):
-            sector_stats = _compute_sector(
-                returns.to_json(orient="split", date_format="iso"),
-                tuple(sec_map.items()), rc_window, rc_step, rc_method,
-            )
-
-        if not sector_stats.empty:
-            # Intra vs inter
-            fig_sec = go.Figure()
-            fig_sec.add_trace(go.Scatter(
-                x=sector_stats.index, y=sector_stats["intra_sector_avg"],
-                mode="lines", name="Intra-Sector Avg",
-                line=dict(color="crimson", width=2),
-            ))
-            fig_sec.add_trace(go.Scatter(
-                x=sector_stats.index, y=sector_stats["inter_sector_avg"],
-                mode="lines", name="Inter-Sector Avg",
-                line=dict(color="steelblue", width=2),
-            ))
-
-            draw_event_markers(
-                fig_sec, show_defaults, custom_events,
-                sector_stats.index.min(), sector_stats.index.max(),
-            )
-
-            fig_sec.update_layout(
-                height=400,
-                yaxis_title="Average Correlation",
-                margin=dict(l=0, r=0, t=30, b=0),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02),
-            )
-            st.plotly_chart(fig_sec, use_container_width=True)
-
-            # Per-sector breakdown
-            intra_cols = [c for c in sector_stats.columns if c.startswith("intra_") and c not in ("intra_sector_avg",)]
-            if intra_cols:
-                with st.expander("Per-sector intra-correlation"):
-                    fig_per = go.Figure()
-                    for col in intra_cols:
-                        sector_name = col.replace("intra_", "")
-                        fig_per.add_trace(go.Scatter(
-                            x=sector_stats.index, y=sector_stats[col],
-                            mode="lines", name=sector_name,
-                        ))
-                    fig_per.update_layout(height=400, yaxis_title="Intra-Sector Correlation",
-                                          margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_per, use_container_width=True)
+        elif not HAS_NETWORKX:
+            st.warning("Install `networkx` to display the MST network graph (`pip install networkx`).")
         else:
-            st.warning("Not enough data for sector stats with this window.")
-    else:
-        st.info("Run the clustering pipeline to enable sector breakdown.")
+            st.info("Run the clustering pipeline to generate the MST network.")
 
 
-# ---------- top/bottom pairs & corr distribution ----------
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 4 — Rolling Analysis
+# ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("---")
-col_pairs, col_dist = st.columns(2)
+with tab_rolling:
 
-with col_pairs:
-    st.subheader("Top 10 / Bottom 10 Correlated Pairs")
-    st.caption(
-        "The **most correlated** pairs move almost identically — often from the same sector or holding-subsidiary "
-        "relationships. The **least correlated** (or most negatively correlated) pairs move independently or inversely, "
-        "making them candidates for **portfolio diversification**. Sector columns help identify whether high correlation "
-        "is sector-driven or reflects a deeper economic link."
-    )
-    pairs = load_top_bottom()
-    top_pairs = pairs[pairs["rank_type"] == "top"][
-        ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
-    ]
-    bottom_pairs = pairs[pairs["rank_type"] == "bottom"][
-        ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
-    ]
-    st.markdown("**Most Correlated**")
-    st.dataframe(top_pairs, use_container_width=True, hide_index=True)
-    st.markdown("**Least Correlated**")
-    st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
+    with st.container(border=True):
+        section_header(
+            "Rolling Correlation Analysis",
+            "Track how pairwise correlations evolve over time. Spikes during crises "
+            "indicate correlation regime shifts.",
+        )
 
-with col_dist:
-    st.subheader("Correlation Distribution")
-    st.caption(
-        "Distribution of all unique pairwise correlations (upper triangle of the matrix). "
-        "A right-skewed distribution centered above zero is typical for stocks in the same national market — "
-        "most pairs have positive co-movement due to shared macro factors. The **red dashed line** is the mean "
-        "and the **blue dotted line** is the median. A wide spread indicates a diverse market; "
-        "a narrow, high-mean distribution signals high systemic correlation."
-    )
-    # Upper triangle
-    mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
-    upper_vals = corr.where(mask).stack().values
-    upper_vals = upper_vals[~np.isnan(upper_vals)]
+        rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
+        with rc_col1:
+            rc_window = st.selectbox("Window (days)", [60, 120, 252, 504], index=2, key="rc_win")
+        with rc_col2:
+            rc_step = st.selectbox("Step", [1, 5, 21], index=1, key="rc_step",
+                                   format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}[x])
+        with rc_col3:
+            rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
+        with rc_col4:
+            rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
 
-    fig_corr_dist = px.histogram(
-        x=upper_vals,
-        nbins=60,
-        labels={"x": "Pairwise Correlation", "count": "Frequency"},
-    )
-    mean_val = np.mean(upper_vals)
-    median_val = np.median(upper_vals)
-    fig_corr_dist.add_vline(x=mean_val, line_dash="dash", line_color="red", annotation_text=f"Mean: {mean_val:.3f}")
-    fig_corr_dist.add_vline(x=median_val, line_dash="dot", line_color="blue", annotation_text=f"Median: {median_val:.3f}")
-    fig_corr_dist.update_layout(showlegend=False, margin=dict(l=0, r=20, t=0, b=0))
-    st.plotly_chart(fig_corr_dist, use_container_width=True)
+        rc_expanding = rc_window_type == "expanding"
+        show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
+
+        tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Correlation", "Sector Breakdown"])
+
+        # ── Sub-Tab 1: Market correlation over time ─────────────────────────
+        with tab_market:
+            with st.status("Computing rolling market stats...", expanded=False) as _ms_st:
+                market_stats = _compute_market_stats(
+                    _returns_json, rc_window, rc_step, rc_method, rc_expanding,
+                )
+                _ms_st.update(label="Market stats ready", state="complete")
+
+            if not market_stats.empty:
+                fig_rc = go.Figure()
+                fig_rc.add_trace(go.Scatter(
+                    x=market_stats.index, y=market_stats["q75_corr"],
+                    mode="lines", line=dict(width=0), showlegend=False,
+                ))
+                fig_rc.add_trace(go.Scatter(
+                    x=market_stats.index, y=market_stats["q25_corr"],
+                    mode="lines", line=dict(width=0), fill="tonexty",
+                    fillcolor=get_colors()["positive"], name="IQR (Q25-Q75)",
+                ))
+                fig_rc.add_trace(go.Scatter(
+                    x=market_stats.index, y=market_stats["avg_corr"],
+                    mode="lines", name="Mean",
+                    line=dict(color=get_colors()["primary"], width=2.2),
+                ))
+                fig_rc.add_trace(go.Scatter(
+                    x=market_stats.index, y=market_stats["median_corr"],
+                    mode="lines", name="Median",
+                    line=dict(color="#FF9F1C", width=1.5, dash="dot"),
+                ))
+                draw_event_markers(fig_rc, show_defaults, custom_events,
+                                   market_stats.index.min(), market_stats.index.max())
+                apply_chart_style(fig_rc, height=450,
+                                  yaxis_title=f"Pairwise {rc_method.title()} Correlation",
+                                  xaxis_title="Date")
+                render_chart(fig_rc, chart_id="mo_rolling_corr", filename_base="rolling_correlation",
+                             title_key="mo_rolling_corr", default_title="Rolling Correlation Stats")
+
+                if st.toggle("Show min/max envelope", key="mo_minmax_toggle"):
+                    fig_mm = go.Figure()
+                    fig_mm.add_trace(go.Scatter(
+                        x=market_stats.index, y=market_stats["max_corr"],
+                        mode="lines", line=dict(width=0), showlegend=False,
+                    ))
+                    fig_mm.add_trace(go.Scatter(
+                        x=market_stats.index, y=market_stats["min_corr"],
+                        mode="lines", line=dict(width=0), fill="tonexty",
+                        fillcolor="rgba(255,159,28,0.12)", name="Min-Max Range",
+                    ))
+                    fig_mm.add_trace(go.Scatter(
+                        x=market_stats.index, y=market_stats["avg_corr"],
+                        mode="lines", name="Mean",
+                        line=dict(color=get_colors()["primary"], width=1.5),
+                    ))
+                    apply_chart_style(fig_mm, height=350, yaxis_title="Correlation")
+                    render_chart(fig_mm, chart_id="mo_minmax", filename_base="minmax_range",
+                                 title_key="mo_minmax", default_title="Min-Max Correlation Range")
+            else:
+                st.warning("Not enough data for the selected window size.")
+
+        # ── Sub-Tab 2: Pair rolling correlation ─────────────────────────────
+        with tab_pair:
+            ticker_list = sorted(returns.columns.tolist())
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                pair_a = st.selectbox("Ticker A", ticker_list, index=0, key="pair_a")
+            with pc2:
+                default_b = min(1, len(ticker_list) - 1)
+                pair_b = st.selectbox("Ticker B", ticker_list, index=default_b, key="pair_b")
+
+            if pair_a and pair_b and pair_a != pair_b:
+                with st.status("Computing pair correlation...", expanded=False) as _pc_st:
+                    pair_corr = _compute_pair(
+                        _returns_json, pair_a, pair_b, rc_window, rc_method, rc_window_type,
+                    )
+                    _pc_st.update(label="Pair correlation ready", state="complete")
+
+                fig_pair = go.Figure()
+                fig_pair.add_hline(y=0, line_dash="dot", line_color=get_colors()["muted"], opacity=0.5)
+                fig_pair.add_trace(go.Scatter(
+                    x=pair_corr.index, y=pair_corr.clip(lower=0),
+                    mode="lines", line=dict(width=0), showlegend=False,
+                    fill="tozeroy", fillcolor=get_colors()["positive"],
+                ))
+                fig_pair.add_trace(go.Scatter(
+                    x=pair_corr.index, y=pair_corr.clip(upper=0),
+                    mode="lines", line=dict(width=0), showlegend=False,
+                    fill="tozeroy", fillcolor=get_colors()["negative"],
+                ))
+                fig_pair.add_trace(go.Scatter(
+                    x=pair_corr.index, y=pair_corr.values,
+                    mode="lines", name=f"{pair_a} / {pair_b}",
+                    line=dict(color=get_colors()["primary"], width=1.8),
+                ))
+
+                _valid = pair_corr.dropna()
+                if not _valid.empty:
+                    draw_event_markers(fig_pair, show_defaults, custom_events,
+                                       _valid.index.min(), _valid.index.max())
+                apply_chart_style(fig_pair, height=420,
+                                  yaxis_title=f"{rc_method.title()} Correlation",
+                                  yaxis=dict(range=[-1.05, 1.05], gridcolor="rgba(141,153,174,0.15)"),
+                                  showlegend=False)
+                render_chart(fig_pair, chart_id="mo_pair_corr", filename_base="pair_correlation",
+                             title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
+
+                if st.button(f"Open full Pair Analysis for {pair_a} / {pair_b}", key="pair_deep_dive"):
+                    st.session_state["pa_ticker_a"] = pair_a
+                    st.session_state["pa_ticker_b"] = pair_b
+                    st.session_state["_goto_pair_analysis"] = True
+                    st.rerun()
+
+                if pair_a in prices_window.columns and pair_b in prices_window.columns:
+                    pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
+                    pb = prices_window[pair_b] / prices_window[pair_b].iloc[0] * 100
+                    fig_spread = go.Figure()
+                    fig_spread.add_trace(go.Scatter(x=pa.index, y=pa, name=pair_a,
+                                                    line=dict(color=get_colors()["primary"], width=2)))
+                    fig_spread.add_trace(go.Scatter(x=pb.index, y=pb, name=pair_b,
+                                                    line=dict(color=get_colors()["secondary"], width=2)))
+                    apply_chart_style(fig_spread, height=300, yaxis_title="Normalized (100)")
+                    render_chart(fig_spread, chart_id="mo_pair_spread", filename_base="pair_spread",
+                                 title_key="mo_pair_spread", default_title="Pair Price Spread")
+            elif pair_a == pair_b:
+                st.info("Select two different tickers.")
+
+        # ── Sub-Tab 3: Sector breakdown ─────────────────────────────────────
+        with tab_sector:
+            cluster_df_for_sectors = load_cluster_assignments()
+            if not cluster_df_for_sectors.empty and "sector" in cluster_df_for_sectors.columns:
+                sec_map = dict(zip(cluster_df_for_sectors["ticker"], cluster_df_for_sectors["sector"]))
+
+                with st.status("Computing sector stats...", expanded=False) as _ss_st:
+                    sector_stats = _compute_sector(
+                        _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
+                    )
+                    _ss_st.update(label="Sector stats ready", state="complete")
+
+                if not sector_stats.empty:
+                    fig_sec = go.Figure()
+                    fig_sec.add_trace(go.Scatter(
+                        x=sector_stats.index, y=sector_stats["intra_sector_avg"],
+                        mode="lines", name="Intra-Sector Avg",
+                        line=dict(color=get_colors()["secondary"], width=2.2),
+                    ))
+                    fig_sec.add_trace(go.Scatter(
+                        x=sector_stats.index, y=sector_stats["inter_sector_avg"],
+                        mode="lines", name="Inter-Sector Avg",
+                        line=dict(color=get_colors()["primary"], width=2.2),
+                    ))
+                    draw_event_markers(fig_sec, show_defaults, custom_events,
+                                       sector_stats.index.min(), sector_stats.index.max())
+                    apply_chart_style(fig_sec, height=420, yaxis_title="Average Correlation")
+                    render_chart(fig_sec, chart_id="mo_sector_corr", filename_base="sector_correlation",
+                                 title_key="mo_sector_corr", default_title="Sector Correlation")
+
+                    intra_cols = [c for c in sector_stats.columns
+                                  if c.startswith("intra_") and c != "intra_sector_avg"]
+                    if intra_cols:
+                        if st.toggle("Show per-sector breakdown", key="mo_per_sector_toggle"):
+                            fig_per = go.Figure()
+                            for i, col in enumerate(intra_cols):
+                                sector_name = col.replace("intra_", "")
+                                fig_per.add_trace(go.Scatter(
+                                    x=sector_stats.index, y=sector_stats[col],
+                                    mode="lines", name=sector_name,
+                                    line=dict(color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)], width=1.5),
+                                ))
+                            apply_chart_style(fig_per, height=420,
+                                              yaxis_title="Intra-Sector Correlation")
+                            render_chart(fig_per, chart_id="mo_per_sector", filename_base="per_sector_corr",
+                                         title_key="mo_per_sector", default_title="Per-Sector Correlation")
+                else:
+                    st.warning("Not enough data for sector stats with this window.")
+            else:
+                st.info("Run the clustering pipeline to enable sector breakdown.")
 
 
-# ---------- market summary metric ----------
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 5 — Pairs & Dislocations
+# ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("---")
-st.subheader("Market Summary")
-st.caption(
-    "Aggregate statistics of the full-period pairwise correlation matrix. "
-    "**Avg Pairwise Corr** is the market-wide average co-movement — higher values mean the market behaves "
-    "more as a single unit. **Std Dev** measures dispersion of correlations: low std dev = uniform correlation, "
-    "high std dev = mixture of tightly and loosely linked stocks. **Min/Max** show the extremes."
-)
-market_summary = pipe_meta.get("market_summary", {})
-if market_summary:
-    cols = st.columns(5)
-    cols[0].metric("Avg Pairwise Corr", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
-    cols[1].metric("Median", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
-    cols[2].metric("Std Dev", f"{market_summary.get('std_pairwise_corr', 0):.4f}")
-    cols[3].metric("Min", f"{market_summary.get('min_pairwise_corr', 0):.4f}")
-    cols[4].metric("Max", f"{market_summary.get('max_pairwise_corr', 0):.4f}")
+with tab_pairs:
+
+    # ── Section 7: Top/Bottom Pairs & Correlation Distribution ──────────────
+    with st.container(border=True):
+        section_header(
+            "Top/Bottom Pairs & Correlation Distribution",
+            "Most/least correlated pairs (left) and the full distribution of pairwise "
+            "correlations (right). Click a pair to investigate in the Pair Analysis view.",
+        )
+
+        col_pairs, col_dist = st.columns([3, 2])
+
+        with col_pairs:
+            pairs = load_top_bottom()
+            top_pairs = pairs[pairs["rank_type"] == "top"][
+                ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
+            ].reset_index(drop=True)
+            bottom_pairs = pairs[pairs["rank_type"] == "bottom"][
+                ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
+            ].reset_index(drop=True)
+
+            tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
+            with tab_top:
+                st.dataframe(top_pairs, use_container_width=True, hide_index=True)
+                _top_pair_idx = st.selectbox(
+                    "Select pair to analyze",
+                    range(len(top_pairs)),
+                    format_func=lambda i: f"{top_pairs.iloc[i]['ticker_1']} / {top_pairs.iloc[i]['ticker_2']} ({top_pairs.iloc[i]['correlation']:.4f})",
+                    key="top_pair_sel",
+                )
+                if st.button("Open in Pair Analysis", key="top_pair_btn"):
+                    st.session_state["pa_ticker_a"] = top_pairs.iloc[_top_pair_idx]["ticker_1"]
+                    st.session_state["pa_ticker_b"] = top_pairs.iloc[_top_pair_idx]["ticker_2"]
+                    st.session_state["_goto_pair_analysis"] = True
+                    st.rerun()
+
+            with tab_bottom:
+                st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
+                _bot_pair_idx = st.selectbox(
+                    "Select pair to analyze",
+                    range(len(bottom_pairs)),
+                    format_func=lambda i: f"{bottom_pairs.iloc[i]['ticker_1']} / {bottom_pairs.iloc[i]['ticker_2']} ({bottom_pairs.iloc[i]['correlation']:.4f})",
+                    key="bot_pair_sel",
+                )
+                if st.button("Open in Pair Analysis", key="bot_pair_btn"):
+                    st.session_state["pa_ticker_a"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_1"]
+                    st.session_state["pa_ticker_b"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_2"]
+                    st.session_state["_goto_pair_analysis"] = True
+                    st.rerun()
+
+        with col_dist:
+            mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
+            upper_vals = corr.where(mask).stack().values
+            upper_vals = upper_vals[~np.isnan(upper_vals)]
+
+            fig_corr_dist = go.Figure()
+            fig_corr_dist.add_trace(go.Histogram(
+                x=upper_vals, nbinsx=60,
+                marker_color=get_colors()["primary"], opacity=0.75,
+                hovertemplate="Corr: %{x:.3f}<br>Count: %{y}<extra></extra>",
+            ))
+            mean_val = np.mean(upper_vals)
+            median_val = np.median(upper_vals)
+            fig_corr_dist.add_vline(x=mean_val, line_dash="dash", line_color=get_colors()["secondary"],
+                                     annotation_text=f"Mean: {mean_val:.3f}", annotation_font_size=10)
+            fig_corr_dist.add_vline(x=median_val, line_dash="dot", line_color=get_colors()["tertiary"],
+                                     annotation_text=f"Median: {median_val:.3f}", annotation_font_size=10)
+            apply_chart_style(fig_corr_dist, height=420,
+                              xaxis_title="Pairwise Correlation", yaxis_title="Frequency",
+                              showlegend=False)
+            render_chart(fig_corr_dist, chart_id="mo_corr_dist", filename_base="correlation_distribution",
+                         title_key="mo_corr_dist", default_title="Correlation Distribution")
+
+    # ── Section 8: Dislocation Candidates ───────────────────────────────────
+    with st.container(border=True):
+        section_header(
+            "Dislocation Candidates",
+            "Historically correlated pairs ranked by mean-reversion characteristics. "
+            "Pairs with shorter half-lives and active Z-score dislocations are ranked higher.",
+        )
+
+        _candidates = load_dislocation_candidates()
+        if not _candidates.empty:
+            _display_cols = [
+                "ticker_a", "ticker_b", "sector_a", "sector_b",
+                "correlation", "beta", "half_life", "current_zscore",
+                "n_signals", "rank_score",
+            ]
+            _disp_cands = _candidates[[c for c in _display_cols if c in _candidates.columns]].copy()
+
+            st.dataframe(
+                _disp_cands,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "correlation": st.column_config.NumberColumn(format="%.4f"),
+                    "beta": st.column_config.NumberColumn(format="%.4f"),
+                    "half_life": st.column_config.NumberColumn("Half-Life (days)", format="%.1f"),
+                    "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
+                    "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
+                },
+            )
+
+            _cand_idx = st.selectbox(
+                "Select a candidate pair to analyze",
+                range(len(_disp_cands)),
+                format_func=lambda i: (
+                    f"{_disp_cands.iloc[i]['ticker_a']} / {_disp_cands.iloc[i]['ticker_b']}  "
+                    f"(Z={_disp_cands.iloc[i]['current_zscore']:.2f}, HL={_disp_cands.iloc[i]['half_life']:.0f}d)"
+                ),
+                key="cand_pair_sel",
+            )
+            if st.button("Analyze in Pair Analysis", key="cand_pair_btn"):
+                st.session_state["pa_ticker_a"] = _disp_cands.iloc[_cand_idx]["ticker_a"]
+                st.session_state["pa_ticker_b"] = _disp_cands.iloc[_cand_idx]["ticker_b"]
+                st.session_state["_goto_pair_analysis"] = True
+                st.rerun()
+        else:
+            st.info(
+                "No dislocation candidates available. Run the pipeline "
+                "(`python run_pipeline.py`) to generate ranked candidate pairs."
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tab 6 — EEE Analysis (RMT, GLASSO, Wavelets, Transfer Entropy)
+# ══════════════════════════════════════════════════════════════════════════════
+
+with tab_eee:
+    from eee_analysis import render as _render_eee
+    _render_eee()

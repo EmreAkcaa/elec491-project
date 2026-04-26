@@ -111,7 +111,7 @@ def compute_market_summary(corr: pd.DataFrame) -> dict:
     """Summary statistics of the pairwise correlation distribution."""
     # Upper triangle only (exclude diagonal)
     mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
-    upper = corr.where(mask).stack()
+    upper = corr.where(mask).stack().dropna()
 
     return {
         "avg_pairwise_corr": round(float(upper.mean()), 4),

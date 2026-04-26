@@ -1,0 +1,74 @@
+ticker,degree,betweenness_centrality,sector
+SISE,22,0.7715179968701096,Industrials
+VESBE,9,0.47417840375586856,Consumer Durables
+AKBNK,6,0.13497652582159625,Banking
+ODAS,6,0.13497652582159625,Energy
+MGROS,5,0.13458528951486698,Retail
+PETKM,5,0.48669796557120504,Chemicals
+KCHOL,5,0.4855242566510172,Conglomerates
+CEMTS,4,0.08215962441314555,Steel
+AGHOL,4,0.20539906103286384,Conglomerates
+DOHOL,4,0.08215962441314555,Conglomerates
+SAHOL,4,0.22769953051643194,Conglomerates
+INDES,3,0.05516431924882629,Technology
+BUCIM,3,0.25195618153364635,Building Materials
+ZOREN,2,0.2625195618153365,Energy
+ISCTR,2,0.15492957746478875,Banking
+TTKOM,2,0.22183098591549297,Telecommunications
+SOKM,2,0.02777777777777778,Retail
+TURSG,1,0.0,Insurance
+PAPIL,1,0.0,Defense
+CCOLA,1,0.0,Beverages
+BTCIM,1,0.0,Building Materials
+FROTO,1,0.0,Automotive
+EREGL,1,0.0,Steel
+AKSA,1,0.0,Chemicals
+AEFES,1,0.0,Beverages
+BRSAN,1,0.0,Steel
+EGEEN,1,0.0,Automotive
+ENKAI,1,0.0,Construction
+ECILC,1,0.0,Pharmaceuticals
+MAVI,1,0.0,Retail
+TKFEN,1,0.0,Construction
+PGSUS,1,0.0,Airlines
+OYAKC,1,0.0,Building Materials
+AGESA,1,0.0,Insurance
+ASUZU,1,0.0,Automotive
+AKSEN,1,0.0,Energy
+ANHYT,1,0.0,Insurance
+ALARK,1,0.0,Conglomerates
+BRYAT,1,0.0,Conglomerates
+AKFGY,1,0.0,REIT
+SASA,1,0.0,Chemicals
+ULKER,1,0.0,Food
+VAKBN,1,0.0,Banking
+YKBNK,1,0.0,Banking
+ARCLK,1,0.0,Consumer Durables
+AYGAZ,1,0.0,Energy
+ASELS,1,0.0,Defense
+BIMAS,1,0.0,Retail
+BRISA,1,0.0,Automotive
+CIMSA,1,0.0,Building Materials
+BERA,1,0.0,Conglomerates
+GARAN,1,0.0,Banking
+DOAS,1,0.0,Automotive
+GUBRF,1,0.0,Chemicals
+ENJSA,1,0.0,Energy
+EKGYO,1,0.0,REIT
+VESTL,1,0.0,Consumer Durables
+TCELL,1,0.0,Telecommunications
+THYAO,1,0.0,Airlines
+HALKB,1,0.0,Banking
+HEKTS,1,0.0,Chemicals
+LOGO,1,0.0,Technology
+ISGYO,1,0.0,REIT
+MPARK,1,0.0,Healthcare
+SKBNK,1,0.0,Banking
+DGATE,1,0.0,Technology
+TKNSA,1,0.0,Retail
+TAVHL,1,0.0,Transportation
+TUPRS,1,0.0,Energy
+KRDMD,1,0.0,Steel
+TTRAK,1,0.0,Industrials
+TOASO,1,0.0,Automotive
+OTKAR,1,0.0,Defense

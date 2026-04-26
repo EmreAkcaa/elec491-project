@@ -1,5 +1,7 @@
 """Cross-validation of yfinance data against isyatirimhisse."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 

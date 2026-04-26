@@ -60,6 +60,18 @@ class RollingConfig:
 
 
 @dataclass
+class DislocationConfig:
+    zscore_window: int = 60
+    entry_zscore: float = 2.0
+    exit_zscore: float = 0.5
+    min_half_life: int = 5
+    max_half_life: int = 252
+    top_n_candidates: int = 20
+    lookback_window: int = 252
+    min_correlation: float = 0.5
+
+
+@dataclass
 class PipelineConfig:
     market: MarketConfig
     data: DataConfig
@@ -69,6 +81,7 @@ class PipelineConfig:
     universe: pd.DataFrame = field(repr=False)
     universe_metadata: dict = field(default_factory=dict)
     rolling: RollingConfig = field(default_factory=RollingConfig)
+    dislocation: DislocationConfig = field(default_factory=DislocationConfig)
 
     @property
     def tickers(self) -> list[str]:
@@ -133,6 +146,7 @@ def load_config(
     universe_df, universe_meta = _load_universe(universe_path)
 
     rolling_raw = raw.get("rolling", {})
+    dislocation_raw = raw.get("dislocation", {})
 
     config = PipelineConfig(
         market=MarketConfig(**raw["market"]),
@@ -143,6 +157,7 @@ def load_config(
         universe=universe_df,
         universe_metadata=universe_meta,
         rolling=RollingConfig(**rolling_raw),
+        dislocation=DislocationConfig(**dislocation_raw),
     )
 
     return config
