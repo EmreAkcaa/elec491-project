@@ -458,6 +458,14 @@ def load_partial_corr() -> pd.DataFrame:
 
 
 @st.cache_data
+def load_precision_matrix() -> pd.DataFrame:
+    path = DATA_RESULTS / "precision_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
 def load_partial_corr_edges() -> pd.DataFrame:
     path = DATA_RESULTS / "partial_corr_edges.csv"
     if path.exists():

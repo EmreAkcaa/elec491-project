@@ -72,6 +72,15 @@ class DislocationConfig:
 
 
 @dataclass
+class TransferEntropyConfig:
+    lag: int = 1
+    n_bins: int = 3
+    significance_shuffles: int = 100
+    significance_level: float = 0.05
+    seed: int = 42
+
+
+@dataclass
 class PipelineConfig:
     market: MarketConfig
     data: DataConfig
@@ -82,6 +91,7 @@ class PipelineConfig:
     universe_metadata: dict = field(default_factory=dict)
     rolling: RollingConfig = field(default_factory=RollingConfig)
     dislocation: DislocationConfig = field(default_factory=DislocationConfig)
+    transfer_entropy: TransferEntropyConfig = field(default_factory=TransferEntropyConfig)
 
     @property
     def tickers(self) -> list[str]:
@@ -147,6 +157,7 @@ def load_config(
 
     rolling_raw = raw.get("rolling", {})
     dislocation_raw = raw.get("dislocation", {})
+    transfer_entropy_raw = raw.get("transfer_entropy", {})
 
     config = PipelineConfig(
         market=MarketConfig(**raw["market"]),
@@ -158,6 +169,7 @@ def load_config(
         universe_metadata=universe_meta,
         rolling=RollingConfig(**rolling_raw),
         dislocation=DislocationConfig(**dislocation_raw),
+        transfer_entropy=TransferEntropyConfig(**transfer_entropy_raw),
     )
 
     return config

@@ -40,3 +40,10 @@ dislocation:
   top_n_candidates: 20
   lookback_window: 252
   min_correlation: 0.5
+
+transfer_entropy:
+  lag: 1
+  n_bins: 3
+  significance_shuffles: 100
+  significance_level: 0.05
+  seed: 42
