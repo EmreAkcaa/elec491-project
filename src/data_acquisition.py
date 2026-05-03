@@ -15,12 +15,18 @@ logger = logging.getLogger(__name__)
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
 
 
-def fetch_all_tickers(config: PipelineConfig) -> pd.DataFrame:
+def fetch_all_tickers(config: PipelineConfig) -> tuple[pd.DataFrame, list[str]]:
     """Download price data for all universe tickers via yfinance.
 
     Downloads in chunks of 25 with a 1-second delay between chunks.
-    Returns a wide DataFrame with MultiIndex columns: (field, provider_symbol).
-    Fields include 'Adj Close' and 'Close'.
+
+    Returns
+    -------
+    combined : pd.DataFrame
+        Wide DataFrame with MultiIndex columns: (field, ticker).
+        Fields include 'Adj Close' and 'Close'.
+    failures : list[str]
+        Tickers that failed to download or are missing from the result.
     """
     DATA_RAW.mkdir(parents=True, exist_ok=True)
 

@@ -114,6 +114,7 @@ def compute_transfer_entropy_matrix(
     n_bins: int = 3,
     significance_shuffles: int = 100,
     significance_level: float = 0.05,
+    seed: int | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Compute pairwise transfer entropy for all stock pairs.
 
@@ -129,6 +130,8 @@ def compute_transfer_entropy_matrix(
         Number of shuffle permutations for significance testing.
     significance_level : float
         p-value threshold.
+    seed : int or None
+        Seed for the shuffle RNG. If None, results are non-deterministic.
 
     Returns
     -------
@@ -142,6 +145,7 @@ def compute_transfer_entropy_matrix(
     N = len(tickers)
     te = np.zeros((N, N))
     significant = np.ones((N, N), dtype=bool)
+    rng = np.random.default_rng(seed)
 
     total_pairs = N * (N - 1)
     completed = 0
@@ -158,7 +162,7 @@ def compute_transfer_entropy_matrix(
             if significance_shuffles > 0:
                 null_dist = np.zeros(significance_shuffles)
                 for s in range(significance_shuffles):
-                    x_shuffled = np.random.permutation(x)
+                    x_shuffled = rng.permutation(x)
                     null_dist[s] = transfer_entropy(x_shuffled, y, lag=lag, n_bins=n_bins)
                 p_value = (null_dist >= te[i, j]).mean()
                 significant[i, j] = p_value < significance_level
@@ -267,9 +271,16 @@ def run_transfer_entropy(config: PipelineConfig) -> None:
     returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
     logger.info("Loaded log returns: %d days x %d tickers", *returns.shape)
 
+    te_cfg = config.transfer_entropy
+
     # Compute TE matrix
     te_matrix, net_te_matrix = compute_transfer_entropy_matrix(
-        returns, lag=1, n_bins=3, significance_shuffles=100,
+        returns,
+        lag=te_cfg.lag,
+        n_bins=te_cfg.n_bins,
+        significance_shuffles=te_cfg.significance_shuffles,
+        significance_level=te_cfg.significance_level,
+        seed=te_cfg.seed,
     )
     te_matrix.to_parquet(DATA_RESULTS / "transfer_entropy_matrix.parquet")
     net_te_matrix.to_parquet(DATA_RESULTS / "net_transfer_entropy_matrix.parquet")

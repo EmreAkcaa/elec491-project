@@ -137,6 +137,9 @@ def run_partial_correlation(config: PipelineConfig) -> None:
     partial_corr.to_parquet(DATA_RESULTS / "partial_corr.parquet")
     logger.info("Saved partial correlation matrix (alpha=%.4f)", alpha_used)
 
+    precision.to_parquet(DATA_RESULTS / "precision_matrix.parquet")
+    logger.info("Saved precision matrix")
+
     # Extract edge list
     edges = extract_partial_corr_edges(partial_corr)
     edges.to_csv(DATA_RESULTS / "partial_corr_edges.csv", index=False)

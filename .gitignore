@@ -210,3 +210,6 @@ __marimo__/
 # data/raw/
 # data/processed/
 # data/results/
+
+# Claude Code per-developer settings (project-level settings.json stays tracked)
+.claude/settings.local.json

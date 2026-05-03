@@ -111,13 +111,13 @@ def flag_anomalies(
 
     Returns a DataFrame with columns: date, ticker, return_value.
     """
-    mask = returns.abs() > threshold
-    anomalies = returns.where(mask).stack().dropna().reset_index()
-    anomalies.columns = ["date", "ticker", "return_value"]
-    anomalies = anomalies.sort_values("return_value", key=abs, ascending=False)
+    long = returns.stack().rename("return_value").reset_index()
+    long.columns = ["date", "ticker", "return_value"]
+    flagged = long[long["return_value"].abs() > threshold].copy()
+    flagged = flagged.sort_values("return_value", key=abs, ascending=False)
 
-    logger.info("Flagged %d anomalous return observations (|r| > %.2f)", len(anomalies), threshold)
-    return anomalies.reset_index(drop=True)
+    logger.info("Flagged %d anomalous return observations (|r| > %.2f)", len(flagged), threshold)
+    return flagged.reset_index(drop=True)
 
 
 def run_preprocessing(config: PipelineConfig) -> None:
