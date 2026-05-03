@@ -531,6 +531,84 @@ def load_te_matrix() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+@st.cache_data
+def load_net_te_matrix() -> pd.DataFrame:
+    path = DATA_RESULTS / "net_transfer_entropy_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_rc_metrics() -> dict:
+    path = DATA_RESULTS / "rc_metrics.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+@st.cache_data
+def load_rc_predictions() -> pd.DataFrame:
+    path = DATA_RESULTS / "rc_dispersion_predictions.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_rc_feature_importance() -> pd.DataFrame:
+    path = DATA_RESULTS / "rc_feature_importance.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_denoised_mst_metrics() -> pd.DataFrame:
+    path = DATA_RESULTS / "denoised_mst_node_metrics.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_wavelet_mst_metrics(scale: int) -> pd.DataFrame:
+    path = DATA_RESULTS / f"wavelet_mst_metrics_scale{scale}.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_anomalies() -> pd.DataFrame:
+    path = DATA_PROCESSED / "anomalies.csv"
+    if path.exists():
+        df = pd.read_csv(path, parse_dates=["date"]) if path.stat().st_size > 0 else pd.DataFrame()
+        return df
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_rolling_market_stats_precomputed(window: int) -> pd.DataFrame:
+    path = DATA_RESULTS / f"rolling_market_stats_w{window}.parquet"
+    if path.exists():
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        return df
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_rolling_sector_stats_precomputed() -> pd.DataFrame:
+    path = DATA_RESULTS / "rolling_sector_stats.parquet"
+    if path.exists():
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        return df
+    return pd.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # Event markers
 # ---------------------------------------------------------------------------

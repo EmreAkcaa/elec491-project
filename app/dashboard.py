@@ -37,7 +37,8 @@ from utils import (  # noqa: E402
     load_adj_close, load_log_returns, load_summary_stats, load_batch_corr,
     load_coverage, load_top_bottom, load_metadata, load_fetch_metadata,
     load_xu100, load_linkage, load_dendrogram_order, load_cluster_assignments,
-    load_mst_edges, load_mst_metrics, load_dislocation_candidates,
+    load_mst_edges, load_mst_metrics, load_dislocation_candidates, load_anomalies,
+    load_rolling_market_stats_precomputed, load_rolling_sector_stats_precomputed,
     draw_event_markers, event_marker_manager_ui,
     get_colors, SECTOR_PALETTE, CHART_LAYOUT, apply_chart_style, inject_custom_css,
     section_header, render_chart,
@@ -314,6 +315,89 @@ with tab_data:
                                   margin=dict(l=0, r=0, t=10, b=0))
                 render_chart(fig_hist, chart_id="mo_hist", filename_base="return_distribution",
                              title_key="mo_hist", default_title="Return Distribution")
+
+    # ── Section 3: Return Anomalies ─────────────────────────────────────────
+    with st.container(border=True):
+        section_header(
+            "Return Anomalies",
+            "Days where a ticker's daily log return exceeded the configured "
+            "threshold (default ±30%) — usually corporate actions or data glitches.",
+        )
+
+        anomalies = load_anomalies()
+        if anomalies.empty:
+            st.success("No anomalies flagged in the current data window.")
+        else:
+            anom_view = anomalies.copy()
+            if "date" in anom_view.columns:
+                anom_view["date"] = pd.to_datetime(anom_view["date"])
+            anom_view["abs_return"] = anom_view["return_value"].abs()
+
+            col_table, col_scatter = st.columns([2, 3])
+
+            with col_table:
+                disp = anom_view.copy()
+                if "date" in disp.columns:
+                    disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
+                disp = disp[["date", "ticker", "return_value", "abs_return"]]
+                st.dataframe(
+                    disp.sort_values("abs_return", ascending=False),
+                    use_container_width=True, hide_index=True, height=320,
+                    column_config={
+                        "return_value": st.column_config.NumberColumn(format="%.4f"),
+                        "abs_return": st.column_config.NumberColumn("|return|", format="%.4f"),
+                    },
+                )
+
+            with col_scatter:
+                colors_now = get_colors()
+                fig_anom = go.Figure()
+                neg = anom_view[anom_view["return_value"] < 0]
+                pos = anom_view[anom_view["return_value"] >= 0]
+                if not neg.empty:
+                    fig_anom.add_trace(go.Scatter(
+                        x=neg["date"], y=neg["ticker"], mode="markers",
+                        marker=dict(
+                            size=8 + 30 * neg["abs_return"].clip(0, 1),
+                            color=colors_now["secondary"], opacity=0.8,
+                            symbol="triangle-down",
+                            line=dict(width=0.5, color="#fff"),
+                        ),
+                        name="negative",
+                        hovertemplate=(
+                            "%{y} on %{x|%Y-%m-%d}<br>"
+                            "return = %{customdata:.4f}<extra></extra>"
+                        ),
+                        customdata=neg["return_value"],
+                    ))
+                if not pos.empty:
+                    fig_anom.add_trace(go.Scatter(
+                        x=pos["date"], y=pos["ticker"], mode="markers",
+                        marker=dict(
+                            size=8 + 30 * pos["abs_return"].clip(0, 1),
+                            color=colors_now["primary"], opacity=0.8,
+                            symbol="triangle-up",
+                            line=dict(width=0.5, color="#fff"),
+                        ),
+                        name="positive",
+                        hovertemplate=(
+                            "%{y} on %{x|%Y-%m-%d}<br>"
+                            "return = %{customdata:.4f}<extra></extra>"
+                        ),
+                        customdata=pos["return_value"],
+                    ))
+                apply_chart_style(
+                    fig_anom, height=320,
+                    xaxis_title="Date", yaxis_title="Ticker",
+                    yaxis=dict(tickfont=dict(size=9)),
+                    showlegend=True,
+                )
+                render_chart(
+                    fig_anom, chart_id="mo_anomalies",
+                    filename_base="anomaly_timeline",
+                    title_key="mo_anom",
+                    default_title=f"Anomaly Timeline ({len(anom_view)} flagged events)",
+                )
 
     # ── Section 9: Market Summary ───────────────────────────────────────────
     with st.container(border=True):
@@ -713,11 +797,40 @@ with tab_rolling:
 
         # ── Sub-Tab 1: Market correlation over time ─────────────────────────
         with tab_market:
-            with st.status("Computing rolling market stats...", expanded=False) as _ms_st:
-                market_stats = _compute_market_stats(
-                    _returns_json, rc_window, rc_step, rc_method, rc_expanding,
+            # Try precomputed parquet first (matches windows the pipeline
+            # bakes for the demo). Fall back to on-the-fly compute when the
+            # user picks parameters outside the precomputed grid.
+            _precomputed_windows = {60, 120, 252}
+            _use_precomputed_market = (
+                rc_window in _precomputed_windows
+                and rc_step == 5
+                and rc_method == "pearson"
+                and not rc_expanding
+            )
+
+            if _use_precomputed_market:
+                market_stats = load_rolling_market_stats_precomputed(rc_window)
+                if not market_stats.empty:
+                    st.caption(
+                        f"Reading precomputed `rolling_market_stats_w{rc_window}.parquet` "
+                        "(window/step/method match the pipeline; `step=5`, `pearson`)."
+                    )
+                else:
+                    with st.status("Computing rolling market stats...", expanded=False) as _ms_st:
+                        market_stats = _compute_market_stats(
+                            _returns_json, rc_window, rc_step, rc_method, rc_expanding,
+                        )
+                        _ms_st.update(label="Market stats ready", state="complete")
+            else:
+                with st.status("Computing rolling market stats (custom params)...", expanded=False) as _ms_st:
+                    market_stats = _compute_market_stats(
+                        _returns_json, rc_window, rc_step, rc_method, rc_expanding,
+                    )
+                    _ms_st.update(label="Market stats ready", state="complete")
+                st.caption(
+                    "Computed on-the-fly — parameters fall outside the precomputed "
+                    "grid (`window∈{60,120,252}`, `step=5`, `pearson`, `rolling`)."
                 )
-                _ms_st.update(label="Market stats ready", state="complete")
 
             if not market_stats.empty:
                 fig_rc = go.Figure()
@@ -842,11 +955,36 @@ with tab_rolling:
             if not cluster_df_for_sectors.empty and "sector" in cluster_df_for_sectors.columns:
                 sec_map = dict(zip(cluster_df_for_sectors["ticker"], cluster_df_for_sectors["sector"]))
 
-                with st.status("Computing sector stats...", expanded=False) as _ss_st:
-                    sector_stats = _compute_sector(
-                        _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
+                # Sector precompute is only for window=252, step=5, pearson.
+                _use_precomputed_sector = (
+                    rc_window == 252
+                    and rc_step == 5
+                    and rc_method == "pearson"
+                    and not rc_expanding
+                )
+                if _use_precomputed_sector:
+                    sector_stats = load_rolling_sector_stats_precomputed()
+                    if not sector_stats.empty:
+                        st.caption(
+                            "Reading precomputed `rolling_sector_stats.parquet` "
+                            "(`window=252`, `step=5`, `pearson`)."
+                        )
+                    else:
+                        with st.status("Computing sector stats...", expanded=False) as _ss_st:
+                            sector_stats = _compute_sector(
+                                _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
+                            )
+                            _ss_st.update(label="Sector stats ready", state="complete")
+                else:
+                    with st.status("Computing sector stats (custom params)...", expanded=False) as _ss_st:
+                        sector_stats = _compute_sector(
+                            _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
+                        )
+                        _ss_st.update(label="Sector stats ready", state="complete")
+                    st.caption(
+                        "Computed on-the-fly — sector precompute exists only for "
+                        "`window=252`, `step=5`, `pearson`."
                     )
-                    _ss_st.update(label="Sector stats ready", state="complete")
 
                 if not sector_stats.empty:
                     fig_sec = go.Figure()
