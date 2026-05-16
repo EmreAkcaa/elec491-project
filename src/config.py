@@ -29,6 +29,7 @@ class DataConfig:
     end_date: str
     download_interval: str
     store_raw_close: bool
+    source: str = "yfinance"  # yfinance | physionet — drives src/eeg_acquisition vs src/data_acquisition
 
 
 @dataclass
@@ -81,6 +82,20 @@ class TransferEntropyConfig:
 
 
 @dataclass
+class EEGConfig:
+    """PhysioNet EEG-Motor-Imagery-specific knobs (Phase F)."""
+    task_type: str = "left_right"       # left_right | feet_fists | baseline
+    subject_ids: list = field(default_factory=lambda: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    runs_per_condition: list = field(default_factory=lambda: [4, 8, 12])  # left_right runs
+    sampling_rate_hz: int = 160
+    bandpass_low_hz: float = 1.0
+    bandpass_high_hz: float = 50.0
+    notch_hz: float = 50.0              # 50 = Türkiye / EU grid; 60 = US
+    car_reference: bool = True
+    cache_raw: bool = True
+
+
+@dataclass
 class PipelineConfig:
     market: MarketConfig
     data: DataConfig
@@ -92,6 +107,7 @@ class PipelineConfig:
     rolling: RollingConfig = field(default_factory=RollingConfig)
     dislocation: DislocationConfig = field(default_factory=DislocationConfig)
     transfer_entropy: TransferEntropyConfig = field(default_factory=TransferEntropyConfig)
+    eeg: EEGConfig = field(default_factory=EEGConfig)
 
     @property
     def tickers(self) -> list[str]:
@@ -178,6 +194,7 @@ def load_config(
     rolling_raw = raw.get("rolling", {})
     dislocation_raw = raw.get("dislocation", {})
     transfer_entropy_raw = raw.get("transfer_entropy", {})
+    eeg_raw = raw.get("eeg", {})
 
     config = PipelineConfig(
         market=MarketConfig(**raw["market"]),
@@ -190,6 +207,7 @@ def load_config(
         rolling=RollingConfig(**rolling_raw),
         dislocation=DislocationConfig(**dislocation_raw),
         transfer_entropy=TransferEntropyConfig(**transfer_entropy_raw),
+        eeg=EEGConfig(**eeg_raw),
     )
 
     return config

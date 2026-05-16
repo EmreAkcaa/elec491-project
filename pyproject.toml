@@ -27,6 +27,9 @@ snn = [
     "torch>=2.0",
     "snntorch>=0.7",
 ]
+eeg = [
+    "mne>=1.6",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
