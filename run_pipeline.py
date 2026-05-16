@@ -44,6 +44,18 @@ def main():
     run_wavelet_analysis(config)
     run_transfer_entropy(config)
 
+    # --- Spiking Neural Network (pair-signal classifier) ---
+    # Optional: requires torch + snntorch (install with `uv sync --extra snn`).
+    # The pipeline completes regardless of whether torch is installed.
+    try:
+        from src.snn_signals import run_snn_signals
+        run_snn_signals(config)
+    except ImportError as exc:
+        logger.warning(
+            "SNN step skipped: %s. Install with `uv sync --extra snn` to enable.",
+            exc,
+        )
+
     logger.info("========== Pipeline Complete ==========")
 
 

@@ -1,4 +1,4 @@
-"""EEE Analysis dashboard tab — RMT, Graphical LASSO, Wavelets, Transfer Entropy."""
+"""EEE Analysis dashboard tab — RMT, Graphical LASSO, Wavelets, Transfer Entropy, SNN."""
 
 from __future__ import annotations
 
@@ -24,6 +24,8 @@ from utils import (
     load_wavelet_mst_metrics,
     load_te_edges, load_te_node_roles, load_te_matrix, load_net_te_matrix,
     load_cluster_assignments,
+    load_snn_metrics, load_snn_pair_list, load_snn_signals,
+    load_snn_training_history, load_snn_raster_sample, load_snn_membrane_sample,
     load_dendrogram_order,
 )
 
@@ -651,6 +653,281 @@ def render_transfer_entropy(sector_map: dict):
             st.info("Run the pipeline to generate the net transfer-entropy matrix.")
 
 
+# ---------------------------------------------------------------------------
+# SNN — Spiking Neural Network (pair-signal classifier)
+# ---------------------------------------------------------------------------
+
+CLASS_COLORS = {"HOLD": "#9CA3AF", "BUY": "#06D6A0", "SELL": "#E63946"}
+
+
+def render_snn(sector_map: dict):
+    """Render Spiking Neural Network (neuromorphic) section.
+
+    Honest framing: the SNN achieves macro-F1 ≈ 0.67 (3-class baseline 0.27)
+    but on the trading-Sharpe metric it underperforms the simple |Z|>2 rule
+    by an average Δ-Sharpe ≈ −1.1, beating the heuristic on only 5 of 20
+    pairs. We report this as a documented exploration of spike-coded neural
+    inference applied to pair-spread classification — complementary to the
+    rate-coded methods elsewhere in the project.
+    """
+    with st.container(border=True):
+        section_header(
+            "Neuromorphic Signals — Spiking Neural Network",
+            "A recurrent leaky-integrate-and-fire classifier trained with "
+            "surrogate-gradient backprop-through-time. Inputs are delta-modulated "
+            "(Σ-Δ ADC analogue) spike trains derived from the pair-dislocation "
+            "Z-score; outputs are 3-class BUY / SELL / HOLD decisions. "
+            "Same algorithmic substrate as Intel Loihi 2 / IBM TrueNorth / "
+            "SpiNNaker neuromorphic processors.",
+        )
+
+        metrics = load_snn_metrics()
+        pair_list = load_snn_pair_list()
+
+        if not metrics or pair_list.empty:
+            st.info(
+                "Run the SNN pipeline to generate results: "
+                "`uv sync --extra snn && uv run python run_pipeline.py`."
+            )
+            return
+
+        agg = metrics.get("aggregate", {})
+        cfg = metrics.get("config", {})
+        sample_pair = metrics.get("sample_pair", "BRYAT_BRSAN")
+
+        # ---- Headline metrics
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Pairs trained", metrics.get("n_pairs", len(pair_list)))
+        c2.metric("Mean macro-F1", f"{agg.get('mean_macro_f1', 0):.3f}",
+                  help="Classification quality. Random baseline ≈ 0.33; majority-class baseline ≈ 0.27.")
+        c3.metric("Mean SNN Sharpe", f"{agg.get('mean_snn_sharpe', 0):+.2f}",
+                  help="Annualised Sharpe on the SNN's BUY/SELL signals.")
+        c4.metric("Mean Classical Sharpe", f"{agg.get('mean_classical_sharpe', 0):+.2f}",
+                  help="Same metric on the simple |Z|>2 rule.")
+        delta_sh = agg.get("mean_delta_sharpe", 0)
+        c5.metric("Mean Δ-Sharpe", f"{delta_sh:+.2f}",
+                  delta=f"{delta_sh:+.2f}",
+                  delta_color="normal",
+                  help="SNN − Classical. Positive = SNN wins; negative = SNN loses.")
+
+        per_pair = metrics.get("per_pair", {})
+        n_beats = sum(1 for v in per_pair.values() if v.get("delta_sharpe", 0) > 0)
+        st.caption(
+            f"**Honest framing.** The SNN beats the classical |Z|>2 rule on **{n_beats} of "
+            f"{len(per_pair)}** pairs by Sharpe. Aggregate Δ-Sharpe is negative "
+            f"({delta_sh:+.2f}), meaning the simple rule outperforms classifier-style ML on "
+            "average at this horizon. The macro-F1 of "
+            f"{agg.get('mean_macro_f1', 0):.2f} (vs random 0.33 / majority-only 0.27) "
+            "confirms the dislocation features carry learnable structure, but the predictive "
+            "information is concentrated in the current Z-score itself — adding neural "
+            "machinery does not extract additional alpha. This is a documented negative "
+            "result, consistent with weak-form EMH at daily frequency."
+        )
+
+        # ---- Per-pair leaderboard
+        st.markdown("**Per-pair leaderboard** (sorted by Δ-Sharpe vs |Z|>2 baseline)")
+        rows = []
+        for pid, p in per_pair.items():
+            rows.append({
+                "pair": pid,
+                "macro_f1": p.get("macro_f1"),
+                "snn_sharpe": p.get("snn_sharpe"),
+                "classical_sharpe": p.get("classical_sharpe"),
+                "delta_sharpe": p.get("delta_sharpe"),
+                "snn_hit_rate": p.get("snn_hit_rate"),
+                "snn_n_trades": p.get("snn_n_trades"),
+                "classical_n_trades": p.get("classical_n_trades"),
+                "n_test": p.get("n_test"),
+            })
+        leaderboard = (
+            pd.DataFrame(rows)
+            .sort_values("delta_sharpe", ascending=False)
+            .reset_index(drop=True)
+        )
+        st.dataframe(
+            leaderboard,
+            use_container_width=True,
+            height=320,
+            column_config={
+                "macro_f1": st.column_config.NumberColumn("F1", format="%.3f"),
+                "snn_sharpe": st.column_config.NumberColumn("SNN Sh", format="%+.2f"),
+                "classical_sharpe": st.column_config.NumberColumn("Cls Sh", format="%+.2f"),
+                "delta_sharpe": st.column_config.NumberColumn("Δ Sh", format="%+.2f"),
+                "snn_hit_rate": st.column_config.NumberColumn("Hit %", format="%.2f"),
+            },
+        )
+
+        # ---- Per-pair signal explorer
+        st.markdown("**Per-pair signal explorer**")
+        pair_ids = pair_list["pair_id"].astype(str).tolist() if "pair_id" in pair_list.columns else list(per_pair.keys())
+        default_idx = pair_ids.index(sample_pair) if sample_pair in pair_ids else 0
+        selected_pair = st.selectbox(
+            "Select pair",
+            pair_ids,
+            index=default_idx,
+            key="snn_pair_selector",
+        )
+
+        signals = load_snn_signals(selected_pair)
+        if not signals.empty and {"date", "zscore", "signal"}.issubset(signals.columns):
+            fig_sig = go.Figure()
+            fig_sig.add_trace(go.Scatter(
+                x=signals["date"], y=signals["zscore"],
+                name="Z-score", mode="lines",
+                line=dict(color=get_colors().get("muted", "#888"), width=1.2),
+            ))
+            for cls in ("BUY", "SELL"):
+                mask = signals["signal"] == cls
+                if mask.any():
+                    fig_sig.add_trace(go.Scatter(
+                        x=signals.loc[mask, "date"],
+                        y=signals.loc[mask, "zscore"],
+                        name=f"SNN {cls}",
+                        mode="markers",
+                        marker=dict(
+                            color=CLASS_COLORS[cls], size=8,
+                            symbol="triangle-up" if cls == "BUY" else "triangle-down",
+                            line=dict(width=0.5, color="#222"),
+                        ),
+                    ))
+            fig_sig.add_hline(y=2.0, line=dict(color="rgba(150,150,150,0.4)", dash="dot"))
+            fig_sig.add_hline(y=-2.0, line=dict(color="rgba(150,150,150,0.4)", dash="dot"))
+            fig_sig.add_hline(y=0.0, line=dict(color="rgba(150,150,150,0.6)", dash="dash"))
+            apply_chart_style(
+                fig_sig, height=360,
+                xaxis_title="Date", yaxis_title="Z-score (rolling 60d)",
+            )
+            render_chart(
+                fig_sig, chart_id=f"snn_signal_{selected_pair}",
+                filename_base=f"snn_signal_{selected_pair}",
+                default_title=f"SNN signals on Z-score — {selected_pair}",
+            )
+        else:
+            st.info("No signals for this pair.")
+
+        # ---- Training history
+        st.markdown("**Training history** (universal model, pooled across all pairs)")
+        history = load_snn_training_history()
+        if not history.empty and "epoch" in history.columns:
+            fig_h = go.Figure()
+            if "train_loss" in history.columns:
+                fig_h.add_trace(go.Scatter(
+                    x=history["epoch"], y=history["train_loss"],
+                    name="Train loss", mode="lines+markers",
+                    line=dict(color=get_colors().get("primary", "#3B82F6")),
+                ))
+            if "val_loss" in history.columns:
+                fig_h.add_trace(go.Scatter(
+                    x=history["epoch"], y=history["val_loss"],
+                    name="Val loss", mode="lines+markers",
+                    line=dict(color=get_colors().get("secondary", "#EF4444"), dash="dash"),
+                ))
+            if "val_macro_f1" in history.columns:
+                fig_h.add_trace(go.Scatter(
+                    x=history["epoch"], y=history["val_macro_f1"],
+                    name="Val macro-F1", mode="lines+markers", yaxis="y2",
+                    line=dict(color="#06D6A0"),
+                ))
+            fig_h.update_layout(
+                yaxis=dict(title="Loss"),
+                yaxis2=dict(title="Val macro-F1", overlaying="y", side="right", range=[0, 1]),
+            )
+            apply_chart_style(fig_h, height=300, xaxis_title="Epoch")
+            render_chart(
+                fig_h, chart_id="snn_training_history",
+                filename_base="snn_training_history",
+                default_title="SNN training convergence (early-stopped on val loss)",
+            )
+
+        # ---- Spike raster + membrane V(t) for the sample pair only
+        st.markdown(
+            f"**Sample pair internals — `{sample_pair}`** "
+            "(spike output + membrane-potential readout)"
+        )
+        raster = load_snn_raster_sample()
+        membrane = load_snn_membrane_sample()
+
+        col_r, col_m = st.columns(2)
+
+        with col_r:
+            if not raster.empty and {"day_index", "timestep", "neuron_name"}.issubset(raster.columns):
+                # Compose a continuous "tick" axis = day_index * n_timesteps + timestep
+                ticks_per_day = int(cfg.get("n_timesteps", 20))
+                raster = raster.assign(
+                    global_tick=raster["day_index"].astype(int) * ticks_per_day + raster["timestep"].astype(int)
+                )
+                fig_r = go.Figure()
+                for cls, c in CLASS_COLORS.items():
+                    mask = raster["neuron_name"] == cls
+                    if mask.any():
+                        fig_r.add_trace(go.Scatter(
+                            x=raster.loc[mask, "global_tick"],
+                            y=[cls] * mask.sum(),
+                            mode="markers",
+                            name=cls,
+                            marker=dict(color=c, size=6, symbol="line-ns-open"),
+                        ))
+                apply_chart_style(fig_r, height=240, xaxis_title="SNN tick (day × 20 timesteps + t)")
+                render_chart(
+                    fig_r, chart_id="snn_raster",
+                    filename_base="snn_raster",
+                    default_title=f"Output-neuron spike raster — {sample_pair} window",
+                )
+            else:
+                st.info("Spike raster not available for the sample pair.")
+
+        with col_m:
+            if not membrane.empty and {"day_index", "timestep", "neuron_name", "membrane"}.issubset(membrane.columns):
+                ticks_per_day = int(cfg.get("n_timesteps", 20))
+                membrane = membrane.assign(
+                    global_tick=membrane["day_index"].astype(int) * ticks_per_day + membrane["timestep"].astype(int)
+                )
+                fig_m = go.Figure()
+                for cls, c in CLASS_COLORS.items():
+                    sub = membrane[membrane["neuron_name"] == cls].sort_values("global_tick")
+                    if not sub.empty:
+                        fig_m.add_trace(go.Scatter(
+                            x=sub["global_tick"], y=sub["membrane"],
+                            name=cls, mode="lines",
+                            line=dict(color=c, width=1.6),
+                        ))
+                fig_m.add_hline(
+                    y=float(cfg.get("v_threshold", 0.5)),
+                    line=dict(color="rgba(120,120,120,0.5)", dash="dot"),
+                    annotation_text="V_th",
+                )
+                apply_chart_style(fig_m, height=240, xaxis_title="SNN tick", yaxis_title="Membrane V(t)")
+                render_chart(
+                    fig_m, chart_id="snn_membrane",
+                    filename_base="snn_membrane",
+                    default_title=f"Output-layer membrane V(t) — {sample_pair} window",
+                )
+            else:
+                st.info("Membrane trace not available for the sample pair.")
+
+        # ---- Architecture / hyperparameter summary
+        with st.expander("Architecture and hyperparameters"):
+            st.markdown(
+                "- **Hidden layer:** recurrent LIF (`snn.RLeaky`), "
+                f"`n_hidden = {cfg.get('n_hidden', '?')}`, "
+                f"β = {cfg.get('beta', '?')}, V_th = {cfg.get('v_threshold', '?')}\n"
+                f"- **Output layer:** non-resetting LIF (membrane-potential readout)\n"
+                f"- **Input encoders:** delta modulation (Z, ΔZ) + population coding "
+                f"(`n_population_fields = {cfg.get('n_population_fields', '?')}`)\n"
+                f"- **Window:** {cfg.get('window_size', '?')} trading days × "
+                f"{cfg.get('n_timesteps', '?')} SNN ticks per day = "
+                f"{int(cfg.get('window_size', 1)) * int(cfg.get('n_timesteps', 1))} unrolled timesteps\n"
+                f"- **Universal model:** one network across all pairs with 20-dim "
+                "one-hot pair embedding (vs per-pair training)\n"
+                f"- **Loss:** focal loss (γ = {cfg.get('focal_gamma', '?')}) with "
+                f"`sqrt(inv_freq)` class weights\n"
+                f"- **Training:** Adam(lr={cfg.get('learning_rate', '?')}, "
+                f"wd={cfg.get('weight_decay', '?')}); early-stop patience "
+                f"{cfg.get('early_stop_patience', '?')}; seed {cfg.get('seed', '?')}\n"
+                f"- **Total inputs to fc1:** {metrics.get('n_inputs', '?')} channels "
+                "(45 spike channels + 20 pair one-hot)"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Main render
@@ -661,9 +938,9 @@ def render():
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    sub_rmt, sub_glasso, sub_wavelet, sub_te = st.tabs([
+    sub_rmt, sub_glasso, sub_wavelet, sub_te, sub_snn = st.tabs([
         "RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale",
-        "Transfer Entropy",
+        "Transfer Entropy", "Neuromorphic Signals",
     ])
 
     with sub_rmt:
@@ -677,3 +954,6 @@ def render():
 
     with sub_te:
         render_transfer_entropy(sector_map)
+
+    with sub_snn:
+        render_snn(sector_map)

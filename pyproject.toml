@@ -23,6 +23,10 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+snn = [
+    "torch>=2.0",
+    "snntorch>=0.7",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

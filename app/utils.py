@@ -585,6 +585,68 @@ def load_rolling_sector_stats_precomputed() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# SNN (Spiking Neural Network) loaders
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def load_snn_metrics() -> dict:
+    """Per-pair + aggregate SNN metrics (macro-F1, Sharpe, fold-level)."""
+    path = DATA_RESULTS / "snn_metrics.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+@st.cache_data
+def load_snn_pair_list() -> pd.DataFrame:
+    """List of pairs the SNN was trained on (ticker_a, ticker_b, pair_id)."""
+    path = DATA_RESULTS / "snn_pair_list.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_snn_signals(pair_id: str) -> pd.DataFrame:
+    """Per-pair daily SNN signal: date, zscore, class probabilities, signal labels."""
+    path = DATA_RESULTS / "snn_signals" / f"{pair_id}.parquet"
+    if path.exists():
+        df = pd.read_parquet(path)
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+        return df
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_snn_training_history() -> pd.DataFrame:
+    """Epoch-by-epoch training history of the universal SNN model."""
+    path = DATA_RESULTS / "snn_training_history.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_snn_raster_sample() -> pd.DataFrame:
+    """Spike raster from the sample pair (day, timestep, neuron, spike)."""
+    path = DATA_RESULTS / "snn_spike_raster_sample.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+@st.cache_data
+def load_snn_membrane_sample() -> pd.DataFrame:
+    """Membrane-potential V(t) for the sample pair's output-layer neurons."""
+    path = DATA_RESULTS / "snn_membrane_sample.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
 # Event markers
 # ---------------------------------------------------------------------------
 
