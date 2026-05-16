@@ -93,24 +93,47 @@ def render(
 
     ticker_list = sorted(full_returns.columns.tolist())
 
-    # Respect pre-selected tickers from cross-page navigation
-    default_a = 0
-    default_b = min(1, len(ticker_list) - 1)
-    if "pa_ticker_a" in st.session_state and st.session_state["pa_ticker_a"] in ticker_list:
-        default_a = ticker_list.index(st.session_state["pa_ticker_a"])
-    if "pa_ticker_b" in st.session_state and st.session_state["pa_ticker_b"] in ticker_list:
-        default_b = ticker_list.index(st.session_state["pa_ticker_b"])
+    # Initialise widget state ONCE; passing index=/value= alongside key= when
+    # the key is in session_state triggers a Streamlit warning banner that
+    # pops up every time the user changes a selection.
+    if (
+        "pa_ticker_a" not in st.session_state
+        or st.session_state["pa_ticker_a"] not in ticker_list
+    ):
+        st.session_state["pa_ticker_a"] = ticker_list[0]
+    if (
+        "pa_ticker_b" not in st.session_state
+        or st.session_state["pa_ticker_b"] not in ticker_list
+    ):
+        st.session_state["pa_ticker_b"] = (
+            ticker_list[1] if len(ticker_list) > 1 else ticker_list[0]
+        )
+
+    # Auto-resolve A==B collision BEFORE widgets are instantiated.
+    # Writing to a widget key after the widget renders raises
+    # StreamlitAPIException; doing it here is safe and prevents the page
+    # from collapsing to a single warning.
+    if (
+        st.session_state["pa_ticker_a"] == st.session_state["pa_ticker_b"]
+        and len(ticker_list) > 1
+    ):
+        st.session_state["pa_ticker_b"] = next(
+            (t for t in ticker_list if t != st.session_state["pa_ticker_a"]),
+            ticker_list[0],
+        )
+
+    if "pa_date_range" not in st.session_state:
+        st.session_state["pa_date_range"] = (min_date, max_date)
 
     # Row 1: Ticker selectors + date range
     _c_a, _c_b, _c_date = st.columns([2, 2, 3])
     with _c_a:
-        ticker_a = st.selectbox("Ticker A", ticker_list, index=default_a, key="pa_ticker_a")
+        ticker_a = st.selectbox("Ticker A", ticker_list, key="pa_ticker_a")
     with _c_b:
-        ticker_b = st.selectbox("Ticker B", ticker_list, index=default_b, key="pa_ticker_b")
+        ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
     with _c_date:
         date_range = st.date_input(
             "Date range",
-            value=(min_date, max_date),
             min_value=min_date, max_value=max_date,
             key="pa_date_range",
         )
@@ -136,7 +159,17 @@ def render(
     )
 
     if ticker_a == ticker_b:
-        st.warning("Please select two **different** tickers.")
+        # The pre-render collision-resolver above auto-fixes this in
+        # normal flows. Only reachable in the pathological "only one
+        # surviving ticker" case. Show a friendlier message but keep the
+        # early return because downstream code is not designed to handle
+        # ticker_a == ticker_b.
+        st.warning(
+            "Only one ticker is available in the current universe. "
+            "Pair Analysis needs two distinct tickers — check the "
+            "coverage filter in `config/settings.yaml` or extend the "
+            "date range."
+        )
         return
 
     # ── Data-quality warnings ────────────────────────────────────────────

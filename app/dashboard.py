@@ -757,6 +757,18 @@ with tab_cluster:
                 _sel = st.selectbox("Select hub stock", _hub_tickers, key="mst_hub_jump")
                 if st.button("Analyze this pair", key="mst_jump_btn"):
                     st.session_state["pa_ticker_a"] = _sel
+                    # Ensure ticker_b is set AND differs from ticker_a,
+                    # otherwise Pair Analysis lands on the same-ticker
+                    # degraded state. (The collision-resolver in
+                    # pair_analysis.render will also catch this, but
+                    # picking a meaningful partner here avoids the
+                    # auto-snap surprise for the user.)
+                    _existing_b = st.session_state.get("pa_ticker_b")
+                    if _existing_b is None or _existing_b == _sel:
+                        st.session_state["pa_ticker_b"] = next(
+                            (t for t in _hub_tickers if t != _sel),
+                            _sel,
+                        )
                     st.session_state["_goto_pair_analysis"] = True
                     st.rerun()
 
@@ -886,12 +898,26 @@ with tab_rolling:
         # ── Sub-Tab 2: Pair rolling correlation ─────────────────────────────
         with tab_pair:
             ticker_list = sorted(returns.columns.tolist())
+            # Init-once + key= only (no index=) to avoid Streamlit's
+            # "default value but also had its value set via the Session
+            # State API" warning banner. Same fix as pair_analysis.py.
+            if (
+                "pair_a" not in st.session_state
+                or st.session_state["pair_a"] not in ticker_list
+            ):
+                st.session_state["pair_a"] = ticker_list[0] if ticker_list else ""
+            if (
+                "pair_b" not in st.session_state
+                or st.session_state["pair_b"] not in ticker_list
+            ):
+                st.session_state["pair_b"] = (
+                    ticker_list[1] if len(ticker_list) > 1 else (ticker_list[0] if ticker_list else "")
+                )
             pc1, pc2 = st.columns(2)
             with pc1:
-                pair_a = st.selectbox("Ticker A", ticker_list, index=0, key="pair_a")
+                pair_a = st.selectbox("Ticker A", ticker_list, key="pair_a")
             with pc2:
-                default_b = min(1, len(ticker_list) - 1)
-                pair_b = st.selectbox("Ticker B", ticker_list, index=default_b, key="pair_b")
+                pair_b = st.selectbox("Ticker B", ticker_list, key="pair_b")
 
             if pair_a and pair_b and pair_a != pair_b:
                 with st.status("Computing pair correlation...", expanded=False) as _pc_st:
