@@ -46,8 +46,8 @@
 │   app/utils.py            cached loaders, theming, render_chart, warnings   │
 │   app/dashboard.py        Market Overview (6 tabs) + nav to Pair Analysis   │
 │   app/pair_analysis.py    Pair Analysis page (5 tabs)                       │
-│   app/eee_analysis.py     EEE Analysis sub-tab (4 sub-tabs: RMT/Glasso/     │
-│                           Wavelet/TE)                                       │
+│   app/eee_analysis.py     EEE Analysis sub-tab (5 sub-tabs: RMT/Glasso/     │
+│                           Wavelet/TE/Forecasting)                           │
 │   app/chart_themes.py     palette, sidebar theme switcher                   │
 │   app/chart_export.py     plotly→PNG hook used by render_chart              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -108,12 +108,12 @@ the most reused functions in the pipeline (called by RMT and wavelet stages).
 | Correlation matrix (sub-window selected by user) | App → `dashboard.py:_compute_corr` (cached) |
 | MST edges (full date range) | Pipeline → `mst_edges.csv` |
 | MST node layout (kamada-kawai) | App → `dashboard.py:_mst_layout` (cached) |
-| Rolling market stats (configured windows) | Pipeline → `rolling_market_stats_w*.parquet` (currently orphan; see FUTURE_WORK F-1) |
-| Rolling market stats (interactive window) | App → `dashboard.py:_compute_market_stats` (cached) |
+| Rolling market stats (configured windows: w∈{60,120,252}, step=5, pearson) | Pipeline → `rolling_market_stats_w*.parquet`; app reads via precompute-first dispatch when params match the grid |
+| Rolling market stats (off-grid window/step/method) | App → `dashboard.py:_compute_market_stats` (cached fallback) |
 | Pair correlation/spread/half-life | Pipeline screens top-N → `dislocation_candidates`. App computes per-pair on demand. |
 | TE shuffle null distribution | Pipeline (seeded). App reads precomputed matrix. |
 | Wavelet decomposition | Pipeline (one pass per scale). App reads `wavelet_corr_scale{1..7}.parquet`. |
-| ESN training | Pipeline (walk-forward + final fit). App is read-only (no RC charts wired yet). |
+| ESN training | Pipeline (walk-forward + final fit). App reads `rc_metrics.json`, `rc_dispersion_predictions.parquet`, `rc_feature_importance.csv` in the EEE → Forecasting sub-tab. |
 
 ## Glossary
 

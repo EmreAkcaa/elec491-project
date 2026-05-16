@@ -54,6 +54,8 @@ freshness, ticker count, day count, avg/median correlation).
 | Coverage & Prices | Normalised price line (rebased to 100) + XU100 | `adj_close.parquet`, `xu100.parquet` | go.Scatter |
 | Stats & Returns | Per-ticker descriptive stats table | `summary_stats.parquet` | st.dataframe |
 | Stats & Returns | Return distribution histogram (selected ticker) | `log_returns.parquet` | go.Histogram |
+| Anomalies | Sortable anomaly table (`date`, `ticker`, `return_value`, `\|return\|`) | `data/processed/anomalies.csv` | st.dataframe |
+| Anomalies | Anomaly timeline scatter (date × ticker; triangle direction by sign, size by `\|return\|`) | `data/processed/anomalies.csv` | go.Scatter |
 | Market Summary | 5 metric tiles (avg/median/std/min/max corr) | `pipeline_metadata.json` | st.metric |
 
 #### Tab 2 — Correlation (`tab_corr`)
@@ -85,6 +87,14 @@ Three sub-tabs: `Market Overview`, `Pair Correlation`, `Sector Breakdown`.
 | Sector | Intra vs inter-sector correlation | computed | go.Scatter |
 | Sector | Per-sector intra correlation (faceted) | computed | go.Scatter |
 
+> **Precompute-first dispatch (Market and Sector sub-tabs).** Reads
+> `rolling_market_stats_w{60,120,252}.parquet` when `window ∈ {60,120,252}
+> ∧ step=5 ∧ method="pearson" ∧ not expanding`, and
+> `rolling_sector_stats.parquet` when `window=252 ∧ step=5 ∧
+> method="pearson"`. Off-grid parameters fall back to the on-the-fly
+> `_compute_market_stats` / `_compute_sector` caches. A caption shows
+> which path ran.
+
 #### Tab 5 — Pairs & Dislocations (`tab_pairs`)
 
 Two inner tabs (`tab_top`, `tab_bottom`) inside the "Top/Bottom Pairs" section.
@@ -98,17 +108,28 @@ Two inner tabs (`tab_top`, `tab_bottom`) inside the "Top/Bottom Pairs" section.
 
 #### Tab 6 — EEE Analysis (`tab_eee` → `app/eee_analysis.py:render`)
 
-Four sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
-`Transfer Entropy`.
+Five sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
+`Transfer Entropy`, `Forecasting`.
 
 | Sub-tab | Chart | Data file | Library |
 |---|---|---|---|
 | RMT | Eigenvalue spectrum vs MP bounds | `eigenvalue_spectrum.csv` | go.Scatter / go.Bar |
-| RMT | Denoised MST network | `denoised_mst_edges.csv` | go.Scatter |
+| RMT | Raw / Denoised MST network (toggle); nodes sized by `betweenness_centrality` | `mst_edges.csv` + `mst_node_metrics.csv` (Raw) or `denoised_mst_edges.csv` + `denoised_mst_node_metrics.csv` (Denoised) | go.Scatter |
+| RMT | Denoised correlation heatmap, dendrogram-ordered (±1 diverging RdBu) | `denoised_corr.parquet`, `dendrogram_order.json` | go.Heatmap |
 | Glasso | Sparse partial-correlation network | `partial_corr_edges.csv` | go.Scatter |
-| Wavelet | Wavelet MST network at selected scale | `wavelet_mst_edges_scale{1..7}.csv` | go.Scatter |
+| Glasso | Partial-correlation heatmap (clipped ±0.3, diagonal zeroed) | `partial_corr.parquet`, `dendrogram_order.json` | go.Heatmap |
+| Glasso | Precision-matrix sparsity heatmap (`\|Θ\|>1e-3`, binary, off-diagonal) | `precision_matrix.parquet`, `dendrogram_order.json` | go.Heatmap |
+| Wavelet | Wavelet MST at selected scale; nodes sized by centrality | `wavelet_mst_edges_scale{1..7}.csv`, `wavelet_mst_metrics_scale{1..7}.csv` | go.Scatter |
 | Wavelet | Wavelet correlation distribution at selected scale | `wavelet_corr_scale{1..7}.parquet` | go.Histogram |
-| TE | Directed TE network (top-N edges by net TE) | `te_network_edges.csv` | go.Scatter (with arrows) |
+| Wavelet | Cross-scale summary table (avg corr, std, MST total weight, edge count, max betweenness, avg degree) | `wavelet_corr_scale*.parquet` + `wavelet_mst_edges_scale*.csv` + `wavelet_mst_metrics_scale*.csv` | st.dataframe |
+| TE | Directed TE network (top edges by net TE) | `te_network_edges.csv` | go.Scatter (with arrows) |
+| TE | Net information-flow heatmap (symmetric ±max, RdBu reversed, dendrogram-ordered) | `net_transfer_entropy_matrix.parquet`, `dendrogram_order.json` | go.Heatmap |
+| Forecasting | 4 metric tiles (R², RMSE, MAE, direction-of-change) + baseline-comparison row (ESN vs persistence vs train-mean) | `rc_metrics.json` | st.metric |
+| Forecasting | Predicted vs actual dispersion time series (test set) | `rc_dispersion_predictions.parquet` | go.Scatter |
+| Forecasting | Predicted vs actual scatter with y=x reference | `rc_dispersion_predictions.parquet` | go.Scatter |
+| Forecasting | Per-fold R² bar chart (walk-forward stability) with aggregate-R² reference line | `rc_metrics.json` (`dispersion_fold_metrics`) | go.Bar |
+| Forecasting | Top-10 readout-weight horizontal bars (feature importance) | `rc_feature_importance.csv` | go.Bar |
+| Forecasting | Pair-spread forecast table (R², RMSE, MAE, DA% per top-3 dislocation pair) | `rc_metrics.json` (`pair_spread_prediction`) | st.dataframe |
 
 ---
 
@@ -131,7 +152,7 @@ Pair selector at top (two ticker dropdowns + warning banner via
 
 ---
 
-## `app/utils.py` API (28 cached loaders + helpers)
+## `app/utils.py` API (37 cached loaders + helpers)
 
 ### Loaders (cached with `@st.cache_data`)
 
@@ -156,10 +177,10 @@ the file is missing — no exceptions.
 | `load_mst_metrics()` | `mst_node_metrics.csv` | dashboard tab 3 |
 | `load_dislocation_candidates()` | `dislocation_candidates.{parquet,csv}` | dashboard tab 5, pair_analysis |
 | `load_eigenvalue_spectrum()` | `eigenvalue_spectrum.csv` | eee tab RMT |
-| `load_denoised_corr()` | `denoised_corr.parquet` | (currently no UI consumer) |
-| `load_denoised_mst_edges()` | `denoised_mst_edges.csv` | eee tab RMT |
-| `load_partial_corr()` | `partial_corr.parquet` | (currently no UI consumer) |
-| `load_precision_matrix()` | `precision_matrix.parquet` | **no consumer yet** (added this session — see FUTURE_WORK F-1) |
+| `load_denoised_corr()` | `denoised_corr.parquet` | eee tab RMT (denoised correlation heatmap) |
+| `load_denoised_mst_edges()` | `denoised_mst_edges.csv` | eee tab RMT (denoised MST) |
+| `load_partial_corr()` | `partial_corr.parquet` | eee tab Glasso (partial-correlation heatmap) |
+| `load_precision_matrix()` | `precision_matrix.parquet` | eee tab Glasso (precision sparsity heatmap) |
 | `load_partial_corr_edges()` | `partial_corr_edges.csv` | eee tab Glasso |
 | `load_glasso_metadata()` | `glasso_metadata.json` | eee tab Glasso |
 | `load_wavelet_metadata()` | `wavelet_metadata.json` | eee tab Wavelet |
@@ -168,6 +189,15 @@ the file is missing — no exceptions.
 | `load_te_edges()` | `te_network_edges.csv` | eee tab TE |
 | `load_te_node_roles()` | `te_node_roles.csv` | eee tab TE |
 | `load_te_matrix()` | `transfer_entropy_matrix.parquet` | eee tab TE |
+| `load_net_te_matrix()` | `net_transfer_entropy_matrix.parquet` | eee tab TE (net flow heatmap) |
+| `load_rc_metrics()` | `rc_metrics.json` | eee tab Forecasting (metric tiles, fold bars, pair table) |
+| `load_rc_predictions()` | `rc_dispersion_predictions.parquet` | eee tab Forecasting (predicted-vs-actual time series + scatter) |
+| `load_rc_feature_importance()` | `rc_feature_importance.csv` | eee tab Forecasting (top-10 readout-weight bars) |
+| `load_denoised_mst_metrics()` | `denoised_mst_node_metrics.csv` | eee tab RMT (denoised MST node sizing) |
+| `load_wavelet_mst_metrics(scale)` | `wavelet_mst_metrics_scale{n}.csv` | eee tab Wavelet (per-scale MST node sizing + summary table) |
+| `load_anomalies()` | `data/processed/anomalies.csv` | dashboard tab 1 (Return Anomalies section) |
+| `load_rolling_market_stats_precomputed(window)` | `rolling_market_stats_w{n}.parquet` | dashboard Rolling Analysis Market sub-tab (precompute-first path) |
+| `load_rolling_sector_stats_precomputed()` | `rolling_sector_stats.parquet` | dashboard Rolling Analysis Sector sub-tab (precompute-first path) |
 
 ### UI helpers
 
@@ -183,6 +213,8 @@ the file is missing — no exceptions.
 | `event_marker_manager_ui(...)` | Sidebar UI to toggle/edit event markers | `utils.py:594` |
 | `check_ticker_pair_warnings(a, b, ...)` | Coverage/window warnings for pair page | `utils.py:684` |
 | `render_warnings(issues)` | Surface warnings as `st.warning` blocks | `utils.py:796` |
+| `_plot_matrix_heatmap(matrix, ordered_tickers, ...)` | Dendrogram-ordered square-matrix heatmap; reused by RMT denoised heatmap, Glasso partial-corr and precision heatmaps, and TE net-flow heatmap | `eee_analysis.py:_plot_matrix_heatmap` |
+| `_plot_network(edges_df, sector_map, ..., node_metrics, size_metric)` | Network graph helper with optional centrality-based node sizing (falls back to degree if `node_metrics` is missing) | `eee_analysis.py:_plot_network` |
 | `SECTOR_PALETTE`, `CHART_LAYOUT` | Theming constants | `utils.py` (module-level) |
 
 ### Theming (`app/chart_themes.py`)

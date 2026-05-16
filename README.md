@@ -71,10 +71,10 @@ stonecal/
 │   ├── transfer_entropy.py   # binned discrete TE with shuffle null
 │   └── reservoir_computing.py# Echo State Network (numpy)
 ├── app/
-│   ├── dashboard.py          # Market Overview entry (1025 lines, 6 tabs)
+│   ├── dashboard.py          # Market Overview entry (1163 lines, 6 tabs)
 │   ├── pair_analysis.py      # Pair Analysis page (5 tabs)
-│   ├── eee_analysis.py       # EEE Analysis tab (4 sub-tabs)
-│   ├── utils.py              # 28 cached loaders + section helpers
+│   ├── eee_analysis.py       # EEE Analysis tab (5 sub-tabs)
+│   ├── utils.py              # 37 cached loaders + section helpers
 │   ├── chart_themes.py       # palette, sidebar theme switcher
 │   └── chart_export.py       # PNG export hook
 ├── tests/                    # 5 files, 87 tests

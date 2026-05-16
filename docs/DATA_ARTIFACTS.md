@@ -102,7 +102,7 @@ Sorted by `|return_value|` descending. **Tens of rows** post-fix (was
 
 | Producer | `src/preprocessing.py:flag_anomalies` |
 |---|---|
-| Consumer | **no current UI consumer.** [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | dashboard Market Overview tab 1, "Return Anomalies" section (sortable table + date×ticker timeline scatter, triangle direction by sign, size by `|return|`). |
 
 ### `validation_report.csv`
 
@@ -251,7 +251,7 @@ max_corr, q25_corr, q75_corr, n_valid_pairs, n_tickers_in_window`.
 
 | Producer | `src/rolling_correlation.py:compute_rolling_market_stats` |
 |---|---|
-| Consumer | **none.** Dashboard recomputes rolling stats on the fly via `_compute_market_stats`. [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | Dashboard Rolling Analysis → Market sub-tab, **precompute-first path** when `window ∈ {60, 120, 252} ∧ step=5 ∧ method="pearson" ∧ not expanding`. Falls back to the on-the-fly `_compute_market_stats` for off-grid parameters (a caption indicates which path ran). |
 
 ### `rolling_sector_stats.parquet`
 
@@ -259,7 +259,7 @@ Indexed by date. Columns: `intra_sector_avg, inter_sector_avg, intra_<Sector>` (
 
 | Producer | `src/rolling_correlation.py:compute_rolling_sector_stats` |
 |---|---|
-| Consumer | **none.** [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | Dashboard Rolling Analysis → Sector sub-tab, **precompute-first path** when `window=252 ∧ step=5 ∧ method="pearson"`. Falls back to on-the-fly `_compute_sector` otherwise. |
 
 ### `dislocation_candidates.csv`, `dislocation_candidates.parquet`
 
@@ -304,7 +304,7 @@ Symmetric `(N, N)` matrix; diagonal 1, clipped to `[-1, 1]`.
 
 | Producer | `src/rmt_denoising.py:denoise_correlation` |
 |---|---|
-| Consumer | **`load_denoised_corr` exists but no UI consumer.** [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | EEE → RMT, "Denoised Correlation Matrix" heatmap (rendered via `_plot_matrix_heatmap`, dendrogram-ordered, ±1 diverging RdBu). |
 
 ### `denoised_mst_edges.csv`
 
@@ -320,7 +320,7 @@ Same schema as `mst_node_metrics.csv`.
 
 | Producer | `src/rmt_denoising.py:run_rmt_denoising` |
 |---|---|
-| Consumer | **none.** [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | EEE → RMT, MST chart — used to size nodes by `betweenness_centrality` when the user toggles to the Denoised view (matches the raw MST view, which uses `mst_node_metrics.csv`). |
 
 ### `partial_corr.parquet`
 
@@ -328,16 +328,16 @@ Same schema as `mst_node_metrics.csv`.
 
 | Producer | `src/partial_correlation.py:run_partial_correlation` |
 |---|---|
-| Consumer | `load_partial_corr` exists; **no UI consumer**. [ORPHAN] |
+| Consumer | EEE → Glasso, "Partial Correlation Matrix" heatmap (clipped to ±0.3 so the unit diagonal doesn't dominate the colorscale; dendrogram-ordered). |
 
 ### `precision_matrix.parquet`
 
-`(N, N)` sparse precision matrix Θ. Added this session — was previously
-discarded.
+`(N, N)` sparse precision matrix Θ. Added in the docs+fixes session — was
+previously discarded.
 
 | Producer | `src/partial_correlation.py:run_partial_correlation` |
 |---|---|
-| Consumer | `load_precision_matrix` exists; **no UI consumer yet**. [ORPHAN — see FUTURE_WORK F-1, recommended for Glasso heatmap.] |
+| Consumer | EEE → Glasso, "Precision Matrix Sparsity" heatmap (binary mask at `|Θ_ij| > 1e-3`, off-diagonal only; colorbar relabelled "zero" / "non-zero"; chart subtitle shows edge count and density %). |
 
 ### `partial_corr_edges.csv`
 
@@ -390,7 +390,7 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 
 | Producer | `src/wavelet_analysis.py:run_wavelet_analysis` |
 |---|---|
-| Consumer | **none** (loaders only have edges, corr, metadata). [ORPHAN × 7 — see FUTURE_WORK F-1] |
+| Consumer | EEE → Wavelet: (a) per-scale MST chart, used to size nodes by `betweenness_centrality`; (b) cross-scale summary table, contributes `Max Betweenness` and `Avg Degree` columns. |
 
 ### `wavelet_metadata.json`
 
@@ -420,7 +420,7 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 
 | Producer | `src/transfer_entropy.py:compute_transfer_entropy_matrix` |
 |---|---|
-| Consumer | **none directly** (the network chart uses edges; no `load_net_te_matrix`). [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | EEE → TE, "Net Information Flow Heatmap" (`load_net_te_matrix`, dendrogram-ordered, diverging RdBu with `zmin/zmax = ±max|net|` symmetric; red row→column means row leads column, blue means row lags). |
 
 ### `te_network_edges.csv`
 
@@ -455,7 +455,7 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 
 | Producer | `src/reservoir_computing.py:run_reservoir_computing` |
 |---|---|
-| Consumer | **none.** [ORPHAN — see FUTURE_WORK F-1, recommended for new "Forecasting" sub-tab.] |
+| Consumer | EEE → Forecasting, "Predicted vs Actual Dispersion" time-series chart and the side-by-side scatter (with y=x reference). |
 
 ### `rc_feature_importance.csv`
 
@@ -465,7 +465,7 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 
 | Producer | `src/reservoir_computing.py:run_reservoir_computing` |
 |---|---|
-| Consumer | **none.** [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | EEE → Forecasting, top-10 horizontal-bar chart of readout-weight magnitudes (`load_rc_feature_importance`). |
 
 ### `rc_metrics.json`
 
@@ -483,28 +483,22 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 
 | Producer | `src/reservoir_computing.py:run_reservoir_computing` |
 |---|---|
-| Consumer | **none.** [ORPHAN — see FUTURE_WORK F-1] |
+| Consumer | EEE → Forecasting: four R²/RMSE/MAE/DA metric tiles (`dispersion_prediction`), baseline-comparison row (`baselines.{persistence,mean}`), per-fold R² bar chart (`dispersion_fold_metrics`), pair-spread results table (`pair_spread_prediction`), and the run-config caption (`esn_config`, `train_size`, `test_size`). |
 
 ---
 
-## Orphan summary (18 files)
+## Orphan summary (1 file remaining)
 
-These are written by the pipeline but never read by `app/`:
+Commit `8379448` ("New methods wired to dashboard") connected 20 of the 21
+formerly-orphan files. The previous version of this header said "18" — it
+under-counted because the wavelet line collapsed seven
+`wavelet_mst_metrics_scale{1..7}.csv` files into a single numbered item.
+The accurate original count was 21.
 
-1. `data/processed/anomalies.csv`
-2. `data/results/distance_matrix.parquet`
-3. `data/results/rolling_market_stats_w60.parquet`
-4. `data/results/rolling_market_stats_w120.parquet`
-5. `data/results/rolling_market_stats_w252.parquet`
-6. `data/results/rolling_sector_stats.parquet`
-7. `data/results/denoised_corr.parquet` *(loader exists, no chart)*
-8. `data/results/denoised_mst_node_metrics.csv`
-9. `data/results/partial_corr.parquet` *(loader exists, no chart)*
-10. `data/results/precision_matrix.parquet` *(new this session — loader exists, no chart)*
-11. `data/results/net_transfer_entropy_matrix.parquet`
-12. `data/results/wavelet_mst_metrics_scale1.csv` … `_scale7.csv` *(7 files)*
-13. `data/results/rc_dispersion_predictions.parquet`
-14. `data/results/rc_feature_importance.csv`
-15. `data/results/rc_metrics.json`
+Still unwired:
 
-Wiring proposals are in [`FUTURE_WORK.md`](FUTURE_WORK.md) F-1.
+1. `data/results/distance_matrix.parquet` — `sqrt(2*(1 - corr))` derived
+   directly from `pearson_corr.parquet`, which the dashboard already loads.
+   Either delete the producer save at `src/analysis.py:154` or wire it as
+   a "Raw distance" heatmap sibling of the new RMT "Denoised Correlation
+   Matrix" heatmap. See [`FUTURE_WORK.md`](FUTURE_WORK.md) F-1.

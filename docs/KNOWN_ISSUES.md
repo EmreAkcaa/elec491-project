@@ -127,10 +127,12 @@ See FUTURE_WORK F-2 for the full hoist list.
 | File:line | `src/transfer_entropy.py:158` |
 | Note | Behaviour is fine (`if significance_shuffles > 0:` guards the inner loop). Just verbose; could short-circuit higher up. |
 
-### L-3 — Dashboard recomputes rolling stats that are also written to disk
+### L-3 — Dashboard rolling-stats precompute/recompute split — RESOLVED in commit `8379448`
 
-| File:line | `app/dashboard.py:74-95` vs `src/rolling_correlation.py:run_rolling_analysis` |
-| Note | Dashboard uses on-the-fly `_compute_market_stats`; precomputed `rolling_market_stats_w*.parquet` are orphans. Either remove the precompute step or wire it into the dashboard (FUTURE_WORK F-1). |
+| | |
+|---|---|
+| File:line | `app/dashboard.py:797-993` (precompute-first dispatch); loaders at `app/utils.py:593-610` |
+| Resolution | Commit `8379448` implements a precompute-first path. The dashboard now reads `rolling_market_stats_w{60,120,252}.parquet` when `window∈{60,120,252} ∧ step=5 ∧ method="pearson" ∧ not expanding`, and `rolling_sector_stats.parquet` when `window=252 ∧ step=5 ∧ method="pearson"`. Off-grid parameters fall back to the on-the-fly `_compute_market_stats` / `_compute_sector` caches. A caption indicates which path ran. |
 
 ### L-4 — RC uses legacy `np.random.RandomState`
 
