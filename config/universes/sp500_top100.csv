@@ -1,0 +1,103 @@
+ticker,company_name,sector,provider_symbol
+AAPL,Apple Inc.,Information Technology,AAPL
+MSFT,Microsoft,Information Technology,MSFT
+NVDA,Nvidia,Information Technology,NVDA
+GOOGL,Alphabet Inc. (Class A),Communication Services,GOOGL
+AMZN,Amazon,Consumer Discretionary,AMZN
+META,Meta Platforms,Communication Services,META
+BRK-B,Berkshire Hathaway,Financials,BRK-B
+LLY,Eli Lilly,Health Care,LLY
+JPM,JPMorgan Chase,Financials,JPM
+JNJ,Johnson & Johnson,Health Care,JNJ
+V,Visa,Financials,V
+WMT,Walmart,Consumer Staples,WMT
+XOM,ExxonMobil,Energy,XOM
+UNH,UnitedHealth,Health Care,UNH
+MA,Mastercard,Financials,MA
+COST,Costco,Consumer Staples,COST
+PG,Procter & Gamble,Consumer Staples,PG
+HD,Home Depot,Consumer Discretionary,HD
+BAC,Bank of America,Financials,BAC
+ORCL,Oracle,Information Technology,ORCL
+NFLX,Netflix,Communication Services,NFLX
+ABBV,AbbVie,Health Care,ABBV
+CRM,Salesforce,Information Technology,CRM
+KO,Coca-Cola,Consumer Staples,KO
+CVX,Chevron,Energy,CVX
+CSCO,Cisco,Information Technology,CSCO
+MRK,Merck,Health Care,MRK
+AMD,Advanced Micro Devices,Information Technology,AMD
+PEP,PepsiCo,Consumer Staples,PEP
+WFC,Wells Fargo,Financials,WFC
+ADBE,Adobe,Information Technology,ADBE
+ACN,Accenture,Information Technology,ACN
+LIN,Linde,Materials,LIN
+MCD,McDonald's,Consumer Discretionary,MCD
+DIS,Walt Disney,Communication Services,DIS
+NOW,ServiceNow,Information Technology,NOW
+CAT,Caterpillar,Industrials,CAT
+IBM,IBM,Information Technology,IBM
+GS,Goldman Sachs,Financials,GS
+TMUS,T-Mobile US,Communication Services,TMUS
+MS,Morgan Stanley,Financials,MS
+GE,GE Aerospace,Industrials,GE
+PFE,Pfizer,Health Care,PFE
+VZ,Verizon,Communication Services,VZ
+QCOM,Qualcomm,Information Technology,QCOM
+CMCSA,Comcast,Communication Services,CMCSA
+TXN,Texas Instruments,Information Technology,TXN
+INTU,Intuit,Information Technology,INTU
+RTX,RTX Corporation,Industrials,RTX
+COP,ConocoPhillips,Energy,COP
+BKNG,Booking Holdings,Consumer Discretionary,BKNG
+AMGN,Amgen,Health Care,AMGN
+T,AT&T,Communication Services,T
+SPGI,S&P Global,Financials,SPGI
+NEE,NextEra Energy,Utilities,NEE
+SPOT,Spotify Technology,Communication Services,SPOT
+PLTR,Palantir Technologies,Information Technology,PLTR
+SCHW,Charles Schwab,Financials,SCHW
+BLK,BlackRock,Financials,BLK
+PM,Philip Morris International,Consumer Staples,PM
+BA,Boeing,Industrials,BA
+AXP,American Express,Financials,AXP
+SYK,Stryker,Health Care,SYK
+VRTX,Vertex Pharmaceuticals,Health Care,VRTX
+LOW,Lowe's,Consumer Discretionary,LOW
+C,Citigroup,Financials,C
+MDLZ,Mondelez International,Consumer Staples,MDLZ
+HON,Honeywell,Industrials,HON
+PGR,Progressive,Financials,PGR
+ADP,Automatic Data Processing,Industrials,ADP
+GILD,Gilead Sciences,Health Care,GILD
+ISRG,Intuitive Surgical,Health Care,ISRG
+BMY,Bristol Myers Squibb,Health Care,BMY
+DE,Deere & Company,Industrials,DE
+UNP,Union Pacific,Industrials,UNP
+AMAT,Applied Materials,Information Technology,AMAT
+KKR,KKR & Co.,Financials,KKR
+MMC,Marsh McLennan,Financials,MMC
+TJX,TJX Companies,Consumer Discretionary,TJX
+BSX,Boston Scientific,Health Care,BSX
+ELV,Elevance Health,Health Care,ELV
+LMT,Lockheed Martin,Industrials,LMT
+PNC,PNC Financial Services,Financials,PNC
+LRCX,Lam Research,Information Technology,LRCX
+AON,Aon plc,Financials,AON
+APO,Apollo Global Management,Financials,APO
+APD,Air Products,Materials,APD
+CI,Cigna,Health Care,CI
+WMB,Williams Companies,Energy,WMB
+ETN,Eaton Corporation,Industrials,ETN
+CRWD,CrowdStrike,Information Technology,CRWD
+CHTR,Charter Communications,Communication Services,CHTR
+BX,Blackstone,Financials,BX
+SHW,Sherwin-Williams,Materials,SHW
+CDNS,Cadence Design Systems,Information Technology,CDNS
+FDX,FedEx,Industrials,FDX
+TGT,Target Corporation,Consumer Discretionary,TGT
+SBUX,Starbucks,Consumer Discretionary,SBUX
+MO,Altria,Consumer Staples,MO
+ZTS,Zoetis,Health Care,ZTS
+REGN,Regeneron Pharmaceuticals,Health Care,REGN
+SNPS,Synopsys,Information Technology,SNPS

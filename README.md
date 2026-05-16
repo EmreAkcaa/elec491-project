@@ -17,11 +17,23 @@ advanced methods.
 ## Quick start
 
 ```bash
-uv sync                                  # install all deps (Python 3.11+)
-uv run python run_pipeline.py            # ~10–30 min end-to-end
-uv run streamlit run app/dashboard.py    # http://localhost:8501
-uv run python -m pytest -q               # 87 tests
+uv sync                                                              # install (Python 3.11+)
+uv run python run_pipeline.py                                        # BIST (default)
+uv run python run_pipeline.py --config config/settings_sp500.yaml    # S&P-100 (cross-market comparison)
+uv run streamlit run app/dashboard.py                                # http://localhost:8501 (BIST)
+DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py       # http://localhost:8501 (S&P)
+uv run python scripts/sp500_vs_bist.py                               # Comparison table (after both pipelines run)
+uv run python -m pytest -q                                           # 87 tests (+12 SNN if torch installed)
+uv sync --extra snn                                                  # optional: pull torch + snntorch to enable SNN step
 ```
+
+### Multi-universe data layout (Phase D)
+
+The pipeline reads `market.market_id` from the active YAML and writes per-market
+artifacts under `data/<market_id>/{raw,processed,results}/`. The default BIST
+artifacts live in `data/bist/`. Running with `--config config/settings_sp500.yaml`
+populates `data/sp500/`. The dashboard reads from `data/$DASHBOARD_UNIVERSE/`
+(default `bist`) — set the env var to switch universes.
 
 ## Pipeline at a glance
 

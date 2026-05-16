@@ -1,0 +1,57 @@
+# S&P-500 top-100 settings — mirrors the BIST config so cross-market
+# comparison is apples-to-apples (same dates, same coverage filter,
+# same TE / Glasso / wavelet hyperparameters).
+#
+# Pipeline run:   uv run python run_pipeline.py --config config/settings_sp500.yaml
+# Artifacts go to: data/sp500/{raw,processed,results}/...
+# Dashboard:      DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py
+
+market:
+  market_id: "sp500"
+  universe_file: "config/universes/sp500_top100.csv"
+  index_ticker: "^GSPC"
+  provider_suffix: ""
+  currency: "USD"
+
+data:
+  start_date: "2020-01-01"
+  end_date: "2026-03-01"
+  download_interval: "1d"
+  store_raw_close: true
+
+preprocessing:
+  min_coverage_pct: 0.90
+  anomaly_return_threshold: 0.30
+  forward_fill: false
+
+analysis:
+  correlation_method: "pearson"
+  annualization_factor: 252
+  corr_min_periods: 200
+
+validation:
+  enabled: false  # No İş Yatırım cross-validation for US tickers
+  sample_size: 10
+
+rolling:
+  windows: [60, 120, 252]
+  step: 5
+  method: "pearson"
+  min_periods_ratio: 0.6
+
+dislocation:
+  zscore_window: 60
+  entry_zscore: 2.0
+  exit_zscore: 0.5
+  min_half_life: 5
+  max_half_life: 252
+  top_n_candidates: 20
+  lookback_window: 252
+  min_correlation: 0.5
+
+transfer_entropy:
+  lag: 1
+  n_bins: 3
+  significance_shuffles: 100
+  significance_level: 0.05
+  seed: 42
