@@ -8,12 +8,11 @@ The pipeline downloads daily prices via yfinance, validates a sample against
 isyatirimhisse, computes log returns, builds correlation/distance matrices,
 clusters tickers and constructs minimum spanning trees, then layers on
 RMT-denoised correlation, Graphical-LASSO partial correlation, wavelet
-multi-scale correlation, transfer-entropy directed flow, and an Echo State
-Network for dispersion forecasting.
+multi-scale correlation, and transfer-entropy directed flow.
 
-The dashboard renders 48+ charts across 3 pages: **Market Overview**, **Pair
-Analysis**, and the **EEE Analysis** sub-tab that surfaces the four advanced
-methods.
+The dashboard renders 40+ charts across 2 pages: **Market Overview** and
+**Pair Analysis**, with an **EEE Analysis** sub-tab that surfaces the four
+advanced methods.
 
 ## Quick start
 
@@ -45,18 +44,13 @@ yfinance ─► raw prices ─► coverage filter ─► log returns ─► vali
                           RMT denoising   Glasso partial           wavelet (db4)      transfer entropy
                           MP bounds       correlation              7 scales           shuffle null
                           denoised_corr   precision_matrix         wavelet_*          te_*
-                                                                  │
-                                                                  ▼
-                                                         reservoir computing (ESN)
-                                                         dispersion + pair spread
-                                                         rc_*
 ```
 
 ## Project tree
 
 ```
 stonecal/
-├── src/                      # Pipeline (12 modules; orchestrator: run_pipeline.py)
+├── src/                      # Pipeline (11 modules; orchestrator: run_pipeline.py)
 │   ├── config.py             # YAML loader, dataclasses, PROJECT_ROOT
 │   ├── data_acquisition.py   # yfinance fetch
 │   ├── data_validation.py    # cross-check vs isyatirimhisse
@@ -68,8 +62,7 @@ stonecal/
 │   ├── rmt_denoising.py      # Marchenko–Pastur bounds + reconstruction
 │   ├── partial_correlation.py# GraphicalLassoCV
 │   ├── wavelet_analysis.py   # PyWavelets db4, scales 1–7
-│   ├── transfer_entropy.py   # binned discrete TE with shuffle null
-│   └── reservoir_computing.py# Echo State Network (numpy)
+│   └── transfer_entropy.py   # binned discrete TE with shuffle null
 ├── app/
 │   ├── dashboard.py          # Market Overview entry (1163 lines, 6 tabs)
 │   ├── pair_analysis.py      # Pair Analysis page (5 tabs)

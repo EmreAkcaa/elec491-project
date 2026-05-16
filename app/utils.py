@@ -540,31 +540,6 @@ def load_net_te_matrix() -> pd.DataFrame:
 
 
 @st.cache_data
-def load_rc_metrics() -> dict:
-    path = DATA_RESULTS / "rc_metrics.json"
-    if path.exists():
-        with open(path) as f:
-            return json.load(f)
-    return {}
-
-
-@st.cache_data
-def load_rc_predictions() -> pd.DataFrame:
-    path = DATA_RESULTS / "rc_dispersion_predictions.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    return pd.DataFrame()
-
-
-@st.cache_data
-def load_rc_feature_importance() -> pd.DataFrame:
-    path = DATA_RESULTS / "rc_feature_importance.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
-
-
-@st.cache_data
 def load_denoised_mst_metrics() -> pd.DataFrame:
     path = DATA_RESULTS / "denoised_mst_node_metrics.csv"
     if path.exists():

@@ -67,15 +67,6 @@ session are at the top with status `FIXED`.
 | Impact | Significance test is too liberal — many "significant" edges may be artefacts of source autocorrelation. |
 | Recommendation | Replace with a temporal surrogate (FUTURE_WORK F-3 details). |
 
-### M-2 — RC features may leak future information
-
-| | |
-|---|---|
-| File:line | `src/reservoir_computing.py:268-273` (`build_market_features`) |
-| Issue | `pca.fit_transform(returns_clean)` fits PCA loadings using the entire history once, before walk-forward CV starts. The `pca_{i+1}` columns therefore contain in-sample-derived features at every test fold. The `dispersion.shift(-1)` target is correctly aligned, so the look-ahead is on inputs, not labels — but it's still a rigorous mistake. |
-| Impact | Reported R² may overstate true out-of-sample performance. |
-| Recommendation | Move PCA fit inside `walk_forward_validation` per fold (FUTURE_WORK F-3). |
-
 ### M-3 — `store_raw_close` flag is half-honoured
 
 | | |
@@ -113,14 +104,13 @@ session are at the top with status `FIXED`.
 
 ## LOW severity (open)
 
-### L-1 — Hardcoded EEE / RC parameters not in YAML
+### L-1 — Hardcoded EEE parameters not in YAML
 
 See FUTURE_WORK F-2 for the full hoist list.
 
 - RMT: `method='constant'` (`rmt_denoising.py:144`)
 - Glasso: `cv=5, max_iter=200, edge_threshold=0.01` (`partial_correlation.py:60-62, 90`)
 - Wavelet: `wavelet='db4', max_level cap = 7` (`wavelet_analysis.py:71, 131`)
-- Reservoir: every field of `ESNConfig` (`reservoir_computing.py:48-62`)
 
 ### L-2 — `compute_transfer_entropy_matrix` has both significance arms even when `significance_shuffles=0`
 
@@ -134,11 +124,6 @@ See FUTURE_WORK F-2 for the full hoist list.
 | File:line | `app/dashboard.py:797-993` (precompute-first dispatch); loaders at `app/utils.py:593-610` |
 | Resolution | Commit `8379448` implements a precompute-first path. The dashboard now reads `rolling_market_stats_w{60,120,252}.parquet` when `window∈{60,120,252} ∧ step=5 ∧ method="pearson" ∧ not expanding`, and `rolling_sector_stats.parquet` when `window=252 ∧ step=5 ∧ method="pearson"`. Off-grid parameters fall back to the on-the-fly `_compute_market_stats` / `_compute_sector` caches. A caption indicates which path ran. |
 
-### L-4 — RC uses legacy `np.random.RandomState`
+### L-5 — Test gaps for 6 of 11 src modules
 
-| File:line | `src/reservoir_computing.py:95` |
-| Note | Other modules now use `np.random.default_rng`. Switching keeps the same reproducibility properties and removes the legacy API. Low priority. |
-
-### L-5 — Test gaps for 7 of 12 src modules
-
-See FUTURE_WORK F-4. Testing exists for: analysis, clustering, pair_dislocation, preprocessing, rolling_correlation. Missing: data_acquisition, data_validation, config, rmt_denoising, partial_correlation, wavelet_analysis, transfer_entropy, reservoir_computing.
+See FUTURE_WORK F-4. Testing exists for: analysis, clustering, pair_dislocation, preprocessing, rolling_correlation. Missing: data_acquisition, data_validation, config, rmt_denoising, partial_correlation, wavelet_analysis, transfer_entropy.
