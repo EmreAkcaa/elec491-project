@@ -6,30 +6,20 @@ F-6 with concrete plans.
 
 ---
 
-## F-1 — Wire 18 orphan outputs into the dashboard
+## F-1 — Wire the last remaining orphan output
 
-The pipeline writes 18 files (full list in [`DATA_ARTIFACTS.md`](DATA_ARTIFACTS.md)
-"Orphan summary") that the app currently doesn't read. Proposed wiring:
+Commit `8379448` ("New methods wired to dashboard") wired 20 of the 21
+originally-inventoried orphan outputs into the dashboard (see
+[`DATA_ARTIFACTS.md`](DATA_ARTIFACTS.md) "Orphan summary"; see
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) L-3 for the closed precompute/recompute
+split). One file is still unwired:
 
-| Orphan file | Suggested location | Chart type |
-|---|---|---|
-| `data/processed/anomalies.csv` | Market Overview tab 1, new "Anomalies" section | Sortable table + scatter overlay on the price chart |
-| `data/results/distance_matrix.parquet` | EEE tab RMT, side-by-side with denoised | Heatmap (raw distance) |
-| `data/results/rolling_market_stats_w{60,120,252}.parquet` | New "Precomputed Rolling" sub-tab in Rolling Analysis | Multi-window comparison line chart. Or: delete the precompute step and rely on the on-the-fly path in `dashboard.py:_compute_market_stats`. |
-| `data/results/rolling_sector_stats.parquet` | Rolling Analysis → Sector sub-tab | Replace the on-the-fly recomputation with this precomputed series for the largest window |
-| `data/results/denoised_corr.parquet` | EEE tab RMT, new "Denoised Heatmap" section | Heatmap, optionally side-by-side with raw |
-| `data/results/denoised_mst_node_metrics.csv` | EEE tab RMT, MST chart | Use `degree`/`betweenness_centrality` to size nodes |
-| `data/results/partial_corr.parquet` | EEE tab Glasso, new "Partial Correlation Heatmap" | Heatmap (off-diagonal only) |
-| `data/results/precision_matrix.parquet` *(new this session)* | EEE tab Glasso | Heatmap of precision values; or sparsity pattern (boolean abs > eps) |
-| `data/results/net_transfer_entropy_matrix.parquet` | EEE tab TE, new "Net Flow Heatmap" | Heatmap (red=outflow, blue=inflow) |
-| `data/results/wavelet_mst_metrics_scale{1..7}.csv` (×7) | EEE tab Wavelet, MST chart | Use degree/centrality for node sizing across scales |
-| `data/results/rc_dispersion_predictions.parquet` | New page or new EEE sub-tab "Forecasting" | Predicted vs actual line chart |
-| `data/results/rc_feature_importance.csv` | Same "Forecasting" tab | Bar chart of `weight_magnitude` |
-| `data/results/rc_metrics.json` | Same "Forecasting" tab | Metric tiles + fold-level table |
+| Orphan file | Suggested action |
+|---|---|
+| `data/results/distance_matrix.parquet` | Pick one of: **(a)** delete the producer save at `src/analysis.py:154` — the matrix is just `sqrt(2*(1 - corr))` derived from `pearson_corr.parquet`, which the dashboard already loads. **(b)** wire it as a "Raw distance" heatmap sibling of the new "Denoised Correlation Matrix" heatmap in EEE → RMT, using the existing `_plot_matrix_heatmap` helper (`app/eee_analysis.py:_plot_matrix_heatmap`) with `zmin=0, zmax=2, diverging=False`. **(a)** is cleaner; **(b)** is more pedagogically honest about what the denoiser is changing. |
 
-Implementation pattern: each requires a new `@st.cache_data` loader in
-`app/utils.py` (mirroring the existing 28) and a chart block that reuses
-`section_header` + `apply_chart_style` + `render_chart`.
+For the historical wiring proposals (table archived in the commit diff),
+see `git show 8379448 -- app/eee_analysis.py app/utils.py app/dashboard.py`.
 
 ---
 

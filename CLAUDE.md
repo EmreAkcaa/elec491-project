@@ -61,9 +61,10 @@ uv run python -m pytest -q               # 87 tests
 - **`anomalies.csv` was buggy** (`flag_anomalies` emitted ~112k rows of NaN).
   Fixed in `src/preprocessing.py` — file is now ~5–50 rows. If you see it
   blow up again, the bug is the masked-stack pattern.
-- **18 pipeline outputs are orphans** — written by `src/` but never read by
-  `app/`. See `docs/DATA_ARTIFACTS.md` and `docs/FUTURE_WORK.md` (F-1) for the
-  list and proposed wiring.
+- **All but one pipeline output is wired into the dashboard** as of commit
+  `8379448` ("New methods wired to dashboard"). The only remaining orphan is
+  `data/results/distance_matrix.parquet` — see `docs/DATA_ARTIFACTS.md`
+  "Orphan summary" and `docs/FUTURE_WORK.md` F-1.
 - **Hardcoded params in EEE/RC**: `ESNConfig` (`src/reservoir_computing.py:48`)
   is constructed with all-defaults inside `run_reservoir_computing` — not yet
   driven by YAML. Same for wavelet `db4`, RMT `method="constant"`, partial
