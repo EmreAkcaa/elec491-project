@@ -338,44 +338,6 @@ Currently the slowest stage at ~5–10 minutes for the BIST universe.
 
 ---
 
-## `src/reservoir_computing.py`
-
-**Entry point:** `run_reservoir_computing(config) -> dict` (`reservoir_computing.py:442`).
-
-**Reads:** `data/processed/log_returns.parquet`,
-`data/results/dislocation_candidates.csv` (optional).
-
-**Writes:**
-- `rc_dispersion_predictions.parquet` — orphan in dashboard. See FUTURE_WORK F-1.
-- `rc_feature_importance.csv` — orphan.
-- `rc_metrics.json` — orphan.
-
-**Method:**
-- **Task 1 (dispersion forecast):** features from `build_market_features`
-  (`reservoir_computing.py:224`) — cross-sectional stats plus rolling vol
-  plus PCA(5). Target: next-day cross-sectional std (`.shift(-1)`).
-  Walk-forward CV with 5 folds; final 70/30 split for saved predictions.
-- **Task 2 (pair spread):** for each of top-3 dislocation candidates, build
-  pair features (spread, rolling-std, z-score, rolling-corr, market context),
-  predict next-day z-score. 3-fold walk-forward.
-- ESN: `EchoStateNetwork` class (`reservoir_computing.py:67`) — sparse random
-  reservoir, leaky-integrator dynamics, ridge readout, optional
-  warmed-reservoir continuation prediction (`predict_continuation`).
-- Baselines: persistence (predict yesterday) and mean (predict training mean).
-
-**Hardcoded — `ESNConfig` defaults (`reservoir_computing.py:48`):**
-- reservoir_size=300, spectral_radius=0.9, input_scaling=0.5,
-  leak_rate=0.3, ridge_alpha=10.0, sparsity=0.9, seed=42, washout=100,
-  n_pca=5, vol_windows=(5, 20), train_ratio=0.7.
-
-`run_reservoir_computing` constructs `ESNConfig()` with all defaults — none
-of these come from YAML yet. See FUTURE_WORK F-2 (hoist) and F-3 (verify the
-target alignment doesn't introduce lookahead).
-
-**Tests:** none.
-
----
-
 ## Function reuse map
 
 The most reused functions (handy when adding a new method):

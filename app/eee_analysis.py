@@ -24,7 +24,6 @@ from utils import (
     load_wavelet_mst_metrics,
     load_te_edges, load_te_node_roles, load_te_matrix, load_net_te_matrix,
     load_cluster_assignments,
-    load_rc_metrics, load_rc_predictions, load_rc_feature_importance,
     load_dendrogram_order,
 )
 
@@ -652,205 +651,6 @@ def render_transfer_entropy(sector_map: dict):
             st.info("Run the pipeline to generate the net transfer-entropy matrix.")
 
 
-def render_forecasting(sector_map: dict):
-    """Render Reservoir Computing forecasting section."""
-    with st.container(border=True):
-        section_header(
-            "Reservoir Computing — Cross-Sectional Dispersion Forecast",
-            "An Echo State Network (sparse random reservoir + ridge readout) "
-            "predicts next-day cross-sectional return dispersion from market "
-            "features (cross-sectional stats, rolling vol, PCA components). "
-            "Walk-forward evaluation with persistence and mean baselines.",
-        )
-
-        metrics = load_rc_metrics()
-        predictions = load_rc_predictions()
-        importance = load_rc_feature_importance()
-        colors = get_colors()
-
-        if not metrics:
-            st.info("Run the pipeline (`uv run python -m src.reservoir_computing`) to generate forecasting results.")
-            return
-
-        # Aggregate metrics
-        agg = metrics.get("dispersion_prediction", {})
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("R² (out-of-sample)", f"{agg.get('r2', 0):.4f}")
-        c2.metric("RMSE", f"{agg.get('rmse', 0):.5f}")
-        c3.metric("MAE", f"{agg.get('mae', 0):.5f}")
-        c4.metric("Direction-of-Change", f"{agg.get('direction_of_change_accuracy', 0)*100:.1f}%")
-
-        # Baseline comparison
-        baselines = metrics.get("baselines", {})
-        persistence_r2 = baselines.get("persistence", {}).get("r2", float("nan"))
-        mean_r2 = baselines.get("mean", {}).get("r2", float("nan"))
-        esn_r2 = agg.get("r2", float("nan"))
-
-        st.markdown("**Baseline comparison (R²):**")
-        b1, b2, b3 = st.columns(3)
-        b1.metric("ESN", f"{esn_r2:.4f}", delta=f"vs persistence: {esn_r2 - persistence_r2:+.3f}")
-        b2.metric("Persistence (yesterday)", f"{persistence_r2:.4f}")
-        b3.metric("Train-mean", f"{mean_r2:.4f}")
-
-        st.caption(
-            f"Sample size: {agg.get('n_samples', 0)} test days · "
-            f"Train/test split: {metrics.get('train_size', '?')}/{metrics.get('test_size', '?')} · "
-            f"Reservoir: {metrics.get('esn_config', {}).get('reservoir_size', '?')} units, "
-            f"ρ={metrics.get('esn_config', {}).get('spectral_radius', '?')}, "
-            f"α={metrics.get('esn_config', {}).get('leak_rate', '?')}, "
-            f"ridge={metrics.get('esn_config', {}).get('ridge_alpha', '?')}."
-        )
-
-        # Predicted vs actual + scatter
-        col_ts, col_sc = st.columns([3, 2])
-
-        with col_ts:
-            if not predictions.empty and {"date", "actual_dispersion", "predicted_dispersion"}.issubset(predictions.columns):
-                pdf = predictions.copy()
-                pdf["date"] = pd.to_datetime(pdf["date"])
-                fig_ts = go.Figure()
-                fig_ts.add_trace(go.Scatter(
-                    x=pdf["date"], y=pdf["actual_dispersion"],
-                    name="Actual", mode="lines",
-                    line=dict(color=colors["muted"], width=1.5),
-                    hovertemplate="%{x|%Y-%m-%d}<br>Actual: %{y:.5f}<extra></extra>",
-                ))
-                fig_ts.add_trace(go.Scatter(
-                    x=pdf["date"], y=pdf["predicted_dispersion"],
-                    name="Predicted (ESN)", mode="lines",
-                    line=dict(color=colors["primary"], width=1.8),
-                    hovertemplate="%{x|%Y-%m-%d}<br>Predicted: %{y:.5f}<extra></extra>",
-                ))
-                apply_chart_style(fig_ts, height=380,
-                                  xaxis_title="Date",
-                                  yaxis_title="Cross-sectional dispersion")
-                render_chart(
-                    fig_ts, chart_id="rc_pred_ts",
-                    filename_base="rc_dispersion_predicted_vs_actual",
-                    title_key="rc_pred_ts",
-                    default_title="Predicted vs Actual Dispersion (test set)",
-                )
-            else:
-                st.info("No prediction time series available.")
-
-        with col_sc:
-            if not predictions.empty and {"actual_dispersion", "predicted_dispersion"}.issubset(predictions.columns):
-                a = predictions["actual_dispersion"].to_numpy()
-                p = predictions["predicted_dispersion"].to_numpy()
-                lo = float(np.nanmin([a.min(), p.min()]))
-                hi = float(np.nanmax([a.max(), p.max()]))
-                fig_sc = go.Figure()
-                fig_sc.add_trace(go.Scatter(
-                    x=a, y=p, mode="markers",
-                    marker=dict(size=5, color=colors["primary"], opacity=0.55,
-                                line=dict(width=0.5, color="#fff")),
-                    hovertemplate="actual=%{x:.5f}<br>pred=%{y:.5f}<extra></extra>",
-                    showlegend=False,
-                ))
-                fig_sc.add_trace(go.Scatter(
-                    x=[lo, hi], y=[lo, hi], mode="lines",
-                    line=dict(color=colors["secondary"], dash="dash", width=1),
-                    name="y = x", showlegend=True,
-                ))
-                apply_chart_style(fig_sc, height=380,
-                                  xaxis_title="Actual",
-                                  yaxis_title="Predicted")
-                render_chart(
-                    fig_sc, chart_id="rc_pred_scatter",
-                    filename_base="rc_predicted_vs_actual_scatter",
-                    title_key="rc_pred_sc",
-                    default_title="Predicted vs Actual (scatter, ideal = y=x)",
-                )
-
-        # Per-fold stability + feature importance
-        col_fold, col_fi = st.columns(2)
-
-        with col_fold:
-            folds = metrics.get("dispersion_fold_metrics", [])
-            if folds:
-                fold_df = pd.DataFrame(folds)
-                fold_labels = [t.replace("fold_", "Fold ") for t in fold_df["target"]]
-                fold_r2 = fold_df["r2"].astype(float).tolist()
-                bar_colors = [colors["primary"] if r >= 0 else colors["secondary"] for r in fold_r2]
-                fig_fold = go.Figure()
-                fig_fold.add_trace(go.Bar(
-                    x=fold_labels, y=fold_r2,
-                    marker_color=bar_colors,
-                    hovertemplate="%{x}: R²=%{y:.4f}<extra></extra>",
-                ))
-                fig_fold.add_hline(y=0, line_dash="dot", line_color=colors["muted"])
-                fig_fold.add_hline(
-                    y=esn_r2, line_dash="dash", line_color=colors["primary"],
-                    annotation_text=f"Aggregate R²={esn_r2:.3f}",
-                    annotation_font_size=10, annotation_position="top right",
-                )
-                apply_chart_style(fig_fold, height=380,
-                                  xaxis_title="Walk-forward fold",
-                                  yaxis_title="R²", showlegend=False)
-                render_chart(
-                    fig_fold, chart_id="rc_fold_r2",
-                    filename_base="rc_fold_r2",
-                    title_key="rc_fold",
-                    default_title="Per-fold R² (walk-forward stability)",
-                )
-            else:
-                st.info("No fold-level metrics available.")
-
-        with col_fi:
-            if not importance.empty and {"feature", "weight_magnitude"}.issubset(importance.columns):
-                top = importance.sort_values("weight_magnitude", ascending=False).head(10)
-                top = top.iloc[::-1]  # reverse for horizontal bar (largest at top)
-                fig_fi = go.Figure()
-                fig_fi.add_trace(go.Bar(
-                    x=top["weight_magnitude"], y=top["feature"],
-                    orientation="h",
-                    marker_color=colors["tertiary"],
-                    hovertemplate="%{y}: |w|=%{x:.4f}<extra></extra>",
-                ))
-                apply_chart_style(fig_fi, height=380,
-                                  xaxis_title="|Readout weight|",
-                                  yaxis_title="", showlegend=False)
-                render_chart(
-                    fig_fi, chart_id="rc_feat_imp",
-                    filename_base="rc_feature_importance",
-                    title_key="rc_fi",
-                    default_title="Feature importance (top 10 readout weights)",
-                )
-            else:
-                st.info("No feature-importance data available.")
-
-        # Pair-spread predictions
-        pair_results = metrics.get("pair_spread_prediction", {})
-        if pair_results:
-            st.markdown("**Pair-spread Z-score forecasts (top-3 dislocation pairs)**")
-            rows = []
-            for pair_name, m in pair_results.items():
-                if not isinstance(m, dict):
-                    continue
-                rows.append({
-                    "Pair": pair_name,
-                    "R²": round(float(m.get("r2", float("nan"))), 4),
-                    "RMSE": round(float(m.get("rmse", float("nan"))), 4),
-                    "MAE": round(float(m.get("mae", float("nan"))), 4),
-                    "Direction Acc": round(float(m.get("direction_of_change_accuracy", float("nan"))) * 100, 1),
-                    "n samples": int(m.get("n_samples", 0)),
-                })
-            if rows:
-                pair_df = pd.DataFrame(rows)
-                st.dataframe(
-                    pair_df, use_container_width=True, hide_index=True,
-                    column_config={
-                        "Direction Acc": st.column_config.NumberColumn(
-                            "Direction Acc (%)", format="%.1f",
-                        ),
-                    },
-                )
-                st.caption(
-                    "Caveat: pair-spread forecasting is currently weak "
-                    "(near-zero or negative R²). Roadmap items M-2 (RC PCA refit per fold) "
-                    "and adding a pair-AR(1) baseline will be revisited in the research-rigour phase."
-                )
-
 
 # ---------------------------------------------------------------------------
 # Main render
@@ -861,9 +661,9 @@ def render():
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    sub_rmt, sub_glasso, sub_wavelet, sub_te, sub_fc = st.tabs([
+    sub_rmt, sub_glasso, sub_wavelet, sub_te = st.tabs([
         "RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale",
-        "Transfer Entropy", "Forecasting",
+        "Transfer Entropy",
     ])
 
     with sub_rmt:
@@ -877,6 +677,3 @@ def render():
 
     with sub_te:
         render_transfer_entropy(sector_map)
-
-    with sub_fc:
-        render_forecasting(sector_map)

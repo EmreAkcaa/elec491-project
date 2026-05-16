@@ -281,7 +281,7 @@ Up to `top_n_candidates` rows (default 20).
 
 | Producer | `src/pair_dislocation.py:run_pair_dislocation` |
 |---|---|
-| Consumer | dashboard tab 5 (table); pair_analysis Spread sub-tab; `reservoir_computing` (top-3 for pair task). |
+| Consumer | dashboard tab 5 (table); pair_analysis Spread sub-tab. |
 
 ### `eigenvalue_spectrum.csv`
 
@@ -446,44 +446,6 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 | Producer | `src/transfer_entropy.py:compute_node_roles` |
 |---|---|
 | Consumer | EEE tab TE (role table / coloured nodes). |
-
-### `rc_dispersion_predictions.parquet`
-
-| Column |
-|---|
-| `date`, `actual_dispersion`, `predicted_dispersion` |
-
-| Producer | `src/reservoir_computing.py:run_reservoir_computing` |
-|---|---|
-| Consumer | EEE → Forecasting, "Predicted vs Actual Dispersion" time-series chart and the side-by-side scatter (with y=x reference). |
-
-### `rc_feature_importance.csv`
-
-| Column |
-|---|
-| `feature`, `weight_magnitude` |
-
-| Producer | `src/reservoir_computing.py:run_reservoir_computing` |
-|---|---|
-| Consumer | EEE → Forecasting, top-10 horizontal-bar chart of readout-weight magnitudes (`load_rc_feature_importance`). |
-
-### `rc_metrics.json`
-
-```json
-{
-  "dispersion_prediction": { "rmse": ..., "r2": ..., "direction_of_change_accuracy": ... },
-  "dispersion_fold_metrics": [ ... ],
-  "baselines": { "persistence": {...}, "mean": {...} },
-  "pair_spread_prediction": { "TICKERA-TICKERB": {...} },
-  "esn_config": { "reservoir_size": 300, "spectral_radius": 0.9, ... },
-  "feature_columns": [ ... ],
-  "n_features": ..., "n_samples": ..., "train_size": ..., "test_size": ...
-}
-```
-
-| Producer | `src/reservoir_computing.py:run_reservoir_computing` |
-|---|---|
-| Consumer | EEE → Forecasting: four R²/RMSE/MAE/DA metric tiles (`dispersion_prediction`), baseline-comparison row (`baselines.{persistence,mean}`), per-fold R² bar chart (`dispersion_fold_metrics`), pair-spread results table (`pair_spread_prediction`), and the run-config caption (`esn_config`, `train_size`, `test_size`). |
 
 ---
 

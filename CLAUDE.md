@@ -65,10 +65,8 @@ uv run python -m pytest -q               # 87 tests
   `8379448` ("New methods wired to dashboard"). The only remaining orphan is
   `data/results/distance_matrix.parquet` — see `docs/DATA_ARTIFACTS.md`
   "Orphan summary" and `docs/FUTURE_WORK.md` F-1.
-- **Hardcoded params in EEE/RC**: `ESNConfig` (`src/reservoir_computing.py:48`)
-  is constructed with all-defaults inside `run_reservoir_computing` — not yet
-  driven by YAML. Same for wavelet `db4`, RMT `method="constant"`, partial
-  correlation `threshold=0.01`. See FUTURE_WORK F-2.
+- **Hardcoded params in EEE methods**: wavelet `db4`, RMT `method="constant"`,
+  partial correlation `threshold=0.01`. Not yet driven by YAML. See FUTURE_WORK F-2.
 - **Universe has 102 tickers, not 100.** `src/config.py:_load_universe` warns
   but doesn't fail. Don't "correct" this.
 - **Universe drops below 100 after the 90% coverage filter** (typically ~73

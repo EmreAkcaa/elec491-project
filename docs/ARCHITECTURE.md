@@ -25,8 +25,7 @@
 │         ├─► src/rmt_denoising.py       ─┐                                   │
 │         ├─► src/partial_correlation.py ─┤  EEE methods (informal grouping)  │
 │         ├─► src/wavelet_analysis.py    ─┤                                   │
-│         ├─► src/transfer_entropy.py    ─┘                                   │
-│         └─► src/reservoir_computing.py ─► rc_dispersion_predictions, ...    │
+│         └─► src/transfer_entropy.py    ─┘                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -70,10 +69,9 @@
 | 9 | Glasso | `src/partial_correlation.py:run_partial_correlation` | log returns | `partial_corr`, `precision_matrix`, `partial_corr_edges`, `glasso_metadata.json` |
 | 10 | wavelet | `src/wavelet_analysis.py:run_wavelet_analysis` | log returns | `wavelet_corr_scale{1..7}`, `wavelet_mst_edges_*`, `wavelet_mst_metrics_*`, `wavelet_metadata.json` |
 | 11 | transfer entropy | `src/transfer_entropy.py:run_transfer_entropy` | log returns | `transfer_entropy_matrix`, `net_transfer_entropy_matrix`, `te_network_edges`, `te_node_roles` |
-| 12 | reservoir computing | `src/reservoir_computing.py:run_reservoir_computing` | log returns + dislocation_candidates | `rc_dispersion_predictions`, `rc_feature_importance`, `rc_metrics.json` |
 
 Stages 8–11 are the "EEE Analysis" group (informal label, surfaced in dashboard
-sub-tabs). Stage 12 (RC) is its own block in `run_pipeline.py` after EEE.
+sub-tabs).
 
 ## Module dependency graph (intra-`src/`)
 
@@ -94,7 +92,6 @@ rolling_correlation.py is a leaf
 pair_dislocation.py is a leaf
 partial_correlation.py is a leaf (uses sklearn directly)
 transfer_entropy.py is a leaf
-reservoir_computing.py is a leaf (uses sklearn + scipy)
 ```
 
 `clustering.py:build_mst` and `mst_to_edge_df` and `compute_mst_metrics` are
@@ -113,7 +110,6 @@ the most reused functions in the pipeline (called by RMT and wavelet stages).
 | Pair correlation/spread/half-life | Pipeline screens top-N → `dislocation_candidates`. App computes per-pair on demand. |
 | TE shuffle null distribution | Pipeline (seeded). App reads precomputed matrix. |
 | Wavelet decomposition | Pipeline (one pass per scale). App reads `wavelet_corr_scale{1..7}.parquet`. |
-| ESN training | Pipeline (walk-forward + final fit). App reads `rc_metrics.json`, `rc_dispersion_predictions.parquet`, `rc_feature_importance.csv` in the EEE → Forecasting sub-tab. |
 
 ## Glossary
 
@@ -150,16 +146,8 @@ the most reused functions in the pipeline (called by RMT and wavelet stages).
   the mean-reversion half-life is `-ln(2) / ln(1+φ)` if `φ < 0`.
 - **Z-score (rolling)** — standardised spread `(s_t - μ_w) / σ_w` over a
   trailing window `w`. Used to detect dislocation entries/exits.
-- **ESN (Echo State Network)** — a reservoir-computing recurrent network with
-  random fixed reservoir weights and a trained linear readout (ridge).
-- **Spectral radius (ρ)** — max |eigenvalue| of the reservoir weight matrix;
-  scaled to < 1 for the echo state property.
-- **Leak rate (α)** — leaky-integrator coefficient governing reservoir memory.
-- **Washout** — initial reservoir steps discarded before training.
-- **Ridge regression** — linear regression with L2 penalty; closed-form solve
-  used by ESN readout.
 - **Cross-sectional dispersion** — `std(returns across stocks at time t)`.
   Higher = more idiosyncratic moves; lower = market moving in sync.
 
-For the math behind RMT / Glasso / Wavelet / TE / RC see
+For the math behind RMT / Glasso / Wavelet / TE see
 [`EEE_METHODS.md`](EEE_METHODS.md).

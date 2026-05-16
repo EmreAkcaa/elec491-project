@@ -1,14 +1,9 @@
-# EEE_METHODS — RMT, Glasso, Wavelet, Transfer Entropy, Reservoir Computing
+# EEE_METHODS — RMT, Glasso, Wavelet, Transfer Entropy
 
 > **"EEE" is an informal grouping label.** It bundles the more advanced
 > methods (RMT denoising, Graphical LASSO, Wavelet decomposition, Transfer
 > Entropy) into a single dashboard sub-tab and a labelled block in
 > `run_pipeline.py`. It is **not** an acronym. Don't try to decode it.
->
-> Reservoir Computing (the ESN forecasting layer) is documented in this file
-> alongside the EEE methods because emre's project narrative groups them
-> together as "advanced methods", but in `run_pipeline.py` it is its own
-> separate block run after EEE.
 
 ---
 
@@ -282,99 +277,3 @@ which made results irreproducible.
 - Bossomaier, T. et al. (2016). *An introduction to transfer entropy.*
   Springer.
 
----
-
-## 5. Reservoir Computing (ESN) — `src/reservoir_computing.py`
-
-### Theory
-
-An **Echo State Network** (Jaeger 2001) is a recurrent neural network with
-a **fixed random reservoir** and a **trained linear readout**. The reservoir
-is a sparse random matrix `W` (size `N × N`) that maps an `n`-dim input to
-an `N`-dim hidden state via:
-
-```
-x_t = (1 - α) x_{t-1} + α tanh( W_in [u_t; 1] + W x_{t-1} )
-```
-
-with leak rate `α` and bias-augmented input `[u_t; 1]`. The **echo state
-property** holds when `ρ(W) < 1` (spectral radius), guaranteeing fading
-memory: any initial condition is washed out exponentially.
-
-The readout is trained by ridge regression on the augmented state
-`s_t = [x_t; u_t]`:
-
-```
-W_out = ( S^T S + α_ridge I )⁻¹ S^T Y
-```
-
-closed-form, no SGD, no overfitting at our scale.
-
-### Why ESN for stock correlation networks (project-specific framing)
-
-- Fading memory matches financial regime timescales (weeks to months).
-- Random reservoir acts as a nonlinear feature map over ~73 stocks without
-  explicit `O(N²)` engineering.
-- Ridge readout is one closed-form solve — fits 1.5k-day datasets where
-  LSTM/GRU would overfit and need GPU.
-- `ρ` and `α` give explicit timescale knobs that complement the wavelet
-  multi-scale analysis.
-
-### Implementation
-
-`EchoStateNetwork` class (`reservoir_computing.py:67`):
-- Random init via `np.random.RandomState(seed)` (note: legacy random API,
-  not `default_rng`).
-- Sparse reservoir: `mask = rand < (1 - sparsity)`.
-- Spectral-radius scaling via `linalg.eigvals`.
-- `predict_continuation` (`:201`) is the correct walk-forward path: warms
-  reservoir on training data, then carries state into test.
-
-**Two tasks:**
-1. **Market dispersion** (`build_market_features`, `:224`): cross-sectional
-   stats + rolling vol + PCA(5) → next-day cross-sectional std.
-2. **Pair spread** (`build_pair_features`, `:283`): pair-specific spread,
-   z-score, rolling corr, market context → next-day z-score for top-3
-   dislocation candidates.
-
-Walk-forward CV: 5 folds for dispersion, 3 for pairs.
-
-### Hardcoded params (`ESNConfig`, `reservoir_computing.py:48`)
-
-- reservoir_size=300, spectral_radius=0.9, input_scaling=0.5, leak_rate=0.3.
-- ridge_alpha=10.0 (strong; tuned for our short series).
-- sparsity=0.9 (90% zeros), seed=42, washout=100.
-- n_pca=5 PCA components, vol_windows=(5, 20), train_ratio=0.7.
-
-None of these come from YAML yet (FUTURE_WORK F-2).
-
-### Caveats and pitfalls
-
-- **Look-ahead risk** in `build_market_features`: cross-sectional statistics
-  (mean, std, skew, kurt across stocks at time `t`) and PCA fit on the full
-  return matrix are *not* strictly causal at time `t` if PCA loadings are
-  fit using post-`t` data. The current `pca.fit_transform(returns_clean)`
-  fits on the entire history once. The target is `dispersion.shift(-1)`
-  which is correctly aligned, but the **PCA features themselves contain
-  future information** in-sample. This isn't catastrophic during walk-forward
-  CV because the PCA basis is fixed across folds, but it's worth fixing —
-  see FUTURE_WORK F-3.
-- ESN performance depends sharply on `ρ`. We use 0.9; many regimes work
-  better with 1.05–1.20 in practice.
-- Walk-forward CV measures out-of-sample R²; baselines (persistence and
-  mean) are reported alongside.
-
-### What to verify or improve
-
-- Fit PCA on training set only inside each walk-forward fold.
-- Sweep `ρ ∈ [0.7, 1.3]` and `α ∈ [0.1, 0.9]` to confirm robustness.
-- Add pair-task baselines (mean-reversion AR(1) forecast).
-
-### References
-
-- Jaeger, H. (2001). *The echo state approach to analysing and training
-  recurrent neural networks.* GMD Report 148.
-- Lukoševičius, M. (2012). *A practical guide to applying echo state
-  networks.* In *Neural Networks: Tricks of the Trade* (2nd ed.), Springer.
-- Maass, W. et al. (2002). *Real-time computing without stable states.*
-  Neural Computation 14(11):2531.

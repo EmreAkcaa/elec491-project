@@ -108,8 +108,8 @@ Two inner tabs (`tab_top`, `tab_bottom`) inside the "Top/Bottom Pairs" section.
 
 #### Tab 6 — EEE Analysis (`tab_eee` → `app/eee_analysis.py:render`)
 
-Five sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
-`Transfer Entropy`, `Forecasting`.
+Four sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
+`Transfer Entropy`.
 
 | Sub-tab | Chart | Data file | Library |
 |---|---|---|---|
@@ -124,12 +124,6 @@ Five sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
 | Wavelet | Cross-scale summary table (avg corr, std, MST total weight, edge count, max betweenness, avg degree) | `wavelet_corr_scale*.parquet` + `wavelet_mst_edges_scale*.csv` + `wavelet_mst_metrics_scale*.csv` | st.dataframe |
 | TE | Directed TE network (top edges by net TE) | `te_network_edges.csv` | go.Scatter (with arrows) |
 | TE | Net information-flow heatmap (symmetric ±max, RdBu reversed, dendrogram-ordered) | `net_transfer_entropy_matrix.parquet`, `dendrogram_order.json` | go.Heatmap |
-| Forecasting | 4 metric tiles (R², RMSE, MAE, direction-of-change) + baseline-comparison row (ESN vs persistence vs train-mean) | `rc_metrics.json` | st.metric |
-| Forecasting | Predicted vs actual dispersion time series (test set) | `rc_dispersion_predictions.parquet` | go.Scatter |
-| Forecasting | Predicted vs actual scatter with y=x reference | `rc_dispersion_predictions.parquet` | go.Scatter |
-| Forecasting | Per-fold R² bar chart (walk-forward stability) with aggregate-R² reference line | `rc_metrics.json` (`dispersion_fold_metrics`) | go.Bar |
-| Forecasting | Top-10 readout-weight horizontal bars (feature importance) | `rc_feature_importance.csv` | go.Bar |
-| Forecasting | Pair-spread forecast table (R², RMSE, MAE, DA% per top-3 dislocation pair) | `rc_metrics.json` (`pair_spread_prediction`) | st.dataframe |
 
 ---
 
@@ -190,9 +184,6 @@ the file is missing — no exceptions.
 | `load_te_node_roles()` | `te_node_roles.csv` | eee tab TE |
 | `load_te_matrix()` | `transfer_entropy_matrix.parquet` | eee tab TE |
 | `load_net_te_matrix()` | `net_transfer_entropy_matrix.parquet` | eee tab TE (net flow heatmap) |
-| `load_rc_metrics()` | `rc_metrics.json` | eee tab Forecasting (metric tiles, fold bars, pair table) |
-| `load_rc_predictions()` | `rc_dispersion_predictions.parquet` | eee tab Forecasting (predicted-vs-actual time series + scatter) |
-| `load_rc_feature_importance()` | `rc_feature_importance.csv` | eee tab Forecasting (top-10 readout-weight bars) |
 | `load_denoised_mst_metrics()` | `denoised_mst_node_metrics.csv` | eee tab RMT (denoised MST node sizing) |
 | `load_wavelet_mst_metrics(scale)` | `wavelet_mst_metrics_scale{n}.csv` | eee tab Wavelet (per-scale MST node sizing + summary table) |
 | `load_anomalies()` | `data/processed/anomalies.csv` | dashboard tab 1 (Return Anomalies section) |

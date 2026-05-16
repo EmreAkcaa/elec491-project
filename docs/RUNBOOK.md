@@ -128,12 +128,6 @@ This is a warning, not an error. Don't "fix" it.
 Look for places where a loader returns a DataFrame that gets mutated
 downstream. Always `.copy()` before in-place modification of cached returns.
 
-### `KeyError` on `dislocation_candidates.csv` after running RC
-
-If you ran the pipeline before the dislocation stage finished, the RC stage
-will skip the pair-spread task with a warning. Re-run `pair_dislocation` then
-`reservoir_computing` and you'll get the full output.
-
 ## Recipes
 
 ### Add a new ticker
@@ -173,7 +167,6 @@ uv run python -m src.rmt_denoising          # ~5s
 uv run python -m src.partial_correlation    # ~30s
 uv run python -m src.wavelet_analysis       # ~30s
 uv run python -m src.transfer_entropy       # ~5–10 min
-uv run python -m src.reservoir_computing    # ~1 min
 ```
 
 ### Wipe everything and start fresh
@@ -204,5 +197,4 @@ What's **not** in YAML and lives as Python defaults (FUTURE_WORK F-2):
 - RMT method (`'constant'`)
 - Glasso `cv`, `max_iter`, edge `threshold`
 - Wavelet family (`'db4'`), max level cap (7)
-- All of `ESNConfig` (reservoir size, spectral radius, leak rate, etc.)
 - Clustering `linkage_method='single'`, `distance_threshold=1.0`

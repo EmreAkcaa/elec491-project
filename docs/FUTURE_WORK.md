@@ -23,7 +23,7 @@ see `git show 8379448 -- app/eee_analysis.py app/utils.py app/dashboard.py`.
 
 ---
 
-## F-2 — Hoist hardcoded EEE / RC params to `settings.yaml`
+## F-2 — Hoist hardcoded EEE params to `settings.yaml`
 
 Add the following dataclasses to `src/config.py` (mirror the existing
 `DislocationConfig` / `TransferEntropyConfig` pattern), wire them into
@@ -46,19 +46,6 @@ partial_correlation:
 wavelet:
   family: "db4"
   max_levels: 7
-
-reservoir_computing:
-  reservoir_size: 300
-  spectral_radius: 0.9
-  input_scaling: 0.5
-  leak_rate: 0.3
-  ridge_alpha: 10.0
-  sparsity: 0.9
-  seed: 42
-  washout: 100
-  n_pca: 5
-  vol_windows: [5, 20]
-  train_ratio: 0.7
 ```
 
 Each `run_*` function then reads from `config.<name>` instead of constructing
@@ -66,23 +53,9 @@ defaults locally.
 
 ---
 
-## F-3 — Verify and harden RC for look-ahead
+## F-3 — Harden transfer entropy null distribution
 
-See KNOWN_ISSUES M-2 for the issue.
-
-Concrete steps:
-1. Move `PCA.fit_transform(returns_clean)` *inside* `walk_forward_validation`,
-   refitting per fold on `[0..t_split]`.
-2. Audit `build_market_features` — every column should be either:
-   - cross-sectional (function of returns at time `t`), or
-   - rolling-up-to-`t` (no centred or future-using transforms).
-3. Add a unit test that asserts: for any feature column `c`, `c.iloc[k]`
-   only depends on `returns.iloc[:k+1]`.
-4. Re-run dispersion forecasting before/after, compare R²/DA. If R² drops
-   significantly, that's evidence the previous pipeline had non-trivial
-   look-ahead leakage — document and update `EEE_METHODS.md`.
-
-Also for transfer entropy (KNOWN_ISSUES M-1): replace the shuffle null
+For transfer entropy (KNOWN_ISSUES M-1): replace the shuffle null
 with IAAFT (iterative amplitude-adjusted Fourier transform) surrogates,
 preserving source autocorrelation. Use `pyunicorn` or implement directly
 via `np.fft`.
@@ -106,13 +79,11 @@ Priority order (high-value first):
    one DataFrame per requested scale and that summing reconstructed
    details across all scales recovers (within tolerance) the original
    signal minus the approximation.
-5. **`src/reservoir_computing.py`** — test ESN echo state property
-   (state norm decays for zero input); test ridge readout shapes.
-6. **`src/data_validation.py`** — mock `isyatirimhisse.fetch_stock_data`
+5. **`src/data_validation.py`** — mock `isyatirimhisse.fetch_stock_data`
    to test the alignment + status-classification logic without network.
-7. **`src/data_acquisition.py`** — mock `yf.download`; test the chunking,
+6. **`src/data_acquisition.py`** — mock `yf.download`; test the chunking,
    ticker rename, and failures-list logic.
-8. **`src/config.py`** — test missing/invalid YAML, duplicate-ticker
+7. **`src/config.py`** — test missing/invalid YAML, duplicate-ticker
    universe, missing required columns.
 
 UI smoke tests via `streamlit testing.AppTest` for: dashboard loads, all 6
@@ -137,7 +108,6 @@ tabs render, pair_analysis loads, EEE Analysis loads.
 These are concrete enough to schedule:
 
 - **M-1** TE temporal-surrogate null — covered above in F-3.
-- **M-2** RC PCA look-ahead — covered above in F-3.
 - **M-3** `store_raw_close` half-honoured — small refactor, drop the flag
   or skip the download.
 - **M-4** `_fetch_isyatirim_data` broad except — narrow to known exception

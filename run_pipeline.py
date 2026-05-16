@@ -24,7 +24,6 @@ def main():
     from src.partial_correlation import run_partial_correlation
     from src.wavelet_analysis import run_wavelet_analysis
     from src.transfer_entropy import run_transfer_entropy
-    from src.reservoir_computing import run_reservoir_computing
 
     logger.info("========== StoNeCoAl Pipeline ==========")
 
@@ -44,9 +43,6 @@ def main():
     run_partial_correlation(config)
     run_wavelet_analysis(config)
     run_transfer_entropy(config)
-
-    # --- Reservoir Computing (prediction layer) ---
-    run_reservoir_computing(config)
 
     logger.info("========== Pipeline Complete ==========")
 
