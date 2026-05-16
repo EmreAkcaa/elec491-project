@@ -16,8 +16,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 
 def _discretize(series: np.ndarray, n_bins: int = 3) -> np.ndarray:
@@ -266,9 +264,9 @@ def compute_node_roles(
 def run_transfer_entropy(config: PipelineConfig) -> None:
     """Pipeline step: transfer entropy directed information flow network."""
     logger.info("=== Transfer Entropy Analysis ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
-    returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    returns = pd.read_parquet(config.data_processed / "log_returns.parquet")
     logger.info("Loaded log returns: %d days x %d tickers", *returns.shape)
 
     te_cfg = config.transfer_entropy
@@ -282,18 +280,18 @@ def run_transfer_entropy(config: PipelineConfig) -> None:
         significance_level=te_cfg.significance_level,
         seed=te_cfg.seed,
     )
-    te_matrix.to_parquet(DATA_RESULTS / "transfer_entropy_matrix.parquet")
-    net_te_matrix.to_parquet(DATA_RESULTS / "net_transfer_entropy_matrix.parquet")
+    te_matrix.to_parquet(config.data_results / "transfer_entropy_matrix.parquet")
+    net_te_matrix.to_parquet(config.data_results / "net_transfer_entropy_matrix.parquet")
     logger.info("Saved transfer entropy matrices")
 
     # Extract edges
     edges = extract_te_edges(te_matrix, net_te_matrix)
-    edges.to_csv(DATA_RESULTS / "te_network_edges.csv", index=False)
+    edges.to_csv(config.data_results / "te_network_edges.csv", index=False)
     logger.info("Saved %d TE network edges", len(edges))
 
     # Node roles
     roles = compute_node_roles(te_matrix, config.universe)
-    roles.to_csv(DATA_RESULTS / "te_node_roles.csv", index=False)
+    roles.to_csv(config.data_results / "te_node_roles.csv", index=False)
     logger.info("Saved TE node roles")
 
     logger.info("Transfer entropy analysis complete")

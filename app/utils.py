@@ -6,6 +6,7 @@ All pages import from here so caches and logic are never duplicated.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -298,9 +299,14 @@ for _p in (str(PROJECT_ROOT), str(APP_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS   = PROJECT_ROOT / "data" / "results"
-DATA_RAW       = PROJECT_ROOT / "data" / "raw"
+# Phase D: the pipeline now writes per-market artifacts under data/<market>/...
+# (BIST, sp500, eeg_*, etc.). The dashboard currently surfaces one universe at
+# a time via the DASHBOARD_UNIVERSE env var (default: "bist"). Phase E will
+# add a runtime sidebar selector that flips this.
+DASHBOARD_UNIVERSE = os.environ.get("DASHBOARD_UNIVERSE", "bist")
+DATA_RAW       = PROJECT_ROOT / "data" / DASHBOARD_UNIVERSE / "raw"
+DATA_PROCESSED = PROJECT_ROOT / "data" / DASHBOARD_UNIVERSE / "processed"
+DATA_RESULTS   = PROJECT_ROOT / "data" / DASHBOARD_UNIVERSE / "results"
 
 
 # ---------------------------------------------------------------------------

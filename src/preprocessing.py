@@ -10,13 +10,10 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_RAW = PROJECT_ROOT / "data" / "raw"
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-
 
 def load_raw_prices(config: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load raw parquet and return (adj_close, raw_close) DataFrames."""
-    raw_path = DATA_RAW / "prices_raw.parquet"
+    raw_path = config.data_raw / "prices_raw.parquet"
     df = pd.read_parquet(raw_path)
 
     if isinstance(df.columns, pd.MultiIndex):
@@ -123,7 +120,7 @@ def flag_anomalies(
 def run_preprocessing(config: PipelineConfig) -> None:
     """Full preprocessing pipeline step."""
     logger.info("=== Preprocessing ===")
-    DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
+    config.data_processed.mkdir(parents=True, exist_ok=True)
 
     adj_close, raw_close = load_raw_prices(config)
 
@@ -141,20 +138,20 @@ def run_preprocessing(config: PipelineConfig) -> None:
     )
 
     # Save artifacts
-    filtered_adj.to_parquet(DATA_PROCESSED / "adj_close.parquet")
+    filtered_adj.to_parquet(config.data_processed / "adj_close.parquet")
     logger.info("Saved filtered adj close")
 
     if not filtered_raw.empty:
-        filtered_raw.to_parquet(DATA_PROCESSED / "raw_close.parquet")
+        filtered_raw.to_parquet(config.data_processed / "raw_close.parquet")
         logger.info("Saved filtered raw close")
 
-    log_returns.to_parquet(DATA_PROCESSED / "log_returns.parquet")
+    log_returns.to_parquet(config.data_processed / "log_returns.parquet")
     logger.info("Saved log returns")
 
-    coverage.to_csv(DATA_PROCESSED / "coverage_report.csv", index=False)
+    coverage.to_csv(config.data_processed / "coverage_report.csv", index=False)
     logger.info("Saved coverage report")
 
-    anomalies.to_csv(DATA_PROCESSED / "anomalies.csv", index=False)
+    anomalies.to_csv(config.data_processed / "anomalies.csv", index=False)
     logger.info("Saved anomalies")
 
     logger.info("Preprocessing complete")

@@ -12,8 +12,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_RAW = PROJECT_ROOT / "data" / "raw"
-
 
 def fetch_all_tickers(config: PipelineConfig) -> tuple[pd.DataFrame, list[str]]:
     """Download price data for all universe tickers via yfinance.
@@ -28,7 +26,7 @@ def fetch_all_tickers(config: PipelineConfig) -> tuple[pd.DataFrame, list[str]]:
     failures : list[str]
         Tickers that failed to download or are missing from the result.
     """
-    DATA_RAW.mkdir(parents=True, exist_ok=True)
+    config.data_raw.mkdir(parents=True, exist_ok=True)
 
     symbols = config.provider_symbols
     start = config.data.start_date
@@ -138,14 +136,14 @@ def save_raw_data(
     config: PipelineConfig,
 ) -> None:
     """Persist raw price data and metadata."""
-    DATA_RAW.mkdir(parents=True, exist_ok=True)
+    config.data_raw.mkdir(parents=True, exist_ok=True)
 
-    prices.to_parquet(DATA_RAW / "prices_raw.parquet")
-    logger.info("Saved raw prices: %s", DATA_RAW / "prices_raw.parquet")
+    prices.to_parquet(config.data_raw / "prices_raw.parquet")
+    logger.info("Saved raw prices: %s", config.data_raw / "prices_raw.parquet")
 
     if not index_df.empty:
-        index_df.to_parquet(DATA_RAW / "xu100.parquet")
-        logger.info("Saved index: %s", DATA_RAW / "xu100.parquet")
+        index_df.to_parquet(config.data_raw / "xu100.parquet")
+        logger.info("Saved index: %s", config.data_raw / "xu100.parquet")
 
     metadata = {
         "timestamp": pd.Timestamp.now().isoformat(),
@@ -157,7 +155,7 @@ def save_raw_data(
         ),
         "failures": failures,
     }
-    with open(DATA_RAW / "fetch_metadata.json", "w") as f:
+    with open(config.data_raw / "fetch_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
     logger.info("Saved fetch metadata")
 

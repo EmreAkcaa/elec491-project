@@ -12,8 +12,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 
 def compute_descriptive_stats(
@@ -127,17 +125,17 @@ def compute_market_summary(corr: pd.DataFrame) -> dict:
 def run_analysis(config: PipelineConfig) -> None:
     """Full analysis pipeline step."""
     logger.info("=== Analysis ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
     # Load preprocessed returns
-    returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    returns = pd.read_parquet(config.data_processed / "log_returns.parquet")
     logger.info("Loaded log returns: %d days x %d tickers", *returns.shape)
 
     # Descriptive stats
     summary = compute_descriptive_stats(
         returns, ann_factor=config.analysis.annualization_factor
     )
-    summary.to_parquet(DATA_RESULTS / "summary_stats.parquet")
+    summary.to_parquet(config.data_results / "summary_stats.parquet")
     logger.info("Saved summary stats")
 
     # Correlation matrix
@@ -146,17 +144,17 @@ def run_analysis(config: PipelineConfig) -> None:
         method=config.analysis.correlation_method,
         min_periods=config.analysis.corr_min_periods,
     )
-    corr.to_parquet(DATA_RESULTS / "pearson_corr.parquet")
+    corr.to_parquet(config.data_results / "pearson_corr.parquet")
     logger.info("Saved Pearson correlation matrix")
 
     # Distance matrix
     dist = compute_distance_matrix(corr)
-    dist.to_parquet(DATA_RESULTS / "distance_matrix.parquet")
+    dist.to_parquet(config.data_results / "distance_matrix.parquet")
     logger.info("Saved distance matrix")
 
     # Top/bottom pairs
     pairs = get_top_bottom_pairs(corr, config.universe, n=10)
-    pairs.to_csv(DATA_RESULTS / "top_bottom_pairs.csv", index=False)
+    pairs.to_csv(config.data_results / "top_bottom_pairs.csv", index=False)
     logger.info("Saved top/bottom pairs")
 
     # Market summary
@@ -164,7 +162,7 @@ def run_analysis(config: PipelineConfig) -> None:
     logger.info("Market summary: %s", market_summary)
 
     # Pipeline metadata
-    coverage = pd.read_csv(DATA_PROCESSED / "coverage_report.csv")
+    coverage = pd.read_csv(config.data_processed / "coverage_report.csv")
     metadata = {
         "run_timestamp": pd.Timestamp.now().isoformat(),
         "config": {
@@ -179,7 +177,7 @@ def run_analysis(config: PipelineConfig) -> None:
         "trading_days": int(returns.shape[0]),
         "market_summary": market_summary,
     }
-    with open(DATA_RESULTS / "pipeline_metadata.json", "w") as f:
+    with open(config.data_results / "pipeline_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
     logger.info("Saved pipeline metadata")
 

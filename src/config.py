@@ -105,6 +105,26 @@ class PipelineConfig:
     def index_provider_symbol(self) -> str:
         return self.market.index_ticker + self.market.provider_suffix
 
+    # ---- Per-market data path properties (Phase D) ----
+    # Each market gets its own data/<market_dir>/{raw,processed,results} tree
+    # so multiple universes (BIST, S&P 500, EEG) can coexist on disk.
+    @property
+    def market_dir(self) -> str:
+        """Lower-cased market_id used as the filesystem namespace."""
+        return self.market.market_id.lower()
+
+    @property
+    def data_raw(self) -> Path:
+        return PROJECT_ROOT / "data" / self.market_dir / "raw"
+
+    @property
+    def data_processed(self) -> Path:
+        return PROJECT_ROOT / "data" / self.market_dir / "processed"
+
+    @property
+    def data_results(self) -> Path:
+        return PROJECT_ROOT / "data" / self.market_dir / "results"
+
 
 def _load_universe(universe_path: Path) -> tuple[pd.DataFrame, dict]:
     """Load and validate the universe CSV."""
