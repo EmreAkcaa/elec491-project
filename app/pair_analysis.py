@@ -50,10 +50,10 @@ def _pair_corr(ret_json, a, b, win, method, wtype):
 
 
 @st.cache_data
-def _rolling_vol(_returns_json, _ta, _tb, _win):
-    _r = pd.read_json(io.StringIO(_returns_json), orient="split")
-    va = _r[_ta].rolling(_win).std() * np.sqrt(252)
-    vb = _r[_tb].rolling(_win).std() * np.sqrt(252)
+def _rolling_vol(returns_json, ta, tb, win):
+    _r = pd.read_json(io.StringIO(returns_json), orient="split")
+    va = _r[ta].rolling(win).std() * np.sqrt(252)
+    vb = _r[tb].rolling(win).std() * np.sqrt(252)
     return va, vb
 
 
@@ -69,10 +69,10 @@ def _compute_dislocation(adj_json, ta, tb, lookback, zwin, entry_th, exit_th):
 
 
 @st.cache_data
-def _subgraph_layout(_nodes, _edges):
+def _subgraph_layout(nodes, edges):
     _H = nx.Graph()
-    _H.add_nodes_from(_nodes)
-    _H.add_edges_from(_edges)
+    _H.add_nodes_from(nodes)
+    _H.add_edges_from(edges)
     return nx.spring_layout(_H, seed=42, k=3.0, iterations=80)
 
 
