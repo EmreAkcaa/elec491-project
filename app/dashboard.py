@@ -65,9 +65,9 @@ def _pit_corr(ret_json, end_date_str, window, method):
 
 
 @st.cache_data
-def _mst_layout(_edges_json):
+def _mst_layout(edges_json):
     _G = nx.Graph()
-    for _, r in pd.read_json(io.StringIO(_edges_json), orient="split").iterrows():
+    for _, r in pd.read_json(io.StringIO(edges_json), orient="split").iterrows():
         _G.add_edge(r["source"], r["target"], weight=r["distance"])
     return nx.kamada_kawai_layout(_G, weight="weight")
 
