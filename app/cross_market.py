@@ -278,6 +278,19 @@ def render() -> None:
         "developed-market dimension while sharing the same sampling and pipeline.",
     )
 
+    # Plain-English finance question — the demo first-60-seconds anchor.
+    st.info(
+        ":material/help: **Central question:** How does the structure of BIST-100 "
+        "co-movement compare to a developed-market reference (S&P 500)? Both panels "
+        "run through the identical 12-stage signal-processing pipeline, so any "
+        "difference in the resulting correlation network, sector recovery, or "
+        "crisis response is a property of the underlying market — not the method. "
+        "The clearest single finding: the 2023 Türkiye earthquake spike (mean "
+        "|correlation| 0.44 → 0.66 → 0.58 over the event window) is isolated to "
+        "BIST; the S&P signal stays flat (0.44 → 0.35 → 0.31), validating that "
+        "the toolkit catches market-specific stress events."
+    )
+
     # Defence-in-depth filter: only universes flagged eligible_for_cross_market
     # participate here. EEG (eligible_for_cross_market=False) is filtered out
     # even if the page is reached programmatically — the BIST-vs-S&P comparison

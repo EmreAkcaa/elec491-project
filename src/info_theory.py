@@ -447,9 +447,13 @@ def run_info_theory(config: PipelineConfig) -> None:
     rolling = rolling_d_eff_dh(returns, window=window, step=step)
     rolling.to_parquet(config.data_results / "rolling_info_theory.parquet")
 
-    # 4. Crisis-window KL divergences (skip when no crisis dates fall in panel)
-    crisis_specs = _resolve_crisis_dates(returns.index, DEFAULT_CRISIS_DATES)
-    crisis_kls = _compute_regime_kl(returns, crisis_specs)
+    # 4. Crisis-window KL divergences. Only meaningful for finance universes
+    # with a DatetimeIndex (EEG/sample-indexed panels skip this entirely).
+    if isinstance(returns.index, pd.DatetimeIndex):
+        crisis_specs = _resolve_crisis_dates(returns.index, DEFAULT_CRISIS_DATES)
+        crisis_kls = _compute_regime_kl(returns, crisis_specs)
+    else:
+        crisis_kls = []
     with open(config.data_results / "regime_kl.json", "w") as f:
         json.dump(crisis_kls, f, indent=2)
 

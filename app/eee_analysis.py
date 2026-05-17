@@ -720,7 +720,7 @@ def render_snn(sector_map: dict, *, u=None):
     """
     with st.container(border=True):
         section_header(
-            "Neuromorphic Signals — Spiking Neural Network",
+            "Spiking Neural Network — honest negative result",
             "A recurrent leaky-integrate-and-fire classifier trained with "
             "surrogate-gradient backprop-through-time. Inputs are delta-modulated "
             "(Σ-Δ ADC analogue) spike trains derived from the pair-dislocation "
@@ -738,6 +738,21 @@ def render_snn(sector_map: dict, *, u=None):
                 "`uv sync --extra snn && uv run python run_pipeline.py`."
             )
             return
+
+        agg_preview = metrics.get("aggregate", {})
+        per_pair_preview = metrics.get("per_pair", {})
+        delta_preview = agg_preview.get("mean_delta_sharpe", 0)
+        beat_preview = sum(
+            1 for v in per_pair_preview.values() if v.get("delta_sharpe", 0) > 0
+        )
+        st.warning(
+            f":material/warning: **Honest negative result.** This SNN beats the "
+            f"classical `|Z|>2` rule on {beat_preview} of {len(per_pair_preview)} "
+            f"pairs by Sharpe (mean Δ-Sharpe = {delta_preview:+.2f}). We keep it "
+            "in the project for methodological-breadth (spike-coded counterpart "
+            "to the rate-coded methods elsewhere) rather than as an alpha signal. "
+            "See `docs/SNN_Report.md` §11.3 for the per-pair breakdown."
+        )
 
         agg = metrics.get("aggregate", {})
         cfg = metrics.get("config", {})
