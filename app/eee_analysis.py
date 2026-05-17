@@ -708,12 +708,12 @@ CLASS_COLORS = {"HOLD": "#9CA3AF", "BUY": "#06D6A0", "SELL": "#E63946"}
 def render_snn(sector_map: dict, *, u=None):
     """Render Spiking Neural Network (neuromorphic) section.
 
-    Honest framing: the SNN achieves macro-F1 ≈ 0.67 (3-class baseline 0.27)
+    Honest framing: the SNN achieves macro-F1 ≈ 0.66 (3-class baseline 0.27)
     but on the trading-Sharpe metric it underperforms the simple |Z|>2 rule
-    by an average Δ-Sharpe ≈ −1.1, beating the heuristic on only 5 of 20
-    pairs. We report this as a documented exploration of spike-coded neural
-    inference applied to pair-spread classification — complementary to the
-    rate-coded methods elsewhere in the project.
+    on both markets: BIST Δ-Sharpe = −0.27 (wins 10 of 20 pairs); S&P
+    Δ-Sharpe = −0.84 (wins 7 of 20). We report this as a documented exploration
+    of spike-coded neural inference applied to pair-spread classification —
+    complementary to the rate-coded methods elsewhere in the project.
     """
     with st.container(border=True):
         section_header(

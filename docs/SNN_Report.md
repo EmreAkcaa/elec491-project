@@ -17,15 +17,18 @@ stock pairs from the BIST-100 universe.
 
 **Honest framing of the result.** This is a **documented exploratory negative
 result on trading performance, with a positive result on classification
-quality.** The SNN learns the dislocation features (macro-F1 ≈ 0.67 vs. random
-baseline 0.33 / majority-class baseline 0.27), but the resulting trading signal
-**underperforms** the simple `|Z| > 2` heuristic by an average Δ-Sharpe of
-**−1.11**, beating the classical rule on only **5 of 20 pairs**. We read this
-through the **information-bottleneck** lens (Tishby et al. 2000): the predictive
-information about 20-day-ahead mean reversion is concentrated in the current
-Z-score itself; neither high-dimensional feature augmentation nor recurrent
-spike-coded inference extracts additional alpha at daily frequency — consistent
-with the weak-form EMH at this horizon.
+quality.** The SNN learns the dislocation features (macro-F1 ≈ 0.66 on BIST,
+0.63 on S&P, vs. random baseline 0.33 / majority-class baseline 0.27), but the
+resulting trading signal **underperforms** the simple `|Z| > 2` heuristic on
+both markets: BIST Δ-Sharpe = **−0.27** (wins **10 of 20 pairs**); S&P
+Δ-Sharpe = **−0.84** (wins **7 of 20 pairs**). An earlier snapshot of the
+BIST pair selection reported Δ-Sharpe = −1.11 / 5 of 20 wins; that pair set
+is no longer the active one — current numbers come from `snn_metrics.json`.
+The qualitative reading stands: the predictive information about 20-day-ahead
+mean reversion is concentrated in the current Z-score itself; neither
+high-dimensional feature augmentation nor recurrent spike-coded inference
+extracts additional alpha at daily frequency — consistent with the weak-form
+EMH at this horizon.
 
 The SNN's value to the project is therefore **methodological breadth**, not
 trading alpha: it implements a spike-coded recurrent classifier with all the
@@ -51,16 +54,19 @@ dashboard's Neuromorphic Signals sub-tab shows the live values.
 
 | Metric | Value | Note |
 |---|---|---|
-| **Mean macro-F1** | **0.668** | Random-baseline = 0.33; "always HOLD" trivial = ~0.27. Classification is meaningfully above baseline. |
-| Best-pair F1 | 0.806 (`AGHOL_SAHOL`) | |
-| Worst-pair F1 | 0.537 (`VESTL_VESBE`) | All 20 pairs > 0.5 |
+| **Mean macro-F1 (BIST)** | **0.660** | Random-baseline = 0.33; "always HOLD" trivial = ~0.27. Classification is meaningfully above baseline. |
+| Mean macro-F1 (S&P) | **0.625** | Same architecture, US universe |
+| Best-pair F1 (BIST) | 0.820 (`AGHOL_SAHOL`) | |
+| Worst-pair F1 (BIST) | 0.485 (`VESTL_VESBE`) | 17 of 20 pairs > 0.5 |
 | Per-class F1 (averaged) | HOLD ≈ 0.79 / BUY ≈ 0.57 / SELL ≈ 0.63 | No class collapse |
-| Mean SNN Sharpe (annualised, gross) | **+3.56** | Paper-trade; no transaction costs |
-| Mean Classical (\|Z\|>2) Sharpe | **+4.67** | Same backtest with the simple heuristic |
-| **Mean Δ-Sharpe (SNN − Classical)** | **−1.11** | **Negative: SNN underperforms the rule** |
-| **Pairs where SNN > Classical on Sharpe** | **5 / 20** | Only one pair (`KCHOL_KRDMD`) beats by ≥ +0.50 |
-| Mean SNN hit rate | 0.85 | Selectivity is real — SNN trades less often, with higher per-trade accuracy |
-| SNN trades / pair (mean) | ~80 | vs ~80 classical (varies per pair: SNN range 43–117; classical 19–148) |
+| Mean SNN Sharpe (annualised, gross) — BIST | **+3.92** | Paper-trade; no transaction costs |
+| Mean Classical (\|Z\|>2) Sharpe — BIST | **+4.19** | Same backtest with the simple heuristic |
+| **Mean Δ-Sharpe — BIST** | **−0.27** | Modest underperformance; not the −1.11 the earlier snapshot reported |
+| **Mean Δ-Sharpe — S&P** | **−0.84** | Larger gap on the US universe |
+| **Pairs where SNN > Classical on Sharpe — BIST** | **10 / 20** | Three pairs beat by ≥ +1.00 (`EKGYO_HALKB`, `SISE_KRDMD`, `KCHOL_AKBNK`) |
+| **Pairs where SNN > Classical on Sharpe — S&P** | **7 / 20** | |
+| Mean SNN hit rate — BIST | 0.85 | Selectivity is real — SNN trades less often, with higher per-trade accuracy |
+| SNN trades / pair — BIST (mean) | ~60 | vs ~80 classical (varies per pair: SNN range 21–108; classical 37–148) |
 | Training time | ~12 min on CPU | 20 pairs pooled, 25 max epochs, early-stop patience 5 |
 
 ---
@@ -477,11 +483,13 @@ Simpler intuition than Sharpe: "how often is the model right when it does trade?
 
 The single most important comparison number. The classical baseline is the `|Z| > 2` mean-reversion rule from `pair_dislocation.detect_signals()`. If Δ-Sharpe is positive, our SNN is genuinely adding value over the heuristic the project was already implementing.
 
-Currently **5 of 20** pairs have a positive Δ-Sharpe (regenerated from
-`data/results/snn_metrics.json`): KCHOL_KRDMD (+0.54), EKGYO_HALKB (+0.49),
-AKBNK_YKBNK (+0.28), SISE_PETKM (+0.11), VAKBN_EKGYO (+0.02). Only one of those
-(KCHOL_KRDMD) exceeds +0.5; three are within noise (< +0.30). The SNN loses to
-the simple `|Z|>2` rule on 15 of 20 pairs.
+Currently **10 of 20** BIST pairs have a positive Δ-Sharpe (regenerated from
+`data/bist/results/snn_metrics.json`). The three strongest wins:
+`EKGYO_HALKB` (+1.16), `SISE_KRDMD` (+1.12), `KCHOL_AKBNK` (+1.07). Five more
+exceed +0.10 (`SISE_PETKM`, `YKBNK_AKBNK`, `KCHOL_KRDMD`, `KCHOL_ISCTR`,
+`YKBNK_VAKBN`); the remaining two (`TTKOM_AKBNK`, `TUPRS_AYGAZ`) are
+within rounding of zero. The SNN loses to the simple `|Z|>2` rule on the
+other 10 of 20 BIST pairs. On S&P it wins on 7 of 20.
 
 ### 10.3. Number of trades
 
@@ -496,61 +504,66 @@ A quality-quantity tradeoff indicator. The SNN averages ~80 trades per pair vs t
 All values regenerated from `data/results/snn_metrics.json` (test set, 20 pairs,
 walk-forward holdout, universal model).
 
-| Metric | Value |
-|---|---|
-| Macro-F1 (mean over 20 pairs) | **0.668** |
-| Mean SNN Sharpe (gross, no costs) | +3.56 |
-| Mean Classical Sharpe (\|Z\|>2) | +4.67 |
-| **Mean Δ-Sharpe (SNN − Classical)** | **−1.11** |
-| Mean SNN hit rate | 0.85 |
-| Pairs with F1 > 0.50 | **20 / 20** |
-| **Pairs with positive Δ-Sharpe** | **5 / 20** |
-| Pairs with Δ-Sharpe ≥ +0.5 | 1 / 20 (KCHOL_KRDMD) |
-| Wall-clock training time | ~12 min on CPU |
+| Metric | BIST | S&P |
+|---|---:|---:|
+| Macro-F1 (mean over 20 pairs) | **0.660** | **0.625** |
+| Mean SNN Sharpe (gross, no costs) | +3.92 | +3.25 |
+| Mean Classical Sharpe (\|Z\|>2) | +4.19 | +4.09 |
+| **Mean Δ-Sharpe (SNN − Classical)** | **−0.27** | **−0.84** |
+| Mean SNN hit rate | 0.85 | 0.83 |
+| Pairs with F1 > 0.50 | 17 / 20 | 16 / 20 |
+| **Pairs with positive Δ-Sharpe** | **10 / 20** | **7 / 20** |
+| Pairs with Δ-Sharpe ≥ +1.0 | 3 / 20 (`EKGYO_HALKB`, `SISE_KRDMD`, `KCHOL_AKBNK`) | 1 / 20 (`LEN_DHI`) |
+| Wall-clock training time | ~12 min on CPU | ~12 min on CPU |
 
-### 11.2. Per-pair table (sorted by macro-F1, descending)
+### 11.2. Per-pair table — BIST (sorted by macro-F1, descending)
 
-Regenerated verbatim from the per-pair entries in `snn_metrics.json`. **Δ-Sh
-column highlights:** the only Δ-Sh > +0.5 pair is `KCHOL_KRDMD` (+0.54).
+Regenerated verbatim from the per-pair entries in
+`data/bist/results/snn_metrics.json`. **Δ-Sh column highlights:** the three
+Δ-Sh ≥ +1.0 pairs are `EKGYO_HALKB`, `SISE_KRDMD`, `KCHOL_AKBNK`.
 
 | Pair | F1 | SNN-Sh | Cls-Sh | Δ-Sh | Hit | SNN trades | Cls trades |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `AGHOL_SAHOL` | 0.806 | +3.37 | +4.63 | −1.27 | 0.88 | 73 | 95 |
-| `BRYAT_BRSAN` | 0.763 | +3.25 | +3.76 | −0.51 | 0.86 | 92 | 109 |
-| `KCHOL_ISCTR` | 0.763 | +6.98 | +7.79 | −0.81 | 0.92 | 65 | 96 |
-| `AKBNK_YKBNK` | 0.725 | +3.11 | +2.83 | **+0.28** | 0.78 | 104 | 77 |
-| `SAHOL_PETKM` | 0.713 | +2.75 | +4.02 | −1.27 | 0.83 | 82 | 49 |
-| `FROTO_TOASO` | 0.711 | +5.10 | +8.46 | −3.35 | 0.94 | 62 | 44 |
-| `GARAN_ISCTR` | 0.696 | +3.02 | +4.85 | −1.83 | 0.86 | 64 | 65 |
-| `SAHOL_KRDMD` | 0.694 | +2.50 | +3.19 | −0.68 | 0.76 | 58 | 55 |
-| `FROTO_KCHOL` | 0.686 | +4.44 | +10.78 | −6.34 | 0.86 | 73 | 19 |
-| `VAKBN_EKGYO` | 0.648 | +1.41 | +1.39 | **+0.02** | 0.66 | 108 | 148 |
-| `EKGYO_HALKB` | 0.647 | +3.15 | +2.66 | **+0.49** | 0.81 | 101 | 86 |
-| `SAHOL_ISCTR` | 0.642 | +4.46 | +5.71 | −1.25 | 0.91 | 86 | 37 |
-| `KCHOL_TUPRS` | 0.639 | +1.88 | +3.63 | −1.75 | 0.85 | 111 | 82 |
-| `KCHOL_KRDMD` | 0.630 | +4.18 | +3.64 | **+0.54** | 0.86 | 57 | 81 |
-| `SISE_KRDMD` | 0.621 | +4.71 | +4.95 | −0.24 | 0.96 | 70 | 60 |
-| `SISE_TUPRS` | 0.618 | +2.26 | +3.45 | −1.19 | 0.86 | 112 | 93 |
-| `YKBNK_VAKBN` | 0.614 | +2.06 | +2.11 | −0.05 | 0.64 | 117 | 99 |
-| `SISE_PETKM` | 0.612 | +3.89 | +3.78 | **+0.11** | 0.89 | 64 | 53 |
-| `PETKM_KRDMD` | 0.602 | +3.02 | +5.28 | −2.26 | 0.87 | 76 | 70 |
-| `VESTL_VESBE` | 0.537 | +5.66 | +6.46 | −0.80 | 0.98 | 43 | 62 |
+| `AGHOL_SAHOL` | 0.820 | +3.48 | +4.63 | −1.15 | 0.89 | 62 | 95 |
+| `YKBNK_AKBNK` | 0.814 | +3.28 | +2.90 | **+0.38** | 0.80 | 69 | 77 |
+| `BRSAN_BRYAT` | 0.754 | +3.48 | +4.05 | −0.58 | 0.87 | 100 | 110 |
+| `SAHOL_KCHOL` | 0.753 | +3.38 | +4.44 | −1.06 | 0.75 | 61 | 69 |
+| `TUPRS_AYGAZ` | 0.734 | +3.79 | +3.79 | **+0.00** | 0.87 | 83 | 85 |
+| `KCHOL_ISCTR` | 0.714 | +7.95 | +7.79 | **+0.17** | 0.98 | 41 | 96 |
+| `KCHOL_AKBNK` | 0.711 | +6.62 | +5.55 | **+1.07** | 0.96 | 52 | 64 |
+| `EKGYO_HALKB` | 0.706 | +3.82 | +2.66 | **+1.16** | 0.87 | 54 | 86 |
+| `KCHOL_TUPRS` | 0.702 | +2.46 | +3.63 | −1.18 | 0.93 | 67 | 82 |
+| `SAHOL_ISCTR` | 0.678 | +4.38 | +5.71 | −1.33 | 0.93 | 71 | 37 |
+| `TTKOM_AKBNK` | 0.675 | +3.90 | +3.86 | **+0.04** | 0.87 | 70 | 78 |
+| `YKBNK_VAKBN` | 0.655 | +2.22 | +2.11 | **+0.11** | 0.67 | 90 | 99 |
+| `VAKBN_EKGYO` | 0.613 | +1.05 | +1.39 | −0.34 | 0.66 | 108 | 148 |
+| `PETKM_KRDMD` | 0.601 | +3.55 | +5.28 | −1.72 | 0.90 | 48 | 70 |
+| `SAHOL_AKBNK` | 0.584 | +4.06 | +4.06 | −0.00 | 0.84 | 68 | 89 |
+| `KCHOL_KRDMD` | 0.578 | +3.85 | +3.64 | **+0.21** | 0.88 | 40 | 81 |
+| `SAHOL_KRDMD` | 0.563 | +1.85 | +3.19 | −1.33 | 0.65 | 23 | 55 |
+| `SISE_PETKM` | 0.533 | +4.30 | +3.78 | **+0.53** | 0.89 | 35 | 53 |
+| `SISE_KRDMD` | 0.518 | +6.07 | +4.95 | **+1.12** | 1.00 | 33 | 60 |
+| `VESTL_VESBE` | 0.485 | +4.97 | +6.46 | −1.49 | 0.90 | 21 | 62 |
+
+S&P per-pair detail lives in `data/sp500/results/snn_metrics.json`; the
+top-3 SNN wins there are `LEN_DHI` (+1.18), `PNC_FITB` (+0.78), `KEY_TFC`
+(+0.75).
 
 ### 11.3. Interpretation (honest)
 
-- **All 20 pairs have F1 > 0.5** — classification is meaningfully above random.
-  The dislocation features carry learnable structure.
-- **The SNN is selective.** Mean hit rate 0.85; per-pair hit rates 0.64–0.98.
-  Fewer trades per pair than the classical rule on most pairs, with higher
-  per-trade accuracy — a real property of trained classifiers, not a
-  BIST-specific finding.
-- **SNN loses to the classical rule on 15 of 20 pairs by Sharpe.** The losses
-  concentrate where the classical rule produces unusually high Sharpe with few
-  trades (`FROTO_KCHOL` 10.78 from 19 trades, `FROTO_TOASO` 8.46 from 44). The
-  SNN matches or exceeds the *trade count* on most pairs but its per-trade
-  margin is smaller.
-- **The 5 pairs where SNN wins on Sharpe** are mostly within statistical noise
-  (4 of 5 have Δ-Sharpe ≤ +0.5). Only `KCHOL_KRDMD` has a Δ-Sharpe > +0.5.
+- **17 of 20 BIST pairs have F1 > 0.5** (16 of 20 on S&P) — classification is
+  meaningfully above random. The dislocation features carry learnable structure.
+- **The SNN is selective.** Mean hit rate 0.85 on BIST; per-pair hit rates
+  0.65–1.00. Fewer trades per pair than the classical rule on most pairs,
+  with higher per-trade accuracy — a real property of trained classifiers,
+  not a BIST-specific finding.
+- **SNN loses to the classical rule on 10 of 20 BIST pairs by Sharpe**
+  (13 of 20 on S&P). The biggest losses concentrate where the classical
+  rule produces unusually high Sharpe with few trades — `VESTL_VESBE`
+  (Cls +6.46 from 62 trades), `SAHOL_ISCTR` (Cls +5.71 from only 37 trades).
+- **The 10 BIST pairs where SNN wins** include three with Δ-Sharpe > +1.0
+  (`EKGYO_HALKB`, `SISE_KRDMD`, `KCHOL_AKBNK`) — substantively beyond noise.
+  The other seven are smaller (0.0–0.5).
 - **No transaction costs in either backtest.** Round-trip pair-trade costs on
   Turkish equities (~30 bps per leg, 4 fills = ~120 bps) would eat much of the
   per-trade margin on both strategies; the *relative* ranking is preserved
@@ -570,8 +583,9 @@ Signals**, surfacing the artifacts listed in §13.
 What renders today (mirrors the live UI in `app/eee_analysis.py:render_snn`):
 
 1. **Section header + honest framing caption** — explicitly states the
-   negative trading result (Δ-Sharpe = −1.11, 5 of 20 pairs beat classical)
-   alongside the positive classification result (macro-F1 ≈ 0.67).
+   negative trading result (BIST Δ-Sharpe = −0.27, 10 of 20 pairs beat
+   classical; S&P Δ-Sharpe = −0.84, 7 of 20) alongside the positive
+   classification result (macro-F1 ≈ 0.66 BIST / 0.63 S&P).
 2. **5-metric KPI row** — Pairs trained, Mean macro-F1, Mean SNN Sharpe,
    Mean Classical Sharpe, Mean Δ-Sharpe.
 3. **Per-pair leaderboard** (`st.dataframe`) — all 20 pairs sorted by
@@ -700,12 +714,14 @@ straight to §1 or §11 sees them in context.
   event-driven SNN. Deployment to neuromorphic silicon (Loihi 2,
   TrueNorth, SpiNNaker) would require a rate-to-spike conversion of
   the readout, which is left as future work.
-- **Negative trading result.** Mean Δ-Sharpe = −1.11 over the 20 test
-  pairs; the SNN beats the classical `|Z|>2` rule on only 5 of 20
-  pairs, and 4 of those wins are within ≤ +0.5 Sharpe of break-even
-  (§11.1, §11.3). We retain the SNN for methodological-breadth value
-  (spike-coded counterpart to other rate-coded methods in the project)
-  rather than as an alpha-generating signal.
+- **Negative trading result.** Mean Δ-Sharpe = −0.27 on BIST / −0.84 on
+  S&P over the 20 test pairs each; the SNN beats the classical `|Z|>2`
+  rule on 10 of 20 BIST pairs (7 of 20 on S&P), with three substantive
+  BIST wins above +1.0 Sharpe (`EKGYO_HALKB`, `SISE_KRDMD`, `KCHOL_AKBNK`)
+  and the remainder within ≤ +0.5 of break-even (§11.1, §11.3). We retain
+  the SNN for methodological-breadth value (spike-coded counterpart to
+  other rate-coded methods in the project) rather than as an
+  alpha-generating signal.
 - **Per-pair `.pt` orphans deliberately omitted.** Earlier iterations
   trained one model per pair and wrote per-pair `.pt` files. The
   current code path only saves `universal.pt`; the per-pair files are
