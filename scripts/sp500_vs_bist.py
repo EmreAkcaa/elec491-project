@@ -179,7 +179,7 @@ def main():
     S = _load("sp500")
 
     rows = []
-    for label, data in (("BIST", B), ("S&P-100", S)):
+    for label, data in (("BIST", B), ("S&P-500", S)):
         row = {"universe": label}
         if "eigenvalues" in data:
             row.update(_effective_dimensionality(data["eigenvalues"]))
@@ -210,7 +210,7 @@ def main():
         rows.append(row)
 
     df = pd.DataFrame(rows).set_index("universe").T
-    print("\n=== Cross-Market Comparison: BIST vs S&P-100 ===")
+    print("\n=== Cross-Market Comparison: BIST vs S&P-500 ===")
     print(df.to_string())
 
     out_path = ROOT / "data" / "comparison_bist_vs_sp500.csv"

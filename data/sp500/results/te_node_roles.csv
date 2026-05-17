@@ -1,101 +1,486 @@
 ticker,sector,te_out,te_in,net_te_flow,role
-META,Communication Services,0.169143,0.041006,0.128137,source
-PEP,Consumer Staples,0.174283,0.072662,0.101621,source
-AON,Financials,0.127505,0.031735,0.095771,source
-MRK,Health Care,0.156926,0.076547,0.080379,source
-LOW,Consumer Discretionary,0.109625,0.030801,0.078824,source
-ZTS,Health Care,0.105504,0.029696,0.075808,source
-GS,Financials,0.156058,0.080615,0.075443,source
-KKR,Financials,0.113372,0.046324,0.067048,source
-ISRG,Health Care,0.112662,0.046232,0.06643,source
-QCOM,Information Technology,0.095709,0.033041,0.062667,source
-PGR,Financials,0.11036,0.048732,0.061627,source
-TXN,Information Technology,0.13554,0.076314,0.059226,source
-HD,Consumer Discretionary,0.121474,0.063561,0.057913,source
-NEE,Utilities,0.094514,0.03832,0.056193,source
-TJX,Consumer Discretionary,0.181407,0.126275,0.055132,source
-PNC,Financials,0.090889,0.036218,0.054671,source
-INTU,Information Technology,0.168007,0.115923,0.052084,source
-GOOGL,Communication Services,0.146763,0.09496,0.051803,source
-COST,Consumer Staples,0.139052,0.088649,0.050403,source
-CRWD,Information Technology,0.138148,0.092162,0.045986,source
-LLY,Health Care,0.081062,0.036395,0.044668,source
-ACN,Information Technology,0.13862,0.094072,0.044549,source
-AMZN,Consumer Discretionary,0.105106,0.061322,0.043784,source
-ADP,Industrials,0.119683,0.077253,0.04243,source
-AMGN,Health Care,0.096209,0.057021,0.039188,source
-CMCSA,Communication Services,0.061839,0.023117,0.038721,source
-AAPL,Information Technology,0.078646,0.041917,0.036729,source
-PG,Consumer Staples,0.071623,0.035083,0.03654,source
-MS,Financials,0.078926,0.043754,0.035172,source
-BLK,Financials,0.095198,0.060327,0.034871,source
-SYK,Health Care,0.060253,0.027567,0.032687,source
-AMD,Information Technology,0.140428,0.109029,0.031399,source
-MDLZ,Consumer Staples,0.07261,0.041222,0.031388,source
-PM,Consumer Staples,0.100314,0.078623,0.021692,source
-AXP,Financials,0.12101,0.099499,0.021511,source
-V,Financials,0.083915,0.063675,0.02024,source
-PFE,Health Care,0.049954,0.031304,0.01865,source
-VZ,Communication Services,0.038473,0.022385,0.016087,source
-BKNG,Consumer Discretionary,0.158509,0.14303,0.015479,source
-BX,Financials,0.081743,0.066346,0.015397,source
-C,Financials,0.067337,0.054164,0.013173,source
-APO,Financials,0.078254,0.066457,0.011797,source
-WMT,Consumer Staples,0.053169,0.041519,0.01165,source
-SHW,Materials,0.136243,0.125592,0.010652,source
-APD,Materials,0.068119,0.058117,0.010003,source
-GILD,Health Care,0.074113,0.065491,0.008622,source
-KO,Consumer Staples,0.101564,0.094032,0.007532,source
-MO,Consumer Staples,0.070151,0.066525,0.003626,source
-BA,Industrials,0.074257,0.07102,0.003237,source
-TGT,Consumer Discretionary,0.055598,0.055807,-0.000209,sink
-BRK-B,Financials,0.023149,0.024919,-0.00177,sink
-WMB,Energy,0.083991,0.085877,-0.001886,sink
-BMY,Health Care,0.020598,0.02253,-0.001932,sink
-ELV,Health Care,0.035684,0.0386,-0.002916,sink
-CDNS,Information Technology,0.127078,0.130052,-0.002975,sink
-DIS,Communication Services,0.103303,0.107201,-0.003898,sink
-MCD,Consumer Discretionary,0.049523,0.0552,-0.005677,sink
-GE,Industrials,0.084003,0.09086,-0.006857,sink
-TMUS,Communication Services,0.151358,0.158526,-0.007168,sink
-ADBE,Information Technology,0.066784,0.074508,-0.007724,sink
-LMT,Industrials,0.064711,0.073492,-0.008781,sink
-T,Communication Services,0.036005,0.045395,-0.009391,sink
-LRCX,Information Technology,0.098281,0.107754,-0.009472,sink
-SCHW,Financials,0.073158,0.085648,-0.01249,sink
-CSCO,Information Technology,0.06213,0.077245,-0.015115,sink
-REGN,Health Care,0.045064,0.060562,-0.015498,sink
-NFLX,Communication Services,0.114698,0.130541,-0.015843,sink
-LIN,Materials,0.075571,0.092432,-0.016861,sink
-UNH,Health Care,0.065336,0.084235,-0.018898,sink
-NVDA,Information Technology,0.095454,0.114538,-0.019084,sink
-SNPS,Information Technology,0.095487,0.114679,-0.019192,sink
-SPOT,Communication Services,0.092876,0.113205,-0.020329,sink
-SPGI,Financials,0.079792,0.103384,-0.023592,sink
-FDX,Industrials,0.068287,0.092915,-0.024629,sink
-BAC,Financials,0.093705,0.123063,-0.029358,sink
-CAT,Industrials,0.083525,0.115335,-0.03181,sink
-MA,Financials,0.08909,0.128537,-0.039447,sink
-COP,Energy,0.030661,0.076295,-0.045634,sink
-IBM,Information Technology,0.064628,0.114326,-0.049698,sink
-CI,Health Care,0.02486,0.079236,-0.054376,sink
-MSFT,Information Technology,0.146211,0.200683,-0.054472,sink
-NOW,Information Technology,0.091076,0.148237,-0.057161,sink
-CHTR,Communication Services,0.076688,0.136706,-0.060018,sink
-VRTX,Health Care,0.036056,0.102159,-0.066103,sink
-WFC,Financials,0.112571,0.178954,-0.066383,sink
-HON,Industrials,0.056119,0.122994,-0.066875,sink
-JNJ,Health Care,0.063312,0.131481,-0.068169,sink
-JPM,Financials,0.118034,0.186648,-0.068615,sink
-ABBV,Health Care,0.063619,0.135689,-0.072071,sink
-RTX,Industrials,0.041994,0.114693,-0.072699,sink
-ETN,Industrials,0.032251,0.105327,-0.073076,sink
-UNP,Industrials,0.029605,0.104539,-0.074934,sink
-DE,Industrials,0.043723,0.120585,-0.076861,sink
-BSX,Health Care,0.050108,0.12781,-0.077701,sink
-CRM,Information Technology,0.061241,0.139375,-0.078135,sink
-AMAT,Information Technology,0.029325,0.124296,-0.094971,sink
-XOM,Energy,0.06221,0.161642,-0.099432,sink
-ORCL,Information Technology,0.047503,0.14753,-0.100026,sink
-CVX,Energy,0.122131,0.235693,-0.113562,sink
-SBUX,Consumer Discretionary,0.049164,0.164032,-0.114868,sink
+ROP,Information Technology,0.873894,0.244437,0.629457,source
+HSY,Consumer Staples,0.758703,0.18988,0.568823,source
+IP,Materials,0.712234,0.170616,0.541618,source
+NTAP,Information Technology,0.91473,0.477052,0.437678,source
+BKR,Energy,0.74197,0.314605,0.427365,source
+EPAM,Information Technology,0.809908,0.391365,0.418543,source
+META,Communication Services,0.69169,0.292911,0.398779,source
+FITB,Financials,0.561099,0.162872,0.398227,source
+MLM,Materials,0.606286,0.211775,0.394511,source
+PFG,Financials,0.573706,0.183711,0.389995,source
+AON,Financials,0.651076,0.264808,0.386269,source
+MSCI,Financials,0.613803,0.241597,0.372205,source
+ZTS,Health Care,0.51496,0.161341,0.353619,source
+IQV,Health Care,0.632162,0.292465,0.339697,source
+PEP,Consumer Staples,0.640191,0.30247,0.337721,source
+DD,Materials,0.547423,0.212456,0.334968,source
+RF,Financials,0.548945,0.215932,0.333013,source
+AIG,Financials,0.583888,0.252411,0.331478,source
+V,Financials,0.475314,0.146328,0.328985,source
+WRB,Financials,0.755954,0.428509,0.327445,source
+A,Health Care,0.534342,0.207132,0.32721,source
+USB,Financials,0.446762,0.130703,0.316059,source
+SCHW,Financials,0.494658,0.17989,0.314768,source
+XYZ,Financials,0.51031,0.200046,0.310264,source
+EXPE,Consumer Discretionary,0.584118,0.275053,0.309065,source
+ARES,Financials,0.501374,0.195052,0.306322,source
+VEEV,Health Care,0.540452,0.238547,0.301906,source
+CHD,Consumer Staples,0.505069,0.208252,0.296817,source
+AMZN,Consumer Discretionary,0.516046,0.242571,0.273474,source
+HII,Industrials,0.491651,0.221007,0.270645,source
+AVB,Real Estate,0.56207,0.291659,0.270412,source
+CF,Materials,0.733629,0.466458,0.267171,source
+MOS,Materials,0.715275,0.452626,0.262649,source
+HPQ,Information Technology,0.456252,0.201614,0.254638,source
+PANW,Information Technology,0.423363,0.178175,0.245187,source
+VRSN,Information Technology,0.5145,0.273519,0.240981,source
+TEL,Information Technology,0.662202,0.424171,0.238031,source
+HD,Consumer Discretionary,0.44458,0.208241,0.236339,source
+KKR,Financials,0.53739,0.30133,0.23606,source
+FOXA,Communication Services,0.471654,0.236517,0.235137,source
+LDOS,Industrials,0.46455,0.231264,0.233287,source
+MET,Financials,0.600767,0.368433,0.232334,source
+VICI,Real Estate,0.449291,0.219025,0.230266,source
+IRM,Real Estate,0.470194,0.23994,0.230254,source
+NRG,Utilities,0.46287,0.233921,0.228948,source
+EG,Financials,0.50132,0.274057,0.227263,source
+MU,Information Technology,0.380031,0.157644,0.222387,source
+BEN,Financials,0.390059,0.171024,0.219035,source
+MS,Financials,0.485431,0.266403,0.219028,source
+MAA,Real Estate,0.427659,0.209866,0.217794,source
+WST,Health Care,0.436502,0.219423,0.217079,source
+PNC,Financials,0.361713,0.149426,0.212287,source
+OTIS,Industrials,0.348305,0.136546,0.21176,source
+NDAQ,Financials,0.442837,0.231891,0.210946,source
+CCI,Real Estate,0.458586,0.248407,0.210179,source
+MO,Consumer Staples,0.393633,0.184031,0.209603,source
+AXP,Financials,0.513761,0.305202,0.20856,source
+HST,Real Estate,0.318503,0.114888,0.203615,source
+NTRS,Financials,0.417553,0.21664,0.200913,source
+ALLE,Industrials,0.390483,0.190497,0.199986,source
+QCOM,Information Technology,0.351979,0.152319,0.199661,source
+SNA,Industrials,0.364586,0.166093,0.198493,source
+C,Financials,0.39432,0.196343,0.197977,source
+PEG,Utilities,0.506653,0.309156,0.197496,source
+BXP,Real Estate,0.400363,0.203832,0.196531,source
+TXT,Industrials,0.462262,0.265934,0.196329,source
+CFG,Financials,0.536748,0.341514,0.195234,source
+ERIE,Financials,0.368356,0.173155,0.195201,source
+CRL,Health Care,0.378312,0.183119,0.195193,source
+ISRG,Health Care,0.509781,0.319074,0.190707,source
+URI,Industrials,0.585815,0.395338,0.190477,source
+MDLZ,Consumer Staples,0.373537,0.185337,0.188199,source
+DELL,Information Technology,0.385963,0.197916,0.188047,source
+HPE,Information Technology,0.421791,0.233828,0.187963,source
+PG,Consumer Staples,0.391235,0.204009,0.187226,source
+PLD,Real Estate,0.329601,0.142746,0.186855,source
+NEM,Materials,0.322638,0.137652,0.184986,source
+LHX,Industrials,0.572518,0.387673,0.184845,source
+LRCX,Information Technology,0.473666,0.288962,0.184704,source
+TDY,Information Technology,0.403798,0.219776,0.184022,source
+SYF,Financials,0.534879,0.351762,0.183117,source
+CPB,Consumer Staples,0.496928,0.316733,0.180195,source
+FIS,Financials,0.419988,0.240162,0.179826,source
+HUM,Health Care,0.30981,0.130943,0.178867,source
+FICO,Information Technology,0.385334,0.208418,0.176916,source
+FE,Utilities,0.456053,0.280894,0.175159,source
+COF,Financials,0.469133,0.29485,0.174283,source
+STX,Information Technology,0.431962,0.261328,0.170634,source
+CASY,Consumer Staples,0.481576,0.310981,0.170595,source
+RMD,Health Care,0.365436,0.196498,0.168939,source
+EOG,Energy,0.412105,0.243716,0.168389,source
+ACN,Information Technology,0.617814,0.451073,0.166741,source
+CTVA,Materials,0.364412,0.198189,0.166223,source
+CPRT,Industrials,0.425328,0.259146,0.166182,source
+CMI,Industrials,0.38804,0.222368,0.165672,source
+ROST,Consumer Discretionary,0.487949,0.325433,0.162516,source
+GOOGL,Communication Services,0.553515,0.391403,0.162113,source
+SYY,Consumer Staples,0.476103,0.315526,0.160578,source
+WYNN,Consumer Discretionary,0.304953,0.145054,0.159899,source
+UNH,Health Care,0.338006,0.178304,0.159702,source
+SBAC,Real Estate,0.353678,0.194097,0.15958,source
+PKG,Materials,0.428857,0.271332,0.157525,source
+RJF,Financials,0.470013,0.315104,0.154909,source
+AAPL,Information Technology,0.52523,0.3721,0.153129,source
+STLD,Materials,0.313606,0.163813,0.149793,source
+MNST,Consumer Staples,0.437026,0.287625,0.149401,source
+EQT,Energy,0.384041,0.235269,0.148772,source
+RCL,Consumer Discretionary,0.460111,0.314006,0.146105,source
+WSM,Consumer Discretionary,0.312291,0.167624,0.144667,source
+FAST,Industrials,0.406629,0.263124,0.143505,source
+BA,Industrials,0.45722,0.314439,0.142782,source
+TTWO,Communication Services,0.472524,0.331926,0.140598,source
+NWSA,Communication Services,0.495333,0.356401,0.138932,source
+KEYS,Information Technology,0.250975,0.112434,0.138541,source
+CTSH,Information Technology,0.316415,0.180391,0.136024,source
+SHW,Materials,0.487541,0.352205,0.135336,source
+JBHT,Industrials,0.218427,0.084262,0.134165,source
+VTRS,Health Care,0.352943,0.220557,0.132386,source
+LIN,Materials,0.448521,0.317315,0.131206,source
+MKC,Consumer Staples,0.344411,0.215693,0.128718,source
+LH,Health Care,0.324581,0.19609,0.128492,source
+PNR,Industrials,0.305432,0.178361,0.127071,source
+EMR,Industrials,0.437799,0.311354,0.126445,source
+CSGP,Real Estate,0.308376,0.182422,0.125954,source
+HBAN,Financials,0.318973,0.193165,0.125808,source
+ANET,Information Technology,0.379856,0.254484,0.125372,source
+EIX,Utilities,0.377976,0.253824,0.124153,source
+WAB,Industrials,0.443323,0.320903,0.12242,source
+CL,Consumer Staples,0.476225,0.355366,0.120859,source
+LITE,Information Technology,0.232394,0.111557,0.120837,source
+APA,Energy,0.40716,0.286449,0.120711,source
+GS,Financials,0.528655,0.408121,0.120534,source
+WMT,Consumer Staples,0.290407,0.170454,0.119953,source
+ABT,Health Care,0.314157,0.194476,0.119681,source
+SWKS,Information Technology,0.451462,0.33234,0.119122,source
+PYPL,Financials,0.349054,0.231559,0.117496,source
+CMG,Consumer Discretionary,0.445868,0.329225,0.116643,source
+LOW,Consumer Discretionary,0.257244,0.141177,0.116068,source
+CRH,Materials,0.547863,0.432487,0.115376,source
+PCAR,Industrials,0.215619,0.100619,0.115,source
+MRSH,Financials,0.230514,0.116412,0.114102,source
+LII,Industrials,0.360894,0.247279,0.113615,source
+AZO,Consumer Discretionary,0.249021,0.135483,0.113538,source
+PFE,Health Care,0.27453,0.161155,0.113375,source
+INCY,Health Care,0.321158,0.208167,0.112992,source
+NXPI,Information Technology,0.409084,0.29661,0.112474,source
+FTNT,Information Technology,0.45288,0.341275,0.111605,source
+NDSN,Industrials,0.424093,0.314355,0.109738,source
+TJX,Consumer Discretionary,0.7305,0.621139,0.109361,source
+CARR,Industrials,0.301612,0.19367,0.107942,source
+RSG,Industrials,0.490014,0.382569,0.107445,source
+EME,Industrials,0.477472,0.370293,0.107179,source
+CRWD,Information Technology,0.396084,0.290015,0.106068,source
+ALL,Financials,0.466797,0.36124,0.105556,source
+CAG,Consumer Staples,0.384426,0.280389,0.104037,source
+CMCSA,Communication Services,0.295847,0.19383,0.102017,source
+MCO,Financials,0.370994,0.268997,0.101997,source
+ZBRA,Information Technology,0.324673,0.223681,0.100992,source
+FSLR,Information Technology,0.233694,0.133331,0.100363,source
+BK,Financials,0.466356,0.367711,0.098644,source
+BX,Financials,0.326076,0.229323,0.096753,source
+HLT,Consumer Discretionary,0.659017,0.5625,0.096517,source
+APD,Materials,0.384089,0.288221,0.095869,source
+LNT,Utilities,0.338436,0.244007,0.094429,source
+AFL,Financials,0.474852,0.380435,0.094417,source
+HWM,Industrials,0.643939,0.550305,0.093634,source
+FDX,Industrials,0.378341,0.285297,0.093044,source
+VST,Utilities,0.395252,0.305151,0.090101,source
+ES,Utilities,0.294955,0.206154,0.088801,source
+ALGN,Health Care,0.297604,0.209386,0.088218,source
+AVY,Materials,0.393791,0.306254,0.087537,source
+AMGN,Health Care,0.387248,0.300354,0.086895,source
+FCX,Materials,0.305873,0.220348,0.085525,source
+PHM,Consumer Discretionary,0.332408,0.247291,0.085116,source
+BRO,Financials,0.398598,0.313691,0.084907,source
+EXR,Real Estate,0.253183,0.169321,0.083862,source
+FISV,Financials,0.408848,0.3254,0.083448,source
+TXN,Information Technology,0.442136,0.360926,0.08121,source
+SJM,Consumer Staples,0.299847,0.219157,0.08069,source
+DHR,Health Care,0.291592,0.211084,0.080508,source
+FTV,Industrials,0.284305,0.204064,0.080241,source
+DOC,Real Estate,0.377174,0.298794,0.07838,source
+POOL,Consumer Discretionary,0.418843,0.342534,0.076309,source
+ADI,Information Technology,0.29142,0.216802,0.074617,source
+AMCR,Materials,0.222368,0.14779,0.074578,source
+AES,Utilities,0.230513,0.156458,0.074055,source
+REGN,Health Care,0.242756,0.169319,0.073437,source
+OMC,Communication Services,0.479385,0.406863,0.072522,source
+TER,Information Technology,0.393846,0.321335,0.072511,source
+PGR,Financials,0.326073,0.253872,0.072201,source
+TFC,Financials,0.279246,0.211875,0.067371,source
+LYV,Communication Services,0.57872,0.514627,0.064093,source
+NEE,Utilities,0.41434,0.351233,0.063107,source
+NOC,Industrials,0.424812,0.364246,0.060565,source
+NFLX,Communication Services,0.46638,0.407128,0.059252,source
+NKE,Consumer Discretionary,0.36146,0.303277,0.058182,source
+TYL,Information Technology,0.330024,0.272141,0.057884,source
+DOW,Materials,0.374346,0.316464,0.057882,source
+INVH,Real Estate,0.277771,0.220883,0.056888,source
+MTB,Financials,0.400425,0.344722,0.055702,source
+COST,Consumer Staples,0.330828,0.277392,0.053436,source
+FFIV,Information Technology,0.296962,0.244156,0.052806,source
+INTC,Information Technology,0.423685,0.371768,0.051917,source
+ROL,Industrials,0.354349,0.303096,0.051253,source
+WBD,Communication Services,0.324897,0.274403,0.050494,source
+CB,Financials,0.41759,0.368271,0.049319,source
+GM,Consumer Discretionary,0.364159,0.315049,0.04911,source
+F,Consumer Discretionary,0.422487,0.377095,0.045392,source
+GEN,Information Technology,0.336301,0.291261,0.04504,source
+CNC,Health Care,0.266507,0.228099,0.038408,source
+EFX,Industrials,0.196799,0.159947,0.036853,source
+LLY,Health Care,0.252828,0.21609,0.036738,source
+ESS,Real Estate,0.330527,0.294312,0.036215,source
+MAR,Consumer Discretionary,0.33229,0.298375,0.033915,source
+COHR,Information Technology,0.353745,0.320233,0.033512,source
+ETN,Industrials,0.44737,0.414441,0.032929,source
+PWR,Industrials,0.364028,0.331331,0.032697,source
+LVS,Consumer Discretionary,0.250585,0.218072,0.032513,source
+GPC,Consumer Discretionary,0.242525,0.210459,0.032066,source
+AOS,Industrials,0.203007,0.170953,0.032055,source
+XEL,Utilities,0.251845,0.219882,0.031964,source
+L,Financials,0.429169,0.397269,0.0319,source
+ODFL,Industrials,0.311237,0.282794,0.028444,source
+MCK,Health Care,0.279414,0.252282,0.027132,source
+BF-B,Consumer Staples,0.254146,0.230128,0.024017,source
+MRK,Health Care,0.392713,0.369124,0.023589,source
+HAL,Energy,0.374013,0.351066,0.022948,source
+NUE,Materials,0.38444,0.361934,0.022506,source
+CPAY,Financials,0.280825,0.258542,0.022283,source
+HUBB,Industrials,0.22174,0.202448,0.019292,source
+PPG,Materials,0.290308,0.271301,0.019007,source
+BLK,Financials,0.413796,0.395016,0.01878,source
+RVTY,Health Care,0.188779,0.170426,0.018353,source
+TKO,Communication Services,0.439913,0.421599,0.018314,source
+DPZ,Consumer Discretionary,0.189097,0.17099,0.018107,source
+IR,Industrials,0.32783,0.311545,0.016285,source
+UAL,Industrials,0.260117,0.244571,0.015546,source
+JKHY,Financials,0.376147,0.360846,0.0153,source
+AMP,Financials,0.434287,0.419212,0.015074,source
+KHC,Consumer Staples,0.295426,0.285257,0.010169,source
+ETR,Utilities,0.491239,0.483054,0.008186,source
+AXON,Industrials,0.596456,0.589082,0.007375,source
+RL,Consumer Discretionary,0.503108,0.496405,0.006704,source
+KEY,Financials,0.312734,0.307354,0.00538,source
+DRI,Consumer Discretionary,0.561606,0.556433,0.005173,source
+PM,Consumer Staples,0.401615,0.396946,0.004669,source
+KMB,Consumer Staples,0.406879,0.404279,0.0026,source
+BRK-B,Financials,0.1921,0.189894,0.002206,source
+WAT,Health Care,0.248351,0.24637,0.001981,source
+OXY,Energy,0.441683,0.441275,0.000408,source
+ICE,Financials,0.414766,0.415027,-0.000261,sink
+CDNS,Information Technology,0.338305,0.338895,-0.00059,sink
+CVS,Health Care,0.266195,0.268358,-0.002163,sink
+MPWR,Information Technology,0.369839,0.372083,-0.002245,sink
+TMO,Health Care,0.374146,0.378121,-0.003974,sink
+AMD,Information Technology,0.35924,0.364536,-0.005296,sink
+EVRG,Utilities,0.256121,0.26248,-0.006359,sink
+LEN,Consumer Discretionary,0.219838,0.229195,-0.009357,sink
+BALL,Materials,0.239893,0.252079,-0.012186,sink
+AMT,Real Estate,0.354758,0.368397,-0.013639,sink
+AEP,Utilities,0.239542,0.254514,-0.014972,sink
+HON,Industrials,0.336269,0.35133,-0.015061,sink
+HAS,Consumer Discretionary,0.202419,0.218373,-0.015954,sink
+COO,Health Care,0.219742,0.237279,-0.017537,sink
+WDC,Information Technology,0.330995,0.349175,-0.01818,sink
+DDOG,Information Technology,0.312058,0.331587,-0.019529,sink
+WY,Real Estate,0.326757,0.347129,-0.020372,sink
+AWK,Utilities,0.213308,0.233811,-0.020502,sink
+AMAT,Information Technology,0.293795,0.314657,-0.020862,sink
+EW,Health Care,0.198017,0.21921,-0.021194,sink
+ADBE,Information Technology,0.400286,0.423022,-0.022736,sink
+DXCM,Health Care,0.39227,0.415189,-0.022918,sink
+IVZ,Financials,0.310152,0.334099,-0.023946,sink
+APO,Financials,0.328396,0.353328,-0.024932,sink
+BMY,Health Care,0.105241,0.130374,-0.025133,sink
+FIX,Industrials,0.425413,0.450557,-0.025144,sink
+SYK,Health Care,0.325643,0.350948,-0.025305,sink
+MAS,Industrials,0.287304,0.313072,-0.025768,sink
+AIZ,Financials,0.252505,0.280046,-0.02754,sink
+HIG,Financials,0.40376,0.432137,-0.028377,sink
+CAT,Industrials,0.431855,0.46055,-0.028695,sink
+ARE,Real Estate,0.214738,0.243632,-0.028894,sink
+JPM,Financials,0.534088,0.564775,-0.030687,sink
+TT,Industrials,0.325461,0.356789,-0.031328,sink
+PPL,Utilities,0.310173,0.34296,-0.032787,sink
+JBL,Information Technology,0.23345,0.267633,-0.034183,sink
+DE,Industrials,0.280326,0.314557,-0.034231,sink
+AVGO,Information Technology,0.304942,0.339929,-0.034987,sink
+CMS,Utilities,0.122589,0.158658,-0.036069,sink
+CRM,Information Technology,0.4144,0.450618,-0.036217,sink
+IFF,Materials,0.428368,0.464919,-0.03655,sink
+EXPD,Industrials,0.282633,0.321006,-0.038372,sink
+CIEN,Information Technology,0.173651,0.212204,-0.038553,sink
+ED,Utilities,0.153205,0.192922,-0.039716,sink
+IT,Information Technology,0.382794,0.423017,-0.040223,sink
+D,Utilities,0.238932,0.279691,-0.040759,sink
+SLB,Energy,0.383236,0.424199,-0.040963,sink
+JNJ,Health Care,0.298042,0.340645,-0.042603,sink
+KMI,Energy,0.297868,0.345048,-0.047181,sink
+EQR,Real Estate,0.395995,0.444236,-0.048242,sink
+SNPS,Information Technology,0.280046,0.329104,-0.049058,sink
+KO,Consumer Staples,0.379886,0.429174,-0.049288,sink
+TSCO,Consumer Discretionary,0.163542,0.214208,-0.050666,sink
+IBKR,Financials,0.420796,0.472223,-0.051427,sink
+BAX,Health Care,0.370149,0.422264,-0.052115,sink
+SPGI,Financials,0.335053,0.388011,-0.052958,sink
+GRMN,Consumer Discretionary,0.425168,0.478472,-0.053303,sink
+NVDA,Information Technology,0.53576,0.589666,-0.053905,sink
+CSCO,Information Technology,0.255771,0.309733,-0.053961,sink
+EXC,Utilities,0.353332,0.410106,-0.056774,sink
+DVA,Health Care,0.142375,0.201654,-0.059279,sink
+CNP,Utilities,0.194243,0.254564,-0.060322,sink
+CBOE,Financials,0.153197,0.214145,-0.060948,sink
+T,Communication Services,0.187232,0.248443,-0.061211,sink
+ROK,Industrials,0.267026,0.328253,-0.061227,sink
+NOW,Information Technology,0.371859,0.438508,-0.066649,sink
+TGT,Consumer Staples,0.258734,0.325797,-0.067063,sink
+DLTR,Consumer Staples,0.07434,0.141884,-0.067545,sink
+SATS,Communication Services,0.16445,0.232134,-0.067684,sink
+DHI,Consumer Discretionary,0.199882,0.268649,-0.068767,sink
+SW,Materials,0.07395,0.143327,-0.069377,sink
+TAP,Consumer Staples,0.261488,0.330962,-0.069474,sink
+BIIB,Health Care,0.273781,0.345104,-0.071322,sink
+CPT,Real Estate,0.457017,0.529027,-0.07201,sink
+BAC,Financials,0.333898,0.406423,-0.072525,sink
+PODD,Health Care,0.223009,0.295889,-0.072881,sink
+FDS,Financials,0.269311,0.342865,-0.073554,sink
+TPL,Energy,0.213136,0.286702,-0.073565,sink
+DGX,Health Care,0.408997,0.484095,-0.075098,sink
+ELV,Health Care,0.245498,0.32152,-0.076022,sink
+GE,Industrials,0.344087,0.420588,-0.076501,sink
+ZBH,Health Care,0.337513,0.414481,-0.076968,sink
+SO,Utilities,0.299942,0.379492,-0.07955,sink
+UPS,Industrials,0.177466,0.257485,-0.08002,sink
+BLDR,Industrials,0.227581,0.308083,-0.080502,sink
+LMT,Industrials,0.285507,0.366792,-0.081284,sink
+DUK,Utilities,0.135604,0.216989,-0.081386,sink
+INTU,Information Technology,0.595419,0.67804,-0.082622,sink
+WEC,Utilities,0.101041,0.184273,-0.083233,sink
+WMB,Energy,0.357392,0.440652,-0.083259,sink
+ALB,Materials,0.237199,0.321259,-0.08406,sink
+BDX,Health Care,0.206745,0.292981,-0.086236,sink
+KDP,Consumer Staples,0.175003,0.261983,-0.08698,sink
+MCD,Consumer Discretionary,0.126,0.213637,-0.087637,sink
+GILD,Health Care,0.230383,0.318559,-0.088176,sink
+ADP,Industrials,0.459862,0.549487,-0.089625,sink
+PAYX,Industrials,0.292123,0.382391,-0.090268,sink
+KIM,Real Estate,0.21451,0.305831,-0.091322,sink
+SWK,Industrials,0.243863,0.336451,-0.092588,sink
+STT,Financials,0.297476,0.390648,-0.093172,sink
+DG,Consumer Staples,0.248191,0.344624,-0.096433,sink
+ADSK,Information Technology,0.239884,0.338309,-0.098426,sink
+APH,Information Technology,0.340004,0.438537,-0.098533,sink
+AME,Industrials,0.404946,0.50383,-0.098884,sink
+DLR,Real Estate,0.17878,0.278447,-0.099667,sink
+CINF,Financials,0.242617,0.34233,-0.099713,sink
+MA,Financials,0.415525,0.518365,-0.102839,sink
+DOV,Industrials,0.261166,0.364422,-0.103255,sink
+EA,Communication Services,0.273391,0.376816,-0.103425,sink
+TRV,Financials,0.453595,0.560481,-0.106887,sink
+GD,Industrials,0.272929,0.381843,-0.108914,sink
+HSIC,Health Care,0.200754,0.309734,-0.10898,sink
+KLAC,Information Technology,0.21407,0.325204,-0.111134,sink
+YUM,Consumer Discretionary,0.201862,0.313206,-0.111344,sink
+BKNG,Consumer Discretionary,0.612142,0.72932,-0.117179,sink
+ACGL,Financials,0.431824,0.549147,-0.117323,sink
+MSI,Information Technology,0.44898,0.569394,-0.120414,sink
+NVR,Consumer Discretionary,0.160222,0.284814,-0.124592,sink
+PSKY,Communication Services,0.200806,0.32655,-0.125744,sink
+DTE,Utilities,0.222922,0.351384,-0.128462,sink
+EBAY,Consumer Discretionary,0.253613,0.382863,-0.129251,sink
+APTV,Consumer Discretionary,0.419104,0.549752,-0.130648,sink
+J,Industrials,0.225821,0.357654,-0.131832,sink
+GDDY,Information Technology,0.298294,0.430408,-0.132114,sink
+KR,Consumer Staples,0.27002,0.402492,-0.132472,sink
+GIS,Consumer Staples,0.181181,0.3143,-0.133119,sink
+TPR,Consumer Discretionary,0.296728,0.431747,-0.135019,sink
+XYL,Industrials,0.46462,0.599866,-0.135246,sink
+CDW,Information Technology,0.199193,0.334535,-0.135342,sink
+FANG,Energy,0.431026,0.566654,-0.135628,sink
+IDXX,Health Care,0.282438,0.418088,-0.135649,sink
+PNW,Utilities,0.409886,0.546798,-0.136912,sink
+SMCI,Information Technology,0.249426,0.387949,-0.138523,sink
+CTAS,Industrials,0.363604,0.503369,-0.139765,sink
+TSN,Consumer Staples,0.150145,0.291146,-0.141002,sink
+STE,Health Care,0.263852,0.40613,-0.142277,sink
+TDG,Industrials,0.376631,0.518945,-0.142315,sink
+LYB,Materials,0.330201,0.472569,-0.142368,sink
+ADM,Consumer Staples,0.30715,0.45211,-0.14496,sink
+PRU,Financials,0.558479,0.704027,-0.145548,sink
+AJG,Financials,0.243942,0.389649,-0.145707,sink
+LULU,Consumer Discretionary,0.283183,0.433112,-0.149929,sink
+TECH,Health Care,0.177634,0.330038,-0.152403,sink
+TROW,Financials,0.316828,0.469614,-0.152786,sink
+TMUS,Communication Services,0.469602,0.624188,-0.154586,sink
+UBER,Industrials,0.349852,0.505013,-0.155161,sink
+AKAM,Information Technology,0.275093,0.437508,-0.162415,sink
+MTD,Health Care,0.288153,0.451881,-0.163729,sink
+LUV,Industrials,0.211991,0.377128,-0.165137,sink
+MGM,Consumer Discretionary,0.278444,0.445976,-0.167532,sink
+CAH,Health Care,0.316677,0.485779,-0.169102,sink
+IBM,Information Technology,0.262402,0.431948,-0.169547,sink
+BR,Industrials,0.308721,0.481684,-0.172962,sink
+VRSK,Industrials,0.257938,0.433408,-0.17547,sink
+HRL,Consumer Staples,0.188366,0.364167,-0.175801,sink
+CBRE,Real Estate,0.452577,0.63002,-0.177444,sink
+MCHP,Information Technology,0.324355,0.5046,-0.180245,sink
+MRNA,Health Care,0.259234,0.439532,-0.180299,sink
+GPN,Financials,0.325961,0.506541,-0.18058,sink
+IEX,Industrials,0.309989,0.490863,-0.180873,sink
+COP,Energy,0.328973,0.509977,-0.181003,sink
+DAL,Industrials,0.236141,0.417349,-0.181208,sink
+DIS,Communication Services,0.326209,0.509767,-0.183558,sink
+ITW,Industrials,0.371106,0.554786,-0.18368,sink
+CLX,Consumer Staples,0.330579,0.515122,-0.184542,sink
+MMM,Industrials,0.382622,0.56798,-0.185359,sink
+CI,Health Care,0.231436,0.418543,-0.187107,sink
+MPC,Energy,0.180074,0.36972,-0.189647,sink
+PTC,Information Technology,0.127305,0.319384,-0.192079,sink
+GWW,Industrials,0.370967,0.564184,-0.193217,sink
+NCLH,Consumer Discretionary,0.317318,0.516463,-0.199145,sink
+VLO,Energy,0.202469,0.404678,-0.202209,sink
+JCI,Industrials,0.334322,0.540874,-0.206553,sink
+RTX,Industrials,0.262372,0.469944,-0.207573,sink
+REG,Real Estate,0.355571,0.564344,-0.208774,sink
+VZ,Communication Services,0.176739,0.39042,-0.21368,sink
+ORCL,Information Technology,0.353179,0.576278,-0.2231,sink
+WTW,Financials,0.339501,0.564077,-0.224576,sink
+MDT,Health Care,0.315839,0.541017,-0.225178,sink
+EQIX,Real Estate,0.303009,0.52962,-0.226611,sink
+ATO,Utilities,0.390735,0.62444,-0.233705,sink
+ABBV,Health Care,0.20558,0.445796,-0.240216,sink
+AEE,Utilities,0.22307,0.469402,-0.246332,sink
+BBY,Consumer Discretionary,0.250455,0.498589,-0.248134,sink
+ORLY,Consumer Discretionary,0.379281,0.633069,-0.253789,sink
+ECL,Materials,0.288769,0.542761,-0.253993,sink
+WDAY,Information Technology,0.31989,0.575563,-0.255673,sink
+CVNA,Consumer Discretionary,0.354351,0.610312,-0.25596,sink
+GNRC,Industrials,0.490867,0.749538,-0.25867,sink
+NSC,Industrials,0.220993,0.481655,-0.260662,sink
+ULTA,Consumer Discretionary,0.258998,0.52029,-0.261292,sink
+TSLA,Consumer Discretionary,0.124196,0.386906,-0.262709,sink
+GLW,Information Technology,0.374222,0.64161,-0.267388,sink
+UDR,Real Estate,0.229976,0.499327,-0.269351,sink
+HCA,Health Care,0.392797,0.665863,-0.273066,sink
+DVN,Energy,0.379135,0.653009,-0.273874,sink
+BG,Consumer Staples,0.223613,0.499687,-0.276074,sink
+TRMB,Information Technology,0.310416,0.58747,-0.277053,sink
+CHRW,Industrials,0.225539,0.50325,-0.277711,sink
+OKE,Energy,0.263793,0.542147,-0.278354,sink
+COR,Health Care,0.238113,0.520625,-0.282512,sink
+NI,Utilities,0.272473,0.561519,-0.289046,sink
+VTR,Real Estate,0.28367,0.577749,-0.294078,sink
+PCG,Utilities,0.277667,0.573185,-0.295518,sink
+CHTR,Communication Services,0.207634,0.505348,-0.297715,sink
+VRTX,Health Care,0.240392,0.540659,-0.300268,sink
+UNP,Industrials,0.201369,0.502315,-0.300946,sink
+UHS,Health Care,0.305184,0.609082,-0.303897,sink
+DECK,Consumer Discretionary,0.314443,0.620147,-0.305704,sink
+CCL,Consumer Discretionary,0.321953,0.629156,-0.307203,sink
+BSX,Health Care,0.26927,0.576652,-0.307382,sink
+VRT,Industrials,0.420145,0.731677,-0.311532,sink
+CVX,Energy,0.619036,0.934856,-0.315819,sink
+XOM,Energy,0.366291,0.683927,-0.317635,sink
+SRE,Utilities,0.322992,0.665719,-0.342727,sink
+FRT,Real Estate,0.32433,0.6869,-0.36257,sink
+O,Real Estate,0.254938,0.62057,-0.365632,sink
+EL,Consumer Staples,0.257007,0.634322,-0.377315,sink
+CSX,Industrials,0.361878,0.752287,-0.390408,sink
+SBUX,Consumer Discretionary,0.284975,0.678277,-0.393301,sink
+WELL,Real Estate,0.250009,0.667317,-0.417308,sink
+ON,Information Technology,0.273257,0.69458,-0.421323,sink
+STZ,Consumer Staples,0.372694,0.823786,-0.451092,sink
+PH,Industrials,0.323409,0.780712,-0.457303,sink
+SPG,Real Estate,0.575812,1.07151,-0.495699,sink
+CME,Financials,0.324675,0.821992,-0.497316,sink
+TTD,Communication Services,0.418578,0.940061,-0.521483,sink
+TRGP,Energy,0.360121,0.883174,-0.523053,sink
+VMC,Materials,0.334577,0.871106,-0.536529,sink
+WFC,Financials,0.415713,0.958298,-0.542585,sink
+MSFT,Information Technology,0.402699,1.001686,-0.598987,sink
+PSX,Energy,0.37432,1.027382,-0.653062,sink
+WM,Industrials,0.371722,1.056758,-0.685037,sink
+PSA,Real Estate,0.271469,0.976279,-0.70481,sink
+GL,Financials,0.356423,1.088812,-0.732389,sink

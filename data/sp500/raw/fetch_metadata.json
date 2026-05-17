@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-05-17T05:21:06.135873",
+  "timestamp": "2026-05-17T09:57:46.791783",
   "source": "yfinance",
   "start_date": "2020-01-01",
   "end_date": "2026-03-01",
-  "ticker_count": 102,
+  "ticker_count": 500,
   "failures": []
 }

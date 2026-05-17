@@ -1,6 +1,6 @@
 {
-  "alpha": 0.00018366017640522567,
-  "n_edges": 470,
-  "n_tickers": 100,
-  "sparsity_pct": 90.51
+  "alpha": 0.00037435895197339647,
+  "n_edges": 845,
+  "n_tickers": 485,
+  "sparsity_pct": 99.28
 }

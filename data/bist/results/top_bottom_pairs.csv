@@ -1,21 +1,21 @@
 ticker_1,ticker_2,correlation,sector_1,sector_2,rank_type
-AKBNK,YKBNK,0.8594526131555335,Banking,Banking,top
-AKBNK,GARAN,0.8485596679697697,Banking,Banking,top
-YKBNK,ISCTR,0.843848878626279,Banking,Banking,top
-AKBNK,ISCTR,0.8433883599849962,Banking,Banking,top
+YKBNK,AKBNK,0.8594526903247254,Banking,Banking,top
+AKBNK,GARAN,0.8485596601057145,Banking,Banking,top
+YKBNK,ISCTR,0.84384893270985,Banking,Banking,top
+AKBNK,ISCTR,0.8433883710087919,Banking,Banking,top
 VAKBN,HALKB,0.8343968535866869,Banking,Banking,top
-GARAN,YKBNK,0.8011830893263783,Banking,Banking,top
-GARAN,ISCTR,0.7932560714673527,Banking,Banking,top
+YKBNK,GARAN,0.8011831000329147,Banking,Banking,top
+ISCTR,GARAN,0.7932560714187544,Banking,Banking,top
 PGSUS,THYAO,0.7755057396231612,Airlines,Airlines,top
-KCHOL,SAHOL,0.7754050897974765,Conglomerates,Conglomerates,top
-EREGL,KRDMD,0.7293187343235588,Steel,Steel,top
-CCOLA,HEKTS,0.06607976161329211,Beverages,Chemicals,bottom
-CCOLA,GUBRF,0.07394869525690739,Beverages,Chemicals,bottom
-CCOLA,LOGO,0.07401792174763258,Beverages,Technology,bottom
-CCOLA,ECILC,0.07926597018712966,Beverages,Pharmaceuticals,bottom
-CCOLA,YKBNK,0.08150163622944773,Beverages,Banking,bottom
-CCOLA,BRSAN,0.08485552300908232,Beverages,Steel,bottom
-CCOLA,CEMTS,0.08589333876884116,Beverages,Steel,bottom
-CCOLA,BRYAT,0.08765989453984667,Beverages,Conglomerates,bottom
-CCOLA,GARAN,0.08938361036388774,Beverages,Banking,bottom
-CCOLA,BERA,0.09153369192772613,Beverages,Conglomerates,bottom
+SAHOL,KCHOL,0.775405009520187,Conglomerates,Conglomerates,top
+EREGL,KRDMD,0.7293187829709539,Steel,Steel,top
+BIMAS,PAPIL,0.13412494426645,Retail,Defense,bottom
+BTCIM,AGESA,0.14066448003959564,Building Materials,Insurance,bottom
+BTCIM,ANHYT,0.15895304438943925,Building Materials,Insurance,bottom
+OYAKC,PAPIL,0.16573397848272092,Building Materials,Defense,bottom
+BTCIM,BIMAS,0.16698029065494557,Building Materials,Retail,bottom
+BTCIM,TCELL,0.1758753782555815,Building Materials,Telecommunications,bottom
+PAPIL,AGESA,0.17740081287164447,Defense,Insurance,bottom
+BTCIM,ECILC,0.17771781378576842,Building Materials,Pharmaceuticals,bottom
+BTCIM,MGROS,0.1782127607610176,Building Materials,Retail,bottom
+PAPIL,GARAN,0.18157768616367329,Defense,Banking,bottom
