@@ -2,16 +2,19 @@ name: Deploy to Hugging Face Spaces
 
 # Mirrors GitHub `main` → the configured HF Space repo on every push.
 #
-# Required GitHub configuration (Settings → Secrets and variables → Actions):
+# Uses huggingface_hub.upload_folder() (HTTP-based) rather than `git push`
+# because HF Spaces enforces a hard **10 MiB per non-LFS file** limit (much
+# stricter than GitHub's 100 MB). The Hub API auto-LFSes large files on the
+# fly, doesn't care about historical git-blob sizes, and lets us exclude
+# pipeline-only files (data/<u>/raw/) that the dashboard never reads.
+#
+# Required GitHub configuration:
 #   - Environment "top" with secret HF_DEPLOY_TOKEN
 #       Token type:  Write
 #       Source:      https://huggingface.co/settings/tokens
 #   - Repository variable HF_SPACE_REPO
 #       Format:      <hf-username-or-org>/<space-name>
-#       Example:     EmreAkcaa/stonecoal
-#
-# Manual trigger is also enabled (workflow_dispatch) — useful for one-off
-# redeploys without pushing a new commit.
+#       Example:     FlyingSubmarine33/stonecoale
 
 on:
   push:
@@ -21,9 +24,6 @@ on:
 permissions:
   contents: read
 
-# Only one in-flight deploy at a time. If a new push lands while a deploy
-# is still running, the queued one waits; the queued one is replaced if
-# yet-another push lands behind it (cancel-in-progress on group head).
 concurrency:
   group: hf-spaces-deploy
   cancel-in-progress: false
@@ -32,10 +32,6 @@ jobs:
   deploy:
     name: Push to HF Space
     runs-on: ubuntu-latest
-    # The HF_DEPLOY_TOKEN secret lives in the "top" environment so the deploy
-    # is gated behind whatever protection rules you've attached to it
-    # (none by default — add manual approval / branch protection here later
-    # if you want extra safety).
     environment: top
 
     steps:
@@ -46,60 +42,122 @@ jobs:
             echo ""
             echo "Add it under: Settings → Secrets and variables → Actions → Variables tab"
             echo "Format:       <hf-username-or-org>/<space-name>"
-            echo "Example:      EmreAkcaa/stonecoal"
+            echo "Example:      FlyingSubmarine33/stonecoale"
             exit 1
           fi
           echo "Deploy target: https://huggingface.co/spaces/${{ vars.HF_SPACE_REPO }}"
 
-      - name: Checkout repo (with LFS objects)
+      - name: Checkout repo (with LFS objects materialised)
         uses: actions/checkout@v4
         with:
-          lfs: true              # pull LFS objects so HF gets real files, not pointers
-          fetch-depth: 0         # full history; HF Space ends up byte-identical to GitHub
+          # LFS-tracked files (EEG processed parquets) become real bytes on
+          # the runner so huggingface_hub can upload them through HF's own
+          # LFS service rather than as pointer stubs.
+          lfs: true
+          fetch-depth: 1   # we only need the current tree, not history
 
-      - name: Set up Git LFS
-        # ubuntu-latest runners include git-lfs but `git lfs install` is
-        # required to activate the smudge/clean filters in this checkout.
-        # `git lfs pull` is belt-and-suspenders: actions/checkout's lfs:true
-        # should already have fetched, but a second pull is cheap and proves
-        # the objects are local before we push.
+      - name: Set up Git LFS (belt-and-suspenders)
+        # actions/checkout's lfs:true should have done this, but reactivating
+        # the smudge/clean filters + a second pull guarantees the LFS files
+        # are full bytes on disk before huggingface_hub reads them.
         run: |
           git lfs install
           git lfs pull
 
-      - name: Configure git identity
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Push to Hugging Face Space
+      - name: Install huggingface_hub client
+        run: pip install --upgrade "huggingface_hub>=0.24"
+
+      - name: Upload to Hugging Face Space
         env:
           HF_TOKEN:       ${{ secrets.HF_DEPLOY_TOKEN }}
           HF_SPACE_REPO:  ${{ vars.HF_SPACE_REPO }}
+          GITHUB_SHA:     ${{ github.sha }}
         run: |
           if [ -z "$HF_TOKEN" ]; then
-            echo "::error::Secret HF_DEPLOY_TOKEN is empty (or not visible to environment 'top')."
+            echo "::error::Secret HF_DEPLOY_TOKEN is empty (not visible to environment 'top')."
             echo "Add a Write-scope token at: https://huggingface.co/settings/tokens"
             echo "Then set it under: Settings → Environments → top → Add secret HF_DEPLOY_TOKEN"
             exit 1
           fi
 
-          # Token is embedded in the remote URL via x-access-token. This is the
-          # canonical pattern HF documents — the token is scoped to its Write
-          # permission and never gets logged (GitHub Actions auto-masks the
-          # secret in any output).
-          git remote add hf "https://x-access-token:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}.git"
+          python <<'PYEOF'
+          import os
+          from huggingface_hub import HfApi, CommitOperationDelete
 
-          # --force because the HF Space repo is initialised with a
-          # hello-world commit that doesn't share history with GitHub main.
-          # After the first successful push, future pushes are normal
-          # fast-forwards (the force flag is still harmless).
-          git push hf HEAD:main --force
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo_id = os.environ["HF_SPACE_REPO"]
+          commit_sha = os.environ["GITHUB_SHA"][:7]
+
+          # Patterns we DON'T want to ship to HF Spaces. The dashboard never
+          # reads these; including them just wastes upload bandwidth + storage
+          # + trips the 10 MiB-per-file size hook for non-LFS blobs.
+          ignore_patterns = [
+              # VCS internals
+              ".git/**",
+              ".github/**",
+              ".gitattributes",
+              ".gitignore",
+              ".idea/**",
+              ".vscode/**",
+              ".claude/**",
+              # Build / cache / lock
+              "**/__pycache__/**",
+              "**/*.pyc",
+              "**/.DS_Store",
+              "uv.lock",
+              ".uv-build-tools-cache/**",
+              # Dev-only assets
+              "tests/**",
+              "notebooks/**",
+              "scripts/**",
+              # Pipeline-only raw inputs (~10 MB+ each; dashboard reads
+              # data/<u>/processed/ and data/<u>/results/ only)
+              "data/*/raw/**",
+              # OS junk
+              "*.iml",
+              "stonecal.iml",
+          ]
+
+          # First push to a freshly-created Streamlit Space: it ships with a
+          # boilerplate `app.py` + `README.md`. Our upload_folder will overlay
+          # but leave the old files in place. Force a clean upload by deleting
+          # the boilerplate first (safe to call repeatedly — missing-file
+          # delete is a no-op).
+          try:
+              api.delete_file(
+                  path_in_repo="app.py",
+                  repo_id=repo_id, repo_type="space",
+                  commit_message=f"Remove boilerplate app.py (deploy {commit_sha})",
+              )
+              print("Removed boilerplate app.py from Space")
+          except Exception as e:
+              # app.py may not exist (already deleted, or never present); fine
+              print(f"app.py delete skipped: {e}")
+
+          # Push the curated tree. huggingface_hub auto-LFSes any file
+          # larger than ~10 MB regardless of how it's tracked on the git
+          # side — no .gitattributes plumbing needed for HF's side.
+          print(f"Uploading folder to space '{repo_id}'...")
+          commit_info = api.upload_folder(
+              folder_path=".",
+              repo_id=repo_id,
+              repo_type="space",
+              commit_message=f"Deploy from GitHub commit {commit_sha}",
+              ignore_patterns=ignore_patterns,
+              # `allow_patterns` left None → upload everything not ignored
+          )
+          print(f"OK. Commit URL: {commit_info.commit_url}")
+          PYEOF
 
       - name: Summary
         if: success()
         run: |
-          echo "::notice::Deployed commit ${{ github.sha }}"
+          echo "::notice::Deployed GitHub commit ${{ github.sha }}"
           echo "::notice::HF Space:  https://huggingface.co/spaces/${{ vars.HF_SPACE_REPO }}"
           echo "::notice::Build log: https://huggingface.co/spaces/${{ vars.HF_SPACE_REPO }}/logs"
 
@@ -108,6 +166,10 @@ jobs:
         run: |
           echo "::error::HF Spaces deploy failed. Common causes:"
           echo "  1. HF_DEPLOY_TOKEN is wrong scope (need Write, not Read)"
-          echo "  2. HF_SPACE_REPO points at a Space that doesn't exist (create it first at https://huggingface.co/new-space)"
-          echo "  3. LFS bandwidth quota exhausted (rare — free public Spaces have unlimited LFS bandwidth)"
-          echo "  4. Network glitch — re-run the failed job from the GitHub Actions UI"
+          echo "  2. HF_SPACE_REPO points at a Space that doesn't exist"
+          echo "     (create it first at https://huggingface.co/new-space — SDK: Streamlit)"
+          echo "  3. Space was created with SDK: docker instead of streamlit;"
+          echo "     delete + recreate it as Streamlit-SDK to fix"
+          echo "  4. A file > 10 MiB slipped through ignore_patterns:"
+          echo "     check the upload step output for which file HF rejected,"
+          echo "     then add its glob to ignore_patterns in this workflow."
