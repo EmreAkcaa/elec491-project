@@ -118,6 +118,15 @@ jobs:
               # Pipeline-only raw inputs (~10 MB+ each; dashboard reads
               # data/<u>/processed/ and data/<u>/results/ only)
               "data/*/raw/**",
+              # EEG bulk processed parquets (~620 MB) blow past HF Spaces
+              # free-tier per-repo storage limit (1 GB). The dashboard's
+              # available_universes() filters EEG out cleanly when these
+              # files aren't present → sidebar shows only BIST + S&P on HF.
+              # EEG keeps working locally (where the files exist) and the
+              # pre-computed analysis artifacts under
+              # data/eeg_motor_left_right/results/ (small, ~3 MB) still ship
+              # so the EEG_INTEGRATION.md doc references stay valid.
+              "data/eeg_motor_left_right/processed/**",
               # OS junk
               "*.iml",
               "stonecal.iml",
