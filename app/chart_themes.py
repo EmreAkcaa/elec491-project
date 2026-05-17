@@ -394,7 +394,11 @@ def render_theme_sidebar() -> None:
         set_active_theme(updated)
 
     # ── Reset button ─────────────────────────────────────────────────────
-    if st.button("Reset to Default", key="_theme_reset", width="stretch"):
+    # NOTE: st.button does NOT accept width= in Streamlit 1.41.1 — that
+    # kwarg landed in 1.43+. Keep the deprecated use_container_width=
+    # here until we bump the pin. The deprecation warning is harmless;
+    # the TypeError from the wrong kwarg crashes the sidebar render.
+    if st.button("Reset to Default", key="_theme_reset", use_container_width=True):
         set_active_theme(deepcopy(DEFAULT_THEME))
         st.rerun()
 

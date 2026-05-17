@@ -358,7 +358,7 @@ def render_glasso(sector_map: dict, *, u=None):
             display_edges["sector_2"] = display_edges["target"].map(sector_map)
             st.dataframe(
                 display_edges[["source", "target", "partial_correlation", "sector_1", "sector_2"]],
-                width="stretch", height=500,
+                use_container_width=True, height=500,
                 column_config={
                     "partial_correlation": st.column_config.NumberColumn(format="%.4f"),
                 },
@@ -538,7 +538,7 @@ def render_wavelets(sector_map: dict, *, u=None):
                     row["Avg Degree"] = round(float(deg.mean()), 2) if not deg.empty else None
                 summary_rows.append(row)
         if summary_rows:
-            st.dataframe(pd.DataFrame(summary_rows), width="stretch", hide_index=True)
+            st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
 
 def render_transfer_entropy(sector_map: dict, *, u=None):
@@ -643,7 +643,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
             sources = roles[roles["role"] == "source"].head(15)
             st.dataframe(
                 sources[["ticker", "sector", "net_te_flow", "te_out", "te_in"]],
-                width="stretch", hide_index=True,
+                use_container_width=True, hide_index=True,
                 column_config={
                     "net_te_flow": st.column_config.NumberColumn("Net TE Flow", format="%.4f"),
                     "te_out": st.column_config.NumberColumn("TE Out", format="%.4f"),
@@ -655,7 +655,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
             sinks = roles[roles["role"] == "sink"].tail(15).sort_values("net_te_flow")
             st.dataframe(
                 sinks[["ticker", "sector", "net_te_flow", "te_out", "te_in"]],
-                width="stretch", hide_index=True,
+                use_container_width=True, hide_index=True,
                 column_config={
                     "net_te_flow": st.column_config.NumberColumn("Net TE Flow", format="%.4f"),
                     "te_out": st.column_config.NumberColumn("TE Out", format="%.4f"),
@@ -783,7 +783,7 @@ def render_snn(sector_map: dict, *, u=None):
         )
         st.dataframe(
             leaderboard,
-            width="stretch",
+            use_container_width=True,
             height=320,
             column_config={
                 "macro_f1": st.column_config.NumberColumn("F1", format="%.3f"),
