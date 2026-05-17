@@ -14,7 +14,7 @@ dependencies = [
     # Chrome to be installed". The 5.x line has every feature this project
     # uses; we lose nothing.
     "plotly>=5.22,<6",
-    "streamlit>=1.35",
+    "streamlit==1.54.0",
     "pyarrow>=16.0",
     "pyyaml>=6.0",
     "isyatirimhisse>=2.1",
