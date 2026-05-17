@@ -351,8 +351,15 @@ def render_theme_sidebar() -> None:
         )]
 
     with st.expander("Export Defaults", expanded=False):
-        new_exp_w = st.number_input("Width (px)", 400, 4000, theme.export_width, 100, key="_cp_ew")
-        new_exp_h = st.number_input("Height (px)", 300, 3000, theme.export_height, 100, key="_cp_eh")
+        # Bounds mirror app/chart_export.py:_EXPORT_{W,H}_{MIN,MAX} so a theme
+        # saved with a small export size cannot pre-fill the inputs below the
+        # min and trigger StreamlitValueBelowMinError.
+        _W_MIN, _W_MAX = 200, 4000
+        _H_MIN, _H_MAX = 200, 3000
+        _w_default = max(_W_MIN, min(_W_MAX, int(theme.export_width)))
+        _h_default = max(_H_MIN, min(_H_MAX, int(theme.export_height)))
+        new_exp_w = st.number_input("Width (px)", _W_MIN, _W_MAX, _w_default, 100, key="_cp_ew")
+        new_exp_h = st.number_input("Height (px)", _H_MIN, _H_MAX, _h_default, 100, key="_cp_eh")
         new_exp_s = st.slider("Scale", 1.0, 4.0, theme.export_scale, 0.5, key="_cp_es")
 
     # ── Build updated theme from current widget values ────────────────────
