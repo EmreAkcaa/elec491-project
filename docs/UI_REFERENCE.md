@@ -3,7 +3,7 @@
 The Streamlit app has two top-level pages selected via a `st.segmented_control`
 in `app/dashboard.py:130`:
 
-1. **Market Overview** — `app/dashboard.py` (entry; 1025 lines).
+1. **Market Overview** — `app/dashboard.py` (entry; ~1189 lines).
 2. **Pair Analysis** — `app/pair_analysis.py:render` (called from
    `dashboard.py:148-152`).
 
@@ -108,8 +108,8 @@ Two inner tabs (`tab_top`, `tab_bottom`) inside the "Top/Bottom Pairs" section.
 
 #### Tab 6 — EEE Analysis (`tab_eee` → `app/eee_analysis.py:render`)
 
-Four sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
-`Transfer Entropy`.
+Five sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
+`Transfer Entropy`, `Neuromorphic Signals`.
 
 | Sub-tab | Chart | Data file | Library |
 |---|---|---|---|
@@ -124,6 +124,13 @@ Four sub-tabs: `RMT Denoising`, `Graphical LASSO`, `Wavelet Multi-Scale`,
 | Wavelet | Cross-scale summary table (avg corr, std, MST total weight, edge count, max betweenness, avg degree) | `wavelet_corr_scale*.parquet` + `wavelet_mst_edges_scale*.csv` + `wavelet_mst_metrics_scale*.csv` | st.dataframe |
 | TE | Directed TE network (top edges by net TE) | `te_network_edges.csv` | go.Scatter (with arrows) |
 | TE | Net information-flow heatmap (symmetric ±max, RdBu reversed, dendrogram-ordered) | `net_transfer_entropy_matrix.parquet`, `dendrogram_order.json` | go.Heatmap |
+| Neuromorphic | Headline 5-metric KPI row (pairs trained, mean macro-F1, mean SNN Sharpe, mean classical Sharpe, mean Δ-Sharpe) + honest-framing caption (Δ-Sharpe = −1.11, beats classical on 5/20 pairs) | `snn_metrics.json` (`aggregate`, `per_pair`) | st.metric + st.caption |
+| Neuromorphic | Per-pair leaderboard sorted by Δ-Sharpe (F1 / SNN-Sh / Cls-Sh / Δ-Sh / hit rate / trade counts) | `snn_metrics.json` (`per_pair`) | st.dataframe |
+| Neuromorphic | Pair selector → SNN signal timeline (Z-score + BUY/SELL markers + ±2 reference lines) | `snn_signals/{pair_id}.parquet` | go.Scatter |
+| Neuromorphic | Training history: train loss + val loss (left axis) + val macro-F1 (right axis) across epochs | `snn_training_history.csv` | go.Scatter (dual y-axes) |
+| Neuromorphic | Sample-pair output-neuron spike raster (HOLD/BUY/SELL bands on y, SNN ticks on x) | `snn_spike_raster_sample.parquet` | go.Scatter (line-ns-open markers) |
+| Neuromorphic | Sample-pair output-layer membrane V(t) trace for the 3 output neurons, with horizontal V_th reference | `snn_membrane_sample.parquet` | go.Scatter |
+| Neuromorphic | Architecture / hyperparameter expander (read from `snn_metrics.json:config` block) | `snn_metrics.json` (`config`, `n_inputs`) | st.markdown |
 
 ---
 
@@ -146,7 +153,7 @@ Pair selector at top (two ticker dropdowns + warning banner via
 
 ---
 
-## `app/utils.py` API (37 cached loaders + helpers)
+## `app/utils.py` API (40 cached loaders + helpers)
 
 ### Loaders (cached with `@st.cache_data`)
 
@@ -189,6 +196,12 @@ the file is missing — no exceptions.
 | `load_anomalies()` | `data/processed/anomalies.csv` | dashboard tab 1 (Return Anomalies section) |
 | `load_rolling_market_stats_precomputed(window)` | `rolling_market_stats_w{n}.parquet` | dashboard Rolling Analysis Market sub-tab (precompute-first path) |
 | `load_rolling_sector_stats_precomputed()` | `rolling_sector_stats.parquet` | dashboard Rolling Analysis Sector sub-tab (precompute-first path) |
+| `load_snn_metrics()` | `data/results/snn_metrics.json` | eee tab Neuromorphic Signals (KPI row, honest-framing caption, leaderboard, architecture expander) |
+| `load_snn_pair_list()` | `data/results/snn_pair_list.csv` | eee tab Neuromorphic Signals (pair selector source list) |
+| `load_snn_signals(pair_id)` | `data/results/snn_signals/{pair_id}.parquet` | eee tab Neuromorphic Signals (per-pair signal timeline) |
+| `load_snn_training_history()` | `data/results/snn_training_history.csv` | eee tab Neuromorphic Signals (training convergence chart) |
+| `load_snn_raster_sample()` | `data/results/snn_spike_raster_sample.parquet` | eee tab Neuromorphic Signals (sample-pair output-neuron raster) |
+| `load_snn_membrane_sample()` | `data/results/snn_membrane_sample.parquet` | eee tab Neuromorphic Signals (sample-pair membrane V(t) trace) |
 
 ### UI helpers
 
