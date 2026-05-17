@@ -515,22 +515,72 @@ with tab_data:
                     if not xu100_window.empty:
                         norm_prices[_index_label] = xu100_window / xu100_window.iloc[0] * 100
 
+                # Per-ticker series count. For large universes (S&P-500 = 485)
+                # the per-ticker spaghetti chart serialises to ~30 MB on the wire
+                # (485 traces × ~1500 dates × Plotly metadata), blowing the
+                # browser-side ~20 MB WebSocket frame cap and killing the whole
+                # page render. The spaghetti adds zero analytical value at that
+                # density anyway — collapse to a 10/50/90 percentile envelope
+                # plus the bold market-index overlay. BIST (~73 tickers) keeps
+                # the individual lines.
+                _ticker_cols = [c for c in norm_prices.columns if c != _index_label]
+                _SPAGHETTI_MAX = 80
                 fig_prices = go.Figure()
-                for col in norm_prices.columns:
-                    is_index = col == _index_label
+                if len(_ticker_cols) > _SPAGHETTI_MAX:
+                    _per_ticker = norm_prices[_ticker_cols]
+                    q10 = _per_ticker.quantile(0.10, axis=1)
+                    q50 = _per_ticker.quantile(0.50, axis=1)
+                    q90 = _per_ticker.quantile(0.90, axis=1)
+                    _band_color = "rgba(141,153,174,0.18)"
                     fig_prices.add_trace(go.Scatter(
-                        x=norm_prices.index, y=norm_prices[col], name=col,
-                        mode="lines",
-                        line=dict(
-                            width=3.0 if is_index else 0.6,
-                            color="#2B2D42" if is_index else get_colors()["muted"],
-                        ),
-                        opacity=1.0 if is_index else 0.35,
-                        hovertemplate=f"{col}: %{{y:.1f}}<extra></extra>" if is_index else None,
-                        hoverinfo="skip" if not is_index else None,
+                        x=q90.index, y=q90.values,
+                        mode="lines", line=dict(width=0, color=_band_color),
+                        showlegend=False, hoverinfo="skip",
                     ))
-                apply_chart_style(fig_prices, height=max(400, len(coverage) * 8),
-                                  showlegend=False, yaxis_title="Normalized Price (base=100)")
+                    fig_prices.add_trace(go.Scatter(
+                        x=q10.index, y=q10.values,
+                        mode="lines", line=dict(width=0, color=_band_color),
+                        fill="tonexty", fillcolor=_band_color,
+                        name="10–90% band", hoverinfo="skip",
+                    ))
+                    fig_prices.add_trace(go.Scatter(
+                        x=q50.index, y=q50.values,
+                        mode="lines",
+                        line=dict(width=1.2, color=get_colors()["muted"]),
+                        name=f"Median ({len(_ticker_cols)} {_cap(_active_universe, 'items_label', 'tickers').lower()})",
+                        hovertemplate="Median: %{y:.1f}<extra></extra>",
+                    ))
+                    if _index_label in norm_prices.columns:
+                        fig_prices.add_trace(go.Scatter(
+                            x=norm_prices.index, y=norm_prices[_index_label].values,
+                            mode="lines",
+                            line=dict(width=3.0, color="#2B2D42"),
+                            name=_index_label,
+                            hovertemplate=f"{_index_label}: %{{y:.1f}}<extra></extra>",
+                        ))
+                    apply_chart_style(
+                        fig_prices, height=max(400, len(coverage) * 8),
+                        showlegend=True,
+                        yaxis_title="Normalized Price (base=100)",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                    font=dict(size=10)),
+                    )
+                else:
+                    for col in norm_prices.columns:
+                        is_index = col == _index_label
+                        fig_prices.add_trace(go.Scatter(
+                            x=norm_prices.index, y=norm_prices[col], name=col,
+                            mode="lines",
+                            line=dict(
+                                width=3.0 if is_index else 0.6,
+                                color="#2B2D42" if is_index else get_colors()["muted"],
+                            ),
+                            opacity=1.0 if is_index else 0.35,
+                            hovertemplate=f"{col}: %{{y:.1f}}<extra></extra>" if is_index else None,
+                            hoverinfo="skip" if not is_index else None,
+                        ))
+                    apply_chart_style(fig_prices, height=max(400, len(coverage) * 8),
+                                      showlegend=False, yaxis_title="Normalized Price (base=100)")
                 render_chart(fig_prices, chart_id="mo_prices", filename_base="normalized_prices",
                              title_key="mo_prices", default_title="Normalized Price Performance")
             else:
