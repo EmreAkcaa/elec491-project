@@ -739,6 +739,38 @@ _TE_EDGE_COLUMNS = [
 ]
 
 
+def downsample_matrix_for_display(
+    df: pd.DataFrame, max_dim: int = 200, agg: str = "mean"
+) -> tuple[pd.DataFrame, int]:
+    """Block-downsample a square correlation/MI matrix when it's larger than
+    ``max_dim`` × ``max_dim`` so the JSON payload stays under the streamlit
+    websocket cap. Returns ``(matrix, block_size)`` — ``block_size == 1`` means
+    no downsampling was applied.
+
+    A 485-ticker S&P matrix at full resolution is ~4.5 MB serialized; with a
+    block size of 5 it collapses to a 97×97 matrix at ~0.18 MB while keeping
+    the visual block structure (you can't read 485 axis labels anyway).
+    """
+    n = df.shape[0]
+    if n <= max_dim:
+        return df, 1
+    import math
+    block = max(2, math.ceil(n / max_dim))
+    new_n = n // block
+    arr = df.values
+    out = np.zeros((new_n, new_n))
+    for i in range(new_n):
+        for j in range(new_n):
+            block_view = arr[i * block:(i + 1) * block, j * block:(j + 1) * block]
+            out[i, j] = block_view.mean() if agg == "mean" else block_view.max()
+    # Use the first label from each block so axis labels stay informative
+    labels = [df.columns[i * block] for i in range(new_n)]
+    return (
+        pd.DataFrame(out, index=labels, columns=labels),
+        block,
+    )
+
+
 @st.cache_data
 def _load_te_edges(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "te_network_edges.csv"

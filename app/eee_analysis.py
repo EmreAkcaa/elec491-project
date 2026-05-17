@@ -31,6 +31,7 @@ from utils import (
     load_mi_matrix, load_mi_gaussian_matrix, load_mi_nonlinear_excess_top,
     load_rolling_info_theory, load_regime_kl, load_it_summary,
     load_entropy_rate_signs,
+    downsample_matrix_for_display,
 )
 
 
@@ -226,8 +227,15 @@ def _plot_matrix_heatmap(
     diverging: bool = True,
     height: int = 480,
     hover_label: str = "value",
+    max_display_dim: int = 200,
 ) -> go.Figure:
-    """Render a square matrix as a heatmap, dendrogram-reordered when possible."""
+    """Render a square matrix as a heatmap, dendrogram-reordered when possible.
+
+    For matrices larger than ``max_display_dim`` × ``max_display_dim`` the
+    values are block-averaged down to that resolution so the JSON payload
+    stays under the streamlit websocket cap (a full S&P 485×485 matrix is
+    ~4.5 MB serialized; a 97×97 block-averaged version is ~0.18 MB).
+    """
     if matrix.empty:
         fig = go.Figure()
         fig.add_annotation(text="No data available", showarrow=False, font=dict(size=14))
@@ -239,7 +247,25 @@ def _plot_matrix_heatmap(
         if len(present) >= 2:
             matrix = matrix.loc[present, present]
 
+    matrix, block_size = downsample_matrix_for_display(matrix, max_dim=max_display_dim)
+    n_after = matrix.shape[0]
+
     colorscale = "RdBu" if diverging else "Blues"
+    if block_size > 1:
+        # Per-cell hover would name a single (i, j) pair, but the cell is a
+        # block-mean over `block_size² ≈ {bs}` pairs. Show the block range
+        # so the hover stays accurate.
+        bs = block_size
+        hovertemplate = (
+            f"block ({bs}×{bs}) mean<br>row %{{y}} · col %{{x}}<br>"
+            f"{hover_label}=%{{z:.4f}}<extra></extra>"
+        )
+    else:
+        hovertemplate = f"%{{y}} ↔ %{{x}}<br>{hover_label}=%{{z:.4f}}<extra></extra>"
+
+    # Suppress per-cell tick labels for medium-N matrices; render only when
+    # they're legible.
+    _show_labels = n_after <= 80
     fig = go.Figure(go.Heatmap(
         z=matrix.values,
         x=list(matrix.columns),
@@ -248,12 +274,14 @@ def _plot_matrix_heatmap(
         colorscale=colorscale,
         reversescale=diverging,
         zmid=0 if diverging else None,
-        hovertemplate=f"%{{y}} ↔ %{{x}}<br>{hover_label}=%{{z:.4f}}<extra></extra>",
+        hovertemplate=hovertemplate,
         colorbar=dict(thickness=12, len=0.85),
     ))
-    apply_chart_style(fig, height=height,
-                      xaxis=dict(tickfont=dict(size=8), tickangle=-90),
-                      yaxis=dict(tickfont=dict(size=8), autorange="reversed"))
+    apply_chart_style(
+        fig, height=height,
+        xaxis=dict(tickfont=dict(size=8), tickangle=-90, showticklabels=_show_labels),
+        yaxis=dict(tickfont=dict(size=8), autorange="reversed", showticklabels=_show_labels),
+    )
     return fig
 
 
@@ -1137,6 +1165,19 @@ def render_info_theory(sector_map: dict, *, u=None):
                     "0 means independent."
                 ),
             )
+        else:
+            c2.metric(
+                "Joint structure ΔH",
+                "n/a",
+                help=(
+                    "ΔH = −½ log det Σ is undefined when the correlation "
+                    "matrix is exactly singular. This is expected on EEG "
+                    "after common-average referencing (one channel becomes "
+                    "a linear combination of the others). Pipeline applies "
+                    "a small ridge in this case; if you're still seeing n/a "
+                    "your build predates the shrinkage fix."
+                ),
+            )
         if np.isfinite(sign_h):
             c3.metric(
                 "Mean sign-entropy rate",
@@ -1205,6 +1246,20 @@ def render_info_theory(sector_map: dict, *, u=None):
                 pts_df["nonlinear"] = pts_df["pair"].apply(
                     lambda p: tuple(sorted(p.split("–"))) in top_set
                 )
+                # For S&P-scale universes (485 tickers → 117k pairs ≈ 6 MB
+                # serialized), keep all flagged-nonlinear pairs and downsample
+                # the bulk to a representative top-N by combined MI magnitude.
+                # Keeps the visual story intact and the websocket payload bounded.
+                _scatter_cap = 2000
+                if len(pts_df) > _scatter_cap:
+                    pts_df = pts_df.assign(
+                        _rank=(pts_df["mi_emp"] + pts_df["mi_gauss"]).abs()
+                    ).sort_values("_rank", ascending=False)
+                    keep_hi = pts_df[pts_df["nonlinear"]]
+                    keep_bulk = pts_df[~pts_df["nonlinear"]].head(
+                        max(0, _scatter_cap - len(keep_hi))
+                    )
+                    pts_df = pd.concat([keep_hi, keep_bulk]).drop(columns="_rank")
                 fig_sc = go.Figure()
                 base = pts_df[~pts_df.nonlinear]
                 hi = pts_df[pts_df.nonlinear]

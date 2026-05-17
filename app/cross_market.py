@@ -401,6 +401,42 @@ def _render_bist_numeraire_section() -> None:
             default_title="Mean cluster sector-purity across BIST numéraires",
         )
 
+        # Per-sector eigenmode decomposition (Phase 4 follow-up)
+        decomp_json = PROJECT_ROOT / "data" / "results" / "numeraire_decomposition.json"
+        decomp_svg = PROJECT_ROOT / "docs" / "figures" / "numeraire_sector_shift.svg"
+        if decomp_json.exists():
+            import json
+            decomp = json.loads(decomp_json.read_text())
+            st.markdown(
+                "**Per-mode sector decomposition — what factor structure shifts**"
+            )
+            rows = []
+            for market_key in ("bist", "bist_usd", "bist_gold"):
+                label = decomp["per_numeraire"][market_key]["label"]
+                for mode in decomp["per_numeraire"][market_key]["modes"]:
+                    top_sec = mode["top_sectors"][0]
+                    rows.append({
+                        "Numéraire": label,
+                        "Mode": f"#{mode['rank']}",
+                        "λ": f"{mode['eigenvalue']:.2f}",
+                        "Variance share": f"{mode['variance_share'] * 100:.2f}%",
+                        "Banking mass": f"{mode['bank_mass_share'] * 100:.1f}%",
+                        "Top sector": f"{top_sec['sector']} ({top_sec['mass'] * 100:.1f}%)",
+                    })
+            decomp_df = pd.DataFrame(rows)
+            st.dataframe(decomp_df, use_container_width=True, hide_index=True)
+            if decomp_svg.exists():
+                st.image(
+                    str(decomp_svg),
+                    caption=(
+                        "Variance share per eigenmode (left) and banking-sector "
+                        "mass in each mode (right). 7 BIST banks are 9.6% of the "
+                        "universe but carry ~60% of mode #2 under every numéraire "
+                        "— a real banking-orthogonal factor."
+                    ),
+                    use_container_width=True,
+                )
+
         # Honest interpretation paragraph
         st.markdown(
             "**Reading.** The naïve hypothesis was that stripping the TRY leg "
@@ -415,9 +451,13 @@ def _render_bist_numeraire_section() -> None:
             "Interpretation: TRY volatility is a *dispersion source* for BIST "
             "equities — exporters and importers respond oppositely to TRY moves, "
             "so removing the currency leg amplifies the residual global-equity-risk "
-            "common factor. Numéraire choice is a substantive modelling decision, "
-            "not a noise-removal step. The numéraire panel is presented as an "
-            "honest empirical finding rather than a thesis."
+            "common factor. The decomposition above shows the secondary effect: "
+            "mode #2 of BIST's correlation matrix is a **pure banking factor** under "
+            "every numéraire (5 of 73 tickers carry ~60% of its variance vs a 9.6% "
+            "population baseline), and its variance share itself weakens 22% under "
+            "USD/Gold — the bank-vs-market spread is largely TRY-rate-driven. "
+            "Numéraire choice is a substantive modelling decision, not a "
+            "noise-removal step."
         )
 
 

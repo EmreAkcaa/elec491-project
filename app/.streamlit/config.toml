@@ -7,6 +7,11 @@ font = "sans serif"
 
 [server]
 headless = true
+# Bumped from the default for the 485-ticker S&P heatmap + MST + dendrogram
+# payload, which can exceed the default cap and trip the browser-side
+# RangeError: index out of range websocket error.
+maxMessageSize = 500
+maxUploadSize = 500
 
 [browser]
 gatherUsageStats = false

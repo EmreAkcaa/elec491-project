@@ -190,13 +190,23 @@ def joint_diff_entropy(cov: np.ndarray) -> float:
     return float(0.5 * (k * np.log(2 * np.pi * np.e) + logdet))
 
 
-def log_det_term(cov: np.ndarray) -> float:
+def log_det_term(cov: np.ndarray, *, ridge: float = 1e-6) -> float:
     """``−½ log det Σ`` — the joint-structure piece reported in the
     dashboard. Negative when the system is highly correlated (the
-    covariance matrix's determinant is small)."""
+    covariance matrix's determinant is small).
+
+    When ``Σ`` is exactly singular (det ≤ 0 numerically), we add a tiny
+    ridge ``ridge * I`` and recompute. This handles the
+    common-average-referenced EEG case where one channel is a linear
+    combination of the others, which exactly zeros one eigenvalue.
+    """
     sign, logdet = np.linalg.slogdet(cov)
     if sign <= 0:
-        return float("nan")
+        k = cov.shape[0]
+        sign_r, logdet_r = np.linalg.slogdet(cov + ridge * np.eye(k))
+        if sign_r <= 0:
+            return float("nan")
+        return float(-0.5 * logdet_r)
     return float(-0.5 * logdet)
 
 
