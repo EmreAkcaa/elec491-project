@@ -1,14 +1,19 @@
-# S&P-500 top-100 settings — mirrors the BIST config so cross-market
+# Full S&P 500 settings — mirrors the BIST config so cross-market
 # comparison is apples-to-apples (same dates, same coverage filter,
 # same TE / Glasso / wavelet hyperparameters).
 #
 # Pipeline run:   uv run python run_pipeline.py --config config/settings_sp500.yaml
 # Artifacts go to: data/sp500/{raw,processed,results}/...
 # Dashboard:      DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py
+#
+# TE runtime on N=500 is the binding constraint: ~9-10 hours single-threaded;
+# parallelised across 12 cores via the joblib path in src/transfer_entropy.py,
+# completion is ~60-90 minutes. The top-100 universe is preserved in
+# config/universes/sp500_top100.csv if a faster sandbox is needed.
 
 market:
   market_id: "sp500"
-  universe_file: "config/universes/sp500_top100.csv"
+  universe_file: "config/universes/sp500_full.csv"
   index_ticker: "^GSPC"
   provider_suffix: ""
   currency: "USD"

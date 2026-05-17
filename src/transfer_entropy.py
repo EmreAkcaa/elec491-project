@@ -106,6 +106,31 @@ def transfer_entropy(
     return max(0.0, te)  # TE is theoretically non-negative
 
 
+def _te_one_pair(
+    i: int,
+    j: int,
+    x: np.ndarray,
+    y: np.ndarray,
+    lag: int,
+    n_bins: int,
+    n_shuffles: int,
+    sig_level: float,
+    pair_seed: int,
+) -> tuple[int, int, float, bool]:
+    """Compute TE(i -> j) plus its shuffle-null significance. Returns (i, j, te, is_significant)."""
+    te_val = transfer_entropy(x, y, lag=lag, n_bins=n_bins)
+    if n_shuffles <= 0:
+        return i, j, te_val, True
+    rng = np.random.default_rng(pair_seed)
+    null = np.empty(n_shuffles)
+    for s in range(n_shuffles):
+        x_shuffled = rng.permutation(x)
+        null[s] = transfer_entropy(x_shuffled, y, lag=lag, n_bins=n_bins)
+    p_value = (null >= te_val).mean()
+    is_sig = bool(p_value < sig_level)
+    return i, j, te_val, is_sig
+
+
 def compute_transfer_entropy_matrix(
     returns: pd.DataFrame,
     lag: int = 1,
@@ -113,8 +138,9 @@ def compute_transfer_entropy_matrix(
     significance_shuffles: int = 100,
     significance_level: float = 0.05,
     seed: int | None = None,
+    n_jobs: int = -1,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compute pairwise transfer entropy for all stock pairs.
+    """Compute pairwise transfer entropy for all stock pairs (parallelised).
 
     Parameters
     ----------
@@ -129,7 +155,12 @@ def compute_transfer_entropy_matrix(
     significance_level : float
         p-value threshold.
     seed : int or None
-        Seed for the shuffle RNG. If None, results are non-deterministic.
+        Seed for the shuffle RNG. Per-pair seeds are derived as
+        `seed_base * N * N + i * N + j` so results are reproducible
+        across parallel runs. If None, falls back to 0.
+    n_jobs : int
+        joblib worker count; -1 = all available cores. Set to 1 for the
+        legacy single-threaded path (useful for debugging).
 
     Returns
     -------
@@ -139,35 +170,42 @@ def compute_transfer_entropy_matrix(
         Net transfer entropy: net[i,j] = TE(i->j) - TE(j->i).
         Positive = i leads j.
     """
+    from joblib import Parallel, delayed
+
     tickers = returns.columns.tolist()
     N = len(tickers)
     te = np.zeros((N, N))
     significant = np.ones((N, N), dtype=bool)
-    rng = np.random.default_rng(seed)
 
-    total_pairs = N * (N - 1)
-    completed = 0
+    # Materialise series once so workers don't re-copy the entire DataFrame.
+    cols = [returns.iloc[:, i].values for i in range(N)]
+    base_seed = int(seed) if seed is not None else 0
 
-    for i in range(N):
-        x = returns.iloc[:, i].values
-        for j in range(N):
-            if i == j:
-                continue
-            y = returns.iloc[:, j].values
-            te[i, j] = transfer_entropy(x, y, lag=lag, n_bins=n_bins)
+    # Build the (i, j) task list (excluding diagonal).
+    tasks = [(i, j) for i in range(N) for j in range(N) if i != j]
+    total_pairs = len(tasks)
+    logger.info(
+        "TE: dispatching %d directed pairs across n_jobs=%s "
+        "(N=%d tickers, shuffles=%d)",
+        total_pairs, n_jobs, N, significance_shuffles,
+    )
 
-            # Significance test: shuffle source and recompute
-            if significance_shuffles > 0:
-                null_dist = np.zeros(significance_shuffles)
-                for s in range(significance_shuffles):
-                    x_shuffled = rng.permutation(x)
-                    null_dist[s] = transfer_entropy(x_shuffled, y, lag=lag, n_bins=n_bins)
-                p_value = (null_dist >= te[i, j]).mean()
-                significant[i, j] = p_value < significance_level
+    # joblib batches across processes (loky). verbose=10 emits log lines
+    # every ~10% so the operator sees progress without us instrumenting it.
+    results = Parallel(n_jobs=n_jobs, verbose=10, backend="loky")(
+        delayed(_te_one_pair)(
+            i, j,
+            cols[i], cols[j],
+            lag, n_bins,
+            significance_shuffles, significance_level,
+            base_seed * N * N + i * N + j,
+        )
+        for i, j in tasks
+    )
 
-            completed += 1
-            if completed % 500 == 0:
-                logger.info("  TE computation: %d/%d pairs (%.0f%%)", completed, total_pairs, 100 * completed / total_pairs)
+    for i, j, te_val, is_sig in results:
+        te[i, j] = te_val
+        significant[i, j] = is_sig
 
     # Zero out insignificant entries
     te_filtered = te * significant

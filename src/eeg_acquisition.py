@@ -66,7 +66,10 @@ def download_subject(subject_id: int, runs: list[int]) -> list[Path]:
     Cached under `~/mne_data/MNE-eegbci-data/` by default.
     """
     mne, eegbci = _require_mne()
-    paths = eegbci.load_data(subject=subject_id, runs=runs)
+    # MNE >= 1.10 renamed `subject` (singular) -> `subjects` (list).
+    # update_path=True suppresses an interactive input() prompt that breaks
+    # in non-TTY runs (nohup / CI).
+    paths = eegbci.load_data(subjects=[subject_id], runs=runs, update_path=True)
     return [Path(p) for p in paths]
 
 

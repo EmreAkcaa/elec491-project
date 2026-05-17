@@ -37,6 +37,12 @@ class PreprocessingConfig:
     min_coverage_pct: float
     anomaly_return_threshold: float
     forward_fill: bool
+    manual_anomaly_nulls: list = field(default_factory=list)
+    # ^ List of [ticker, "YYYY-MM-DD"] entries. The (ticker, date) cell in
+    # `log_returns` is set to NaN before anomaly detection runs. Use to mask
+    # unhandled corporate actions that yfinance Adj-Close failed to back-
+    # adjust (e.g. CCOLA 2024-08-01 10.81x bonus issue). Old YAMLs without
+    # this key continue to load — default factory yields [].
 
 
 @dataclass

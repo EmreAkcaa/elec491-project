@@ -58,7 +58,10 @@ dislocation:
 transfer_entropy:
   lag: 5                      # ~31 ms at 160 Hz; equivalent to lag=1 day for stocks
   n_bins: 3
-  significance_shuffles: 50   # halved vs financial (100) — TE on 64ch×9600s takes longer
+  significance_shuffles: 0    # EEG: ~593k samples/channel makes shuffle-null cost-prohibitive.
+                              # Skipping the null produces TE values but no p-values; we
+                              # post-hoc threshold on TE magnitude in the dashboard / report.
+                              # Re-enable with shuffles > 0 after downsampling EEG to 32 Hz.
   significance_level: 0.05
   seed: 42
 

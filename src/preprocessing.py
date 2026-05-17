@@ -132,6 +132,36 @@ def run_preprocessing(config: PipelineConfig) -> None:
     # Log returns
     log_returns = compute_log_returns(filtered_adj)
 
+    # Apply manual anomaly nulls (mask known unhandled corporate actions that
+    # yfinance Adj-Close failed to back-adjust). Each entry is [ticker, "YYYY-MM-DD"];
+    # the (ticker, date) cell is set to NaN. Missing tickers/dates are logged but
+    # do not raise. Runs *before* flag_anomalies so the artifact reflects the
+    # corrected panel.
+    if config.preprocessing.manual_anomaly_nulls:
+        applied = 0
+        skipped = 0
+        for entry in config.preprocessing.manual_anomaly_nulls:
+            try:
+                ticker, date_str = entry
+                ts = pd.Timestamp(date_str)
+                if ticker in log_returns.columns and ts in log_returns.index:
+                    log_returns.loc[ts, ticker] = np.nan
+                    applied += 1
+                else:
+                    logger.warning(
+                        "manual_anomaly_nulls: skipped (%s, %s) — not in panel",
+                        ticker, date_str,
+                    )
+                    skipped += 1
+            except Exception as exc:
+                logger.warning(
+                    "manual_anomaly_nulls: invalid entry %r: %s", entry, exc,
+                )
+                skipped += 1
+        logger.info(
+            "Applied %d manual anomaly nulls (%d skipped)", applied, skipped,
+        )
+
     # Anomaly detection
     anomalies = flag_anomalies(
         log_returns, threshold=config.preprocessing.anomaly_return_threshold

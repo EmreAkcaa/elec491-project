@@ -1,65 +1,65 @@
 ticker,company_name,sector,provider_symbol
-Fc5,Frontocentral left lateral,Frontal,Fc5
-Fc3,Frontocentral left medial,Frontal,Fc3
-Fc1,Frontocentral left paramedial,Frontal,Fc1
-Fcz,Frontocentral midline,Frontal,Fcz
-Fc2,Frontocentral right paramedial,Frontal,Fc2
-Fc4,Frontocentral right medial,Frontal,Fc4
-Fc6,Frontocentral right lateral,Frontal,Fc6
-C5,Central left lateral,Central,C5
-C3,Central left medial,Central,C3
-C1,Central left paramedial,Central,C1
-Cz,Central midline,Central,Cz
-C2,Central right paramedial,Central,C2
-C4,Central right medial,Central,C4
-C6,Central right lateral,Central,C6
-Cp5,Centroparietal left lateral,Centroparietal,Cp5
-Cp3,Centroparietal left medial,Centroparietal,Cp3
-Cp1,Centroparietal left paramedial,Centroparietal,Cp1
-Cpz,Centroparietal midline,Centroparietal,Cpz
-Cp2,Centroparietal right paramedial,Centroparietal,Cp2
-Cp4,Centroparietal right medial,Centroparietal,Cp4
-Cp6,Centroparietal right lateral,Centroparietal,Cp6
-Fp1,Frontopolar left,Frontopolar,Fp1
-Fpz,Frontopolar midline,Frontopolar,Fpz
-Fp2,Frontopolar right,Frontopolar,Fp2
-Af7,Anterior frontal left lateral,Frontal,Af7
-Af3,Anterior frontal left medial,Frontal,Af3
-Afz,Anterior frontal midline,Frontal,Afz
-Af4,Anterior frontal right medial,Frontal,Af4
-Af8,Anterior frontal right lateral,Frontal,Af8
-F7,Frontal left lateral,Frontal,F7
-F5,Frontal left mid-lateral,Frontal,F5
-F3,Frontal left medial,Frontal,F3
-F1,Frontal left paramedial,Frontal,F1
-Fz,Frontal midline,Frontal,Fz
-F2,Frontal right paramedial,Frontal,F2
-F4,Frontal right medial,Frontal,F4
-F6,Frontal right mid-lateral,Frontal,F6
-F8,Frontal right lateral,Frontal,F8
-Ft7,Frontotemporal left,Temporal,Ft7
-Ft8,Frontotemporal right,Temporal,Ft8
-T7,Temporal left,Temporal,T7
-T8,Temporal right,Temporal,T8
-T9,Inferior temporal left,Temporal,T9
-T10,Inferior temporal right,Temporal,T10
-Tp7,Temporoparietal left,Temporal,Tp7
-Tp8,Temporoparietal right,Temporal,Tp8
-P7,Parietal left lateral,Parietal,P7
-P5,Parietal left mid-lateral,Parietal,P5
-P3,Parietal left medial,Parietal,P3
-P1,Parietal left paramedial,Parietal,P1
-Pz,Parietal midline,Parietal,Pz
-P2,Parietal right paramedial,Parietal,P2
-P4,Parietal right medial,Parietal,P4
-P6,Parietal right mid-lateral,Parietal,P6
-P8,Parietal right lateral,Parietal,P8
-Po7,Parieto-occipital left lateral,Parieto-occipital,Po7
-Po3,Parieto-occipital left medial,Parieto-occipital,Po3
-Poz,Parieto-occipital midline,Parieto-occipital,Poz
-Po4,Parieto-occipital right medial,Parieto-occipital,Po4
-Po8,Parieto-occipital right lateral,Parieto-occipital,Po8
-O1,Occipital left,Occipital,O1
-Oz,Occipital midline,Occipital,Oz
-O2,Occipital right,Occipital,O2
-Iz,Inion,Occipital,Iz
+FC5,Frontal left (FC5),Frontal,FC5
+FC3,Frontal left (FC3),Frontal,FC3
+FC1,Frontal left (FC1),Frontal,FC1
+FCz,Frontal midline (FCz),Frontal,FCz
+FC2,Frontal right (FC2),Frontal,FC2
+FC4,Frontal right (FC4),Frontal,FC4
+FC6,Frontal right (FC6),Frontal,FC6
+C5,Central left (C5),Central,C5
+C3,Central left (C3),Central,C3
+C1,Central left (C1),Central,C1
+Cz,Central midline (Cz),Central,Cz
+C2,Central right (C2),Central,C2
+C4,Central right (C4),Central,C4
+C6,Central right (C6),Central,C6
+CP5,Centroparietal left (CP5),Centroparietal,CP5
+CP3,Centroparietal left (CP3),Centroparietal,CP3
+CP1,Centroparietal left (CP1),Centroparietal,CP1
+CPz,Centroparietal midline (CPz),Centroparietal,CPz
+CP2,Centroparietal right (CP2),Centroparietal,CP2
+CP4,Centroparietal right (CP4),Centroparietal,CP4
+CP6,Centroparietal right (CP6),Centroparietal,CP6
+Fp1,Frontopolar left (Fp1),Frontopolar,Fp1
+Fpz,Frontopolar midline (Fpz),Frontopolar,Fpz
+Fp2,Frontopolar right (Fp2),Frontopolar,Fp2
+AF7,Frontal left (AF7),Frontal,AF7
+AF3,Frontal left (AF3),Frontal,AF3
+AFz,Frontal midline (AFz),Frontal,AFz
+AF4,Frontal right (AF4),Frontal,AF4
+AF8,Frontal right (AF8),Frontal,AF8
+F7,Frontal left (F7),Frontal,F7
+F5,Frontal left (F5),Frontal,F5
+F3,Frontal left (F3),Frontal,F3
+F1,Frontal left (F1),Frontal,F1
+Fz,Frontal midline (Fz),Frontal,Fz
+F2,Frontal right (F2),Frontal,F2
+F4,Frontal right (F4),Frontal,F4
+F6,Frontal right (F6),Frontal,F6
+F8,Frontal right (F8),Frontal,F8
+FT7,Temporal left (FT7),Temporal,FT7
+FT8,Temporal right (FT8),Temporal,FT8
+T7,Temporal left (T7),Temporal,T7
+T8,Temporal right (T8),Temporal,T8
+T9,Temporal left (T9),Temporal,T9
+T10,Temporal right (T10),Temporal,T10
+TP7,Temporal left (TP7),Temporal,TP7
+TP8,Temporal right (TP8),Temporal,TP8
+P7,Parietal left (P7),Parietal,P7
+P5,Parietal left (P5),Parietal,P5
+P3,Parietal left (P3),Parietal,P3
+P1,Parietal left (P1),Parietal,P1
+Pz,Parietal midline (Pz),Parietal,Pz
+P2,Parietal right (P2),Parietal,P2
+P4,Parietal right (P4),Parietal,P4
+P6,Parietal right (P6),Parietal,P6
+P8,Parietal right (P8),Parietal,P8
+PO7,Parieto-occipital left (PO7),Parieto-occipital,PO7
+PO3,Parieto-occipital left (PO3),Parieto-occipital,PO3
+POz,Parieto-occipital midline (POz),Parieto-occipital,POz
+PO4,Parieto-occipital right (PO4),Parieto-occipital,PO4
+PO8,Parieto-occipital right (PO8),Parieto-occipital,PO8
+O1,Occipital left (O1),Occipital,O1
+Oz,Occipital midline (Oz),Occipital,Oz
+O2,Occipital right (O2),Occipital,O2
+Iz,Occipital midline (Iz),Occipital,Iz
