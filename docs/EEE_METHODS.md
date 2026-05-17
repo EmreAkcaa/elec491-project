@@ -1,9 +1,15 @@
-# EEE_METHODS — RMT, Glasso, Wavelet, Transfer Entropy
+# EEE_METHODS — RMT, Glasso, Wavelet, Transfer Entropy, SNN
 
 > **"EEE" is an informal grouping label.** It bundles the more advanced
 > methods (RMT denoising, Graphical LASSO, Wavelet decomposition, Transfer
-> Entropy) into a single dashboard sub-tab and a labelled block in
-> `run_pipeline.py`. It is **not** an acronym. Don't try to decode it.
+> Entropy, Spiking Neural Network) into a single dashboard sub-tab and a
+> labelled block in `run_pipeline.py`. It is **not** an acronym. Don't try
+> to decode it.
+>
+> The Spiking Neural Network (`src/snn_signals.py`, dashboard sub-tab
+> "Neuromorphic Signals") has a dedicated long-form writeup in
+> [`SNN_Report.md`](SNN_Report.md). §5 below is the compact reference
+> entry that mirrors §§1–4 of this file.
 
 ---
 
@@ -276,4 +282,122 @@ which made results irreproducible.
   between financial time series.* Eur. Phys. J. B 30, 275.
 - Bossomaier, T. et al. (2016). *An introduction to transfer entropy.*
   Springer.
+
+---
+
+## 5. Spiking Neural Network — `src/snn_signals.py`
+
+> Long-form writeup with results, limitations, and EEE framing:
+> [`SNN_Report.md`](SNN_Report.md). This section is the compact reference
+> entry that matches the format of §§1–4.
+
+### Theory
+
+A **Leaky Integrate-and-Fire** (LIF) neuron is the canonical model of a
+biological spiking unit, and is the algorithmic substrate of neuromorphic
+hardware (Intel Loihi, IBM TrueNorth, SpiNNaker). In discrete time:
+
+```
+V[k+1] = β · V[k] + W · x[k] − S[k] · V_th
+S[k+1] = 1   if   V[k+1] ≥ V_th   else   0
+```
+
+with leak factor `β` (we use `β = 0.92`, ≈ 12-tick memory horizon) and
+threshold `V_th = 0.5`. The spike `S[k]` is binary; the network is trained
+by **surrogate-gradient backprop-through-time** (Neftci, Mostafa, Zenke
+2019), which substitutes a smooth differentiable approximation
+(`fast_sigmoid(slope=25)`) for the non-differentiable Heaviside step
+during the backward pass.
+
+Inputs are spike-encoded by two complementary schemes:
+- **Delta modulation** — two channels per scalar, `up = 1 ↔ Δx ≥ +θ`,
+  `down = 1 ↔ Δx ≤ −θ`. Σ-Δ-ADC-style asynchronous A/D conversion;
+  the same encoding used by DVS event cameras (Brandli et al. 2014).
+- **Population coding** — Gaussian receptive fields uniformly placed
+  across the input range; preserves absolute level information that
+  delta modulation discards by design.
+
+### Implementation
+
+`build_lif_classifier` (`snn_signals.py:353`):
+1. `Linear(65 → n_hidden=96)` projection.
+2. **Recurrent LIF hidden layer** — `snn.RLeaky(96, all_to_all=True)`
+   adds a learned within-layer recurrence matrix `V_rec`, so the hidden
+   state remembers its own previous spike pattern across SNN ticks.
+3. `Linear(96 → 3)` readout to HOLD / BUY / SELL logits.
+4. **Non-resetting LIF output layer** — `snn.Leaky(reset_mechanism="none")`
+   integrates the membrane potential without firing; the *final-tick*
+   membrane is the classification logit. Standard SNN-training practice
+   (Eshraghian et al. 2023) — empirically essential for training stability
+   on this task.
+
+Per input sample the network unrolls for `window_size × n_timesteps =
+5 × 20 = 100` SNN ticks. A single **universal** model is trained on the
+pooled train splits of all 20 dislocation-candidate pairs, with a 20-dim
+one-hot pair embedding appended to each input vector.
+
+Training uses **focal loss** (Lin et al. 2017) `L = −α_y · (1 − p_y)^γ ·
+log p_y` with `γ = 2.0` and `α_y = sqrt(inv_freq)` class weights; Adam
+optimiser (`lr = 3e-3`, `wd = 1e-4`); 25 max epochs with early stopping
+on `val_loss` (patience 5; typically stops by epoch 10–11).
+
+### Hardcoded params
+
+All in the `SNNConfig` dataclass at `snn_signals.py:80`. None exposed
+through `config/settings.yaml` yet — see FUTURE_WORK F-2. Key knobs:
+`n_hidden=96`, `beta=0.92`, `v_threshold=0.5`, `n_timesteps=20`,
+`window_size=5`, `readout="membrane"`, `class_weight_mode="sqrt_inv_freq"`,
+`label_horizon=20`, `label_entry_z=1.2`, `label_min_reversion=0.8`,
+`seed=42`, `top_n_pairs=20`.
+
+### Caveats
+
+- **Hybrid spike-rate model.** The hidden layer fires binary spikes but
+  the output layer reads the continuous membrane potential. A pure
+  spike-count readout collapsed to majority-class during training —
+  documented in `SNN_Report.md` §15.1. The architecture is therefore
+  *spike-coded internally, rate-coded at the readout* — not a strictly
+  event-driven SNN.
+- **Trading underperforms the heuristic.** Mean Δ-Sharpe = −1.11 vs.
+  the `|Z|>2` classical rule; SNN wins on only 5 of 20 pairs. Reported
+  honestly as a documented exploratory negative result in
+  `SNN_Report.md` §1 and §11.3.
+- **Sharpe annualisation uses overlapping 20-day holds** — internally
+  fair vs. the same-construction classical baseline but inflated in
+  absolute terms (~√20 factor vs. non-overlapping convention).
+- **No transaction costs** in the paper backtest. Round-trip pair-trade
+  costs on Turkish equities (≈ 30 bps × 4 fills = 120 bps) would erode
+  the per-trade margin on both strategies; the *ranking* is preserved.
+- **Forward-look labels.** The mean-reversion oracle uses K=20-day
+  forward look during training. Inference is strictly causal; only the
+  supervised target benefits from the look-ahead.
+
+### What to verify or improve
+
+- Compare `readout="membrane"` vs `"spike_count"` once class collapse is
+  prevented by other means (e.g. label-smoothing, longer warm-up).
+- Hoist `SNNConfig` to `config/settings.yaml` (FUTURE_WORK F-2).
+- Try the alternative architectures Eshraghian et al. 2023 catalogue
+  (Adaptive-LIF, Parametric-LIF) for a fairer "true SNN" comparison.
+- Apply the same surrogate-gradient toolkit to a more predictable
+  target (e.g. realised volatility) before concluding the architecture
+  is signal-limited rather than target-limited.
+
+### References
+
+- Maass, W. (1997). *Networks of spiking neurons: the third generation of
+  neural network models.* Neural Networks 10(9): 1659–1671.
+- Mead, C. (1989). *Analog VLSI and Neural Systems.* Addison-Wesley.
+- Neftci, E. O., Mostafa, H., Zenke, F. (2019). *Surrogate gradient
+  learning in spiking neural networks.* IEEE Signal Processing Magazine
+  36(6): 51–63.
+- Eshraghian, J. K. et al. (2023). *Training spiking neural networks using
+  lessons from deep learning.* Proceedings of the IEEE 111(9).
+- Davies, M. et al. (2018). *Loihi: a neuromorphic manycore processor
+  with on-chip learning.* IEEE Micro 38(1): 82–99.
+- Lin, T.-Y. et al. (2020). *Focal loss for dense object detection.*
+  IEEE TPAMI 42(2): 318–327.
+- Brandli, C. et al. (2014). *A 240×180 130 dB 3 μs latency global shutter
+  spatiotemporal vision sensor.* IEEE J. Solid-State Circuits 49(10):
+  2333–2341.
 

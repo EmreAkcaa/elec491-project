@@ -447,15 +447,136 @@ Same schema as `mst_node_metrics.csv`. One file per scale.
 |---|---|
 | Consumer | EEE tab TE (role table / coloured nodes). |
 
+### `snn_metrics.json`
+
+```json
+{
+  "n_pairs": 20,
+  "per_pair": {
+    "BRYAT_BRSAN": {
+      "macro_f1": ..., "per_class_f1": [...], "confusion_matrix": [[...]],
+      "snn_sharpe": ..., "classical_sharpe": ..., "delta_sharpe": ...,
+      "snn_hit_rate": ..., "snn_n_trades": ..., "classical_n_trades": ...,
+      "n_test": ..., "pair_id": "BRYAT_BRSAN",
+      "ticker_a": "BRYAT", "ticker_b": "BRSAN"
+    },
+    "...": "...19 more pairs..."
+  },
+  "config": { ...full SNNConfig dataclass... },
+  "sample_pair": "BRYAT_BRSAN",
+  "model_type": "universal",
+  "n_inputs": 65,
+  "aggregate": {
+    "mean_macro_f1": 0.668, "mean_snn_sharpe": 3.560,
+    "mean_classical_sharpe": 4.668, "mean_delta_sharpe": -1.108
+  }
+}
+```
+
+| Producer | `src/snn_signals.py:run_snn_signals` |
+|---|---|
+| Consumer | EEE → Neuromorphic Signals: 5-metric KPI row from `aggregate`; per-pair leaderboard from `per_pair`; honest-framing caption recomputes `n_beats = sum(p.delta_sharpe > 0)` from `per_pair`; architecture/hyperparameter expander reads `config` and `n_inputs`. |
+
+### `snn_pair_list.csv`
+
+| Column | Description |
+|---|---|
+| `ticker_a` | first leg of the pair |
+| `ticker_b` | second leg of the pair |
+| `pair_id` | `f"{ticker_a}_{ticker_b}"` — also the filename stem for the per-pair signal parquet |
+
+20 rows. Mirrors the top-20 entries in `dislocation_candidates.csv` at the
+moment the SNN was trained.
+
+| Producer | `src/snn_signals.py:run_snn_signals` |
+|---|---|
+| Consumer | EEE → Neuromorphic Signals (populates the pair selector). |
+
+### `snn_training_history.csv`
+
+| Column | Description |
+|---|---|
+| `epoch` | int, 0-based |
+| `train_loss` | focal loss on training batches |
+| `val_loss` | focal loss on validation set (early-stop monitor) |
+| `val_acc` | classification accuracy on validation |
+| `val_macro_f1` | macro-F1 on validation (right-axis trace in the dashboard) |
+| `pair` | `_universal_` for the universal-model row set |
+
+~11 rows total — training early-stops on `val_loss` patience=5.
+
+| Producer | `src/snn_signals.py:train_snn` |
+|---|---|
+| Consumer | EEE → Neuromorphic Signals "Training history" dual-axis chart. |
+
+### `snn_signals/{pair_id}.parquet`
+
+20 files, one per pair (`BRYAT_BRSAN.parquet`, `AKBNK_YKBNK.parquet`, …).
+
+| Column | Description |
+|---|---|
+| `date` | trading day |
+| `zscore` | rolling-60d spread Z-score (same series the dislocation pipeline uses) |
+| `prob_hold` | SNN softmax probability for HOLD (membrane logits after softmax) |
+| `prob_buy` | SNN softmax probability for BUY |
+| `prob_sell` | SNN softmax probability for SELL |
+| `signal` | argmax of the three probs → `HOLD` / `BUY` / `SELL` |
+| `classical_signal` | the `|Z|>2` rule's signal for the same day, for side-by-side comparison |
+
+| Producer | `src/snn_signals.py:run_snn_signals` (per-pair inference loop) |
+|---|---|
+| Consumer | EEE → Neuromorphic Signals per-pair signal timeline (Z-score line + BUY/SELL markers). |
+
+### `snn_model_weights/universal.pt`
+
+Trained PyTorch state dict for the single universal `LIFClassifier` (one
+network shared across all 20 pairs, with a 20-dim one-hot pair embedding
+appended to each input). ~69 KB.
+
+**No per-pair `.pt` files** — the earlier per-pair-training code path is
+deprecated; only `universal.pt` is loaded for inference.
+
+| Producer | `src/snn_signals.py:run_snn_signals` (PyTorch `torch.save`) |
+|---|---|
+| Consumer | `src/snn_signals.py:run_snn_signals` for re-inference when `retrain=False` (the default). No direct app consumer. |
+
+### `snn_spike_raster_sample.parquet`
+
+| Column | Description |
+|---|---|
+| `day_index` | window-local day index, 0..(window_size−1) |
+| `date` | corresponding calendar date |
+| `timestep` | SNN tick within the day, 0..(n_timesteps−1) |
+| `neuron_id` | output-neuron index, 0..2 |
+| `neuron_name` | `HOLD` / `BUY` / `SELL` |
+| `spike` | binary — only rows with a spike are persisted |
+
+Captured for one inference window of the sample pair (`BRYAT_BRSAN`) only,
+not for every pair (would be ~20× more data with no visualisation gain).
+
+| Producer | `src/snn_signals.py:_write_raster_and_membrane` |
+|---|---|
+| Consumer | EEE → Neuromorphic Signals "Output-neuron spike raster" chart (HOLD/BUY/SELL bands on y, `global_tick = day_index × n_timesteps + timestep` on x). |
+
+### `snn_membrane_sample.parquet`
+
+Same shape as the raster, but with a `membrane` float column instead of
+`spike`. Stores the continuous output-layer membrane potential V(t) for
+the same sample window.
+
+| Producer | `src/snn_signals.py:_write_raster_and_membrane` |
+|---|---|
+| Consumer | EEE → Neuromorphic Signals "Output-layer membrane V(t)" chart (one trace per output neuron, with a horizontal V_th reference line read from `snn_metrics.json:config.v_threshold`). |
+
 ---
 
 ## Orphan summary (1 file remaining)
 
-Commit `8379448` ("New methods wired to dashboard") connected 20 of the 21
-formerly-orphan files. The previous version of this header said "18" — it
-under-counted because the wavelet line collapsed seven
-`wavelet_mst_metrics_scale{1..7}.csv` files into a single numbered item.
-The accurate original count was 21.
+The current pipeline writes 21 + 7 SNN = 28 distinct artifact families
+under `data/results/` (counting `snn_signals/*.parquet` and
+`snn_model_weights/universal.pt` each as one family). The new SNN
+artifacts are all consumed by `app/eee_analysis.py:render_snn` (see
+above).
 
 Still unwired:
 
