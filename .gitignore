@@ -213,3 +213,17 @@ __marimo__/
 
 # Claude Code per-developer settings (project-level settings.json stays tracked)
 .claude/settings.local.json
+
+# ── EEG raw EDFs (Phase I) ────────────────────────────────────────────────────
+# Too big to ship cleanly and easily regenerated via
+# `mne.datasets.eegbci.load_data` inside src/eeg_acquisition.py.
+# Users who want to retrain or rerun the EEG pipeline locally just run
+# `uv sync --extra eeg && uv run python run_pipeline_eeg.py`. The pre-computed
+# processed parquets ship via Git LFS (see .gitattributes), which is what the
+# dashboard actually loads.
+data/eeg_motor_left_right/raw/
+
+# MNE's data cache lives at ~/mne_data by default (outside the repo), but if a
+# user has overridden MNE_DATA to point inside the project tree, ignore that too.
+.mne_data/
+mne_data/

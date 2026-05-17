@@ -934,26 +934,45 @@ def render_snn(sector_map: dict):
 # ---------------------------------------------------------------------------
 
 def render():
-    """Render the full EEE Analysis tab content."""
+    """Render the full EEE Analysis tab content.
+
+    The Neuromorphic Signals (SNN) sub-tab is hidden when the active universe
+    has ``has_snn=False`` in app/universe_registry.py — the SNN classifier is
+    pair-trading-specific and doesn't apply to non-financial universes (EEG).
+    """
+    from universe_registry import get_universe
+    from utils import current_universe
+    _active = get_universe(current_universe())
+
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    sub_rmt, sub_glasso, sub_wavelet, sub_te, sub_snn = st.tabs([
-        "RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale",
-        "Transfer Entropy", "Neuromorphic Signals",
-    ])
+    _sub_labels = ["RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale", "Transfer Entropy"]
+    if _active.has_snn:
+        _sub_labels.append("Neuromorphic Signals")
+    _subs = st.tabs(_sub_labels)
+    _sub_by_label = dict(zip(_sub_labels, _subs))
 
-    with sub_rmt:
+    with _sub_by_label["RMT Denoising"]:
         render_rmt(sector_map)
 
-    with sub_glasso:
+    with _sub_by_label["Graphical LASSO"]:
         render_glasso(sector_map)
 
-    with sub_wavelet:
+    with _sub_by_label["Wavelet Multi-Scale"]:
         render_wavelets(sector_map)
+        # Neuroscience caption: scales are time-bands at 160 Hz, not days.
+        if _active.domain == "neuroscience":
+            st.caption(
+                ":material/info: For EEG (160 Hz sampling), wavelet scales 1-7 "
+                "correspond to bands ranging from ~12.5 ms (gamma, scale 1) up to "
+                "~1.6 s (slow oscillations, scale 7), not days as in the financial "
+                "universes."
+            )
 
-    with sub_te:
+    with _sub_by_label["Transfer Entropy"]:
         render_transfer_entropy(sector_map)
 
-    with sub_snn:
-        render_snn(sector_map)
+    if "Neuromorphic Signals" in _sub_by_label:
+        with _sub_by_label["Neuromorphic Signals"]:
+            render_snn(sector_map)

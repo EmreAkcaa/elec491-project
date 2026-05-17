@@ -50,7 +50,8 @@
 │   app/utils.py             universe-aware cached loaders (40), theming,     │
 │                            render_chart, warnings                           │
 │   app/universe_registry.py registry of dashboard-switchable universes       │
-│                            (bist, sp500) + available_universes() filter     │
+│                            (bist, sp500, eeg_motor_left_right) +            │
+│                            capability flags + available_universes() filter  │
 │   app/dashboard.py         Market Overview (6 tabs) + nav to Pair Analysis  │
 │                            + Cross-Market; sidebar universe selector        │
 │   app/pair_analysis.py     Pair Analysis page (5 tabs); universe-aware      │
