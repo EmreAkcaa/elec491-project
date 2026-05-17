@@ -130,7 +130,7 @@ def render_export_popover(
                     data=img_bytes,
                     file_name=filename,
                     mime=mime,
-                    use_container_width=True,
+                    width="stretch",
                     key=f"_exp_dl_{chart_id}_{fmt}",
                 )
             except Exception as exc:

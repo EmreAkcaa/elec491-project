@@ -346,6 +346,136 @@ def test_no_expanders_inside_popovers():
 
 
 # ---------------------------------------------------------------------------
+# Deprecation-cliff guard — use_container_width=
+# ---------------------------------------------------------------------------
+# Streamlit 1.41+ emits a deprecation warning for `use_container_width=` and
+# points users at the `width="stretch"/"content"` replacement. Removal is
+# slated for end-of-2025 (~Streamlit 1.46+).
+#
+# This codebase migrated all 22 production call sites to `width=` in PR
+# feat/streamlit-resilience-pass. The only allowed remaining mention of
+# `use_container_width` is inside app/utils.py:render_chart, where it's a
+# back-compat shim that translates the legacy kwarg → the new width API.
+#
+# Any other reintroduction (a contributor copy-pasting old example code,
+# a stale snippet, etc.) fails this test instantly with file:line.
+
+def test_no_use_container_width_outside_shim():
+    """No `use_container_width=` calls anywhere in app/ except the documented
+    back-compat shim in utils.py:render_chart. New widgets must use `width=`."""
+    import re
+    violations: list[str] = []
+    # Allowlist: the render_chart shim lives in app/utils.py and explicitly
+    # uses `use_container_width` as a parameter name + back-compat translator.
+    # We allow that one file's mentions.
+    ALLOWLISTED = {"utils.py"}
+    pattern = re.compile(r"\buse_container_width\b")
+    for py_path in sorted(_APP_DIR.glob("*.py")):
+        if py_path.name in ALLOWLISTED:
+            continue
+        for i, line in enumerate(py_path.read_text().splitlines(), start=1):
+            if pattern.search(line):
+                rel = py_path.relative_to(_REPO_ROOT)
+                violations.append(f"  {rel}:{i}  — {line.strip()}")
+    if violations:
+        raise AssertionError(
+            "`use_container_width=` is deprecated in Streamlit (slated for removal "
+            "end-2025). Migrate to `width=\"stretch\"` (or `width=\"content\"`). "
+            "Violations:\n" + "\n".join(violations)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Robustness guard — format_func=lambda subscripting a dict literal directly
+# ---------------------------------------------------------------------------
+# `format_func=lambda v: {1: "a", 5: "b"}[v]` raises KeyError if a new option
+# value is added to the parent selectbox without updating the dict. The fix
+# is `{...}.get(v, str(v))` — same behaviour when the key exists, graceful
+# fallback when it doesn't.
+
+def test_format_func_lambdas_use_get_not_subscript():
+    """No `format_func=lambda x: {<dict literal>}[x]` patterns anywhere in app/.
+
+    Detects the brittle subscript-into-inline-dict-literal pattern. Allows any
+    other lambda body (e.g. `.get(...)`, `f"…"` formatting, function calls).
+    """
+    import ast
+    violations: list[str] = []
+    for py_path, tree in _walk_app_files():
+        for node in ast.walk(tree):
+            # Looking for: <call>(..., format_func=lambda v: {...}[v], ...)
+            if not isinstance(node, ast.Call):
+                continue
+            for kw in node.keywords:
+                if kw.arg != "format_func":
+                    continue
+                lam = kw.value
+                if not isinstance(lam, ast.Lambda):
+                    continue
+                body = lam.body
+                # Pattern: ast.Subscript(value=ast.Dict(...), slice=...)
+                if isinstance(body, ast.Subscript) and isinstance(body.value, ast.Dict):
+                    rel = py_path.relative_to(_REPO_ROOT)
+                    snippet = ast.unparse(body) if hasattr(ast, "unparse") else "<lambda>"
+                    violations.append(
+                        f"  {rel}:{lam.lineno}  — format_func=lambda …: {snippet} "
+                        f"(KeyError if option not in dict; use .get(key, str(key)))"
+                    )
+    if violations:
+        raise AssertionError(
+            "format_func lambdas with direct dict-subscript can raise KeyError. "
+            "Use `dict.get(key, fallback)` instead. Violations:\n"
+            + "\n".join(violations)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Contract guard — render_chart threads the width= param to st.plotly_chart
+# ---------------------------------------------------------------------------
+# Defends against silent refactors that drop the `width` parameter on
+# render_chart's signature or stop passing it to st.plotly_chart. Either
+# regression would silently revert the dashboard to Streamlit defaults.
+
+def test_render_chart_signature_and_passthrough():
+    """app/utils.py:render_chart must accept a `width` parameter and pass it
+    through to st.plotly_chart. Regressions break the deprecation-shim."""
+    import ast
+    utils_path = _APP_DIR / "utils.py"
+    tree = ast.parse(utils_path.read_text())
+    render_chart_def = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "render_chart":
+            render_chart_def = node
+            break
+    assert render_chart_def is not None, "app/utils.py must define render_chart"
+
+    # 1. Signature must include a `width` kwarg
+    arg_names = {a.arg for a in render_chart_def.args.args} | {
+        a.arg for a in render_chart_def.args.kwonlyargs
+    }
+    assert "width" in arg_names, (
+        f"render_chart must accept a `width` parameter; got {sorted(arg_names)}"
+    )
+
+    # 2. Body must call st.plotly_chart(...) somewhere with width=width
+    found_plotly_call = False
+    for sub in ast.walk(render_chart_def):
+        if not isinstance(sub, ast.Call):
+            continue
+        func = sub.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "plotly_chart"):
+            continue
+        for kw in sub.keywords:
+            if kw.arg == "width" and isinstance(kw.value, ast.Name) and kw.value.id == "width":
+                found_plotly_call = True
+                break
+    assert found_plotly_call, (
+        "render_chart must call st.plotly_chart(fig, width=width, ...) — "
+        "the width parameter is no longer being forwarded"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Capability-flag fallback paths (no dashboard import — dashboard.py is a
 # Streamlit script that crashes when imported outside `streamlit run`).
 # Catches: regressions where the defensive getattr() pattern stops working.
