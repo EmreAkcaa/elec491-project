@@ -47,13 +47,19 @@
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ Application (Streamlit, no compute except light rolling/MST layout)         │
-│   app/utils.py            cached loaders, theming, render_chart, warnings   │
-│   app/dashboard.py        Market Overview (6 tabs) + nav to Pair Analysis   │
-│   app/pair_analysis.py    Pair Analysis page (5 tabs)                       │
-│   app/eee_analysis.py     EEE Analysis sub-tab (5 sub-tabs: RMT/Glasso/     │
-│                           Wavelet/TE/Neuromorphic Signals)                  │
-│   app/chart_themes.py     palette, sidebar theme switcher                   │
-│   app/chart_export.py     plotly→PNG hook used by render_chart              │
+│   app/utils.py             universe-aware cached loaders (40), theming,     │
+│                            render_chart, warnings                           │
+│   app/universe_registry.py registry of dashboard-switchable universes       │
+│                            (bist, sp500) + available_universes() filter     │
+│   app/dashboard.py         Market Overview (6 tabs) + nav to Pair Analysis  │
+│                            + Cross-Market; sidebar universe selector        │
+│   app/pair_analysis.py     Pair Analysis page (5 tabs); universe-aware      │
+│   app/eee_analysis.py      EEE Analysis sub-tab (5 sub-tabs: RMT/Glasso/    │
+│                            Wavelet/TE/Neuromorphic Signals)                 │
+│   app/cross_market.py      Cross-Market Comparison page (BIST vs S&P 500    │
+│                            side-by-side; reads both data trees directly)    │
+│   app/chart_themes.py      palette, sidebar theme switcher                  │
+│   app/chart_export.py      plotly→PNG hook used by render_chart             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 

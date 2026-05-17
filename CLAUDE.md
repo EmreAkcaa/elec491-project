@@ -47,13 +47,16 @@ uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
   module-level defaults or `dataclass` defaults, not the YAML. See the per-module
   hardcoded-params lists in `docs/PIPELINE_REFERENCE.md`. When adding a new param,
   hoist to YAML if it's user-facing; otherwise leave it as a default.
-- **Tests live in `tests/`** (6 files, 99 tests; 96 pass + 3 skip without torch).
+- **Tests live in `tests/`** (8 files, 107 tests).
   Stages without tests are listed in `docs/FUTURE_WORK.md` (F-4).
 - **Chart rendering** goes through `app/utils.py:render_chart` for consistent
   theming and PNG export. Don't call `st.plotly_chart` directly.
-- **Caching**: every loader in `app/utils.py` is `@st.cache_data`. Heavy
-  computations in `app/dashboard.py` (correlation, MST layout, rolling stats)
-  are cached too — keep the `_returns_json` ser/de pattern when adding more.
+- **Caching**: every loader in `app/utils.py` is `@st.cache_data` and keyed by
+  the active universe via a `_load_X(universe, ...)` underscore-prefixed
+  function plus a public parameter-free wrapper. BIST and S&P caches coexist
+  per-universe; switching is a session-state write. Heavy computations in
+  `app/dashboard.py` (correlation, MST layout, rolling stats) are cached too
+  — keep the `_returns_json` ser/de pattern when adding more.
 
 ## Pitfalls (read before changing pipeline code)
 
@@ -92,10 +95,13 @@ uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
 
 ## What's been confirmed about the codebase
 
-- Total lines: ~9,288 across `src/` (12 modules incl. `snn_signals.py`),
-  `app/` (6 files), `tests/` (6 files, 99 tests). The 1,101-line SNN module
-  contributes the bulk of the recent growth.
-- All non-torch tests pass under `uv run python -m pytest -q` (96 passed,
-  3 skipped). With `uv sync --extra snn`, all 99 tests run.
+- Total lines: ~10,000+ across `src/` (12 modules incl. `snn_signals.py`),
+  `app/` (8 files incl. `universe_registry.py` + `cross_market.py`), `tests/`
+  (8 files, 107 tests).
+- All tests pass under `uv run python -m pytest -q` (107 passed). When `[snn]`
+  extra is missing, torch-dependent SNN tests skip cleanly.
 - Pipeline is reproducible end-to-end given the same
-  `data/raw/prices_raw.parquet` and the seeded TE / SNN configs.
+  `data/<market>/raw/prices_raw.parquet` and the seeded TE / SNN configs.
+- The dashboard runs against BIST and S&P-500 universes simultaneously via the
+  sidebar dataset selector (Phase H, 2026-05). EEG artifacts also exist on disk
+  but are not yet registered in `app/universe_registry.py`.
