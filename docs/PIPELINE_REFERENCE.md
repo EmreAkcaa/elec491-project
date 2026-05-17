@@ -338,6 +338,109 @@ Currently the slowest stage at ~5–10 minutes for the BIST universe.
 
 ---
 
+## `src/snn_signals.py`
+
+**Entry point:** `run_snn_signals(config, retrain=False, snn_cfg=None) -> dict` (`snn_signals.py:891`).
+
+**Reads** (paths derived from `config.data_processed` / `config.data_results`, so
+per-market directories like `data/bist/...` and `data/sp500/...`):
+- `<data_processed>/adj_close.parquet`
+- `<data_processed>/log_returns.parquet`
+- `<data_results>/dislocation_candidates.csv` (top-20 pairs)
+
+**Writes** (all under `config.data_results`, so `data/bist/results/...` or
+`data/sp500/results/...` depending on the active config):
+- `snn_metrics.json` — per-pair + aggregate metrics, full
+  `SNNConfig` dump, `sample_pair`, `n_inputs`, `n_pairs`.
+- `snn_pair_list.csv` — `ticker_a, ticker_b, pair_id` for the
+  20 trained pairs.
+- `snn_training_history.csv` — `epoch, train_loss, val_loss,
+  val_acc, val_macro_f1, pair` (one row per epoch; ~11 rows with early
+  stopping at patience=5).
+- `snn_signals/{pair_id}.parquet` (×20) — daily per-pair
+  signal: `date, zscore, prob_hold, prob_buy, prob_sell, signal,
+  classical_signal`.
+- `snn_model_weights/universal.pt` — trained PyTorch
+  state-dict (single universal model; the per-pair `.pt` files from an
+  earlier code path are deliberately not persisted).
+- `snn_spike_raster_sample.parquet` — output-neuron spike
+  raster for one sample window of the sample pair (BIST: `BRSAN_BRYAT`,
+  S&P: `CMS_AEP`).
+- `snn_membrane_sample.parquet` — output-layer membrane
+  V(t) trace for the same sample window.
+
+**Method:**
+1. **Feature construction** (`build_input_features`, 11 raw features per
+   pair per day): rolling-60 spread Z-score, its first difference, lags at
+   5 and 20 days, rolling correlation of returns, log returns of both
+   tickers, 20-day rolling spread vol, cross-sectional market dispersion,
+   market breadth, and inverse half-life clipped to `[0, 0.3]`.
+2. **Spike encoding** (`encode_features_to_spikes`, 11 → 45 channels):
+   delta-modulation (Σ-Δ-style) on `zscore` and `dzscore` (2 channels each);
+   Gaussian population coding on 8 slow features (5 fields each);
+   saturating-ramp single channel on `inv_half_life`. Append 20-dim
+   one-hot pair embedding → 65 total input channels.
+3. **Labels** (`generate_mean_reversion_labels`, magnitude-aware K-day
+   forward oracle): looking K=20 days forward, if `|Z_t| ≥ entry_z=1.2`
+   and `Z` reverts by at least `min_reversion=0.8` Z-units → BUY (for
+   `Z<0`) or SELL (for `Z>0`); else HOLD. Inference is strictly causal;
+   only the supervised target uses the forward look.
+4. **Architecture** (`build_lif_classifier`): `Linear(65 → 96)` →
+   `snn.RLeaky(96, all_to_all=True)` (recurrent LIF, β=0.92, V_th=0.5,
+   surrogate_grad=fast_sigmoid(slope=25)) → `Linear(96 → 3)` →
+   `snn.Leaky(reset_mechanism="none")` (membrane-potential readout). Each
+   sample unrolled across `window_size × n_timesteps = 5 × 20 = 100` SNN
+   ticks.
+5. **Training** (`train_snn`): Adam(lr=3e-3, wd=1e-4), focal loss
+   (γ=2.0) with `sqrt(inv_freq)` class weights, 25 max epochs with
+   early-stop patience 5. Single universal model trained on the pooled
+   train splits of all 20 pairs (val/test stay time-ordered per pair).
+6. **Per-pair inference + backtest** (`_evaluate_pair`): predict BUY /
+   SELL / HOLD on the held-out test split; paper-trade against the
+   classical `|Z|>2` rule (`_classical_signals_per_day`); report macro-F1
+   per pair plus annualised Sharpe with 20-day non-overlapping holds.
+
+**Hardcoded — `SNNConfig` dataclass (`snn_signals.py:80`):**
+n_hidden=96, beta=0.92, v_threshold=0.5, n_timesteps=20, window_size=5,
+use_universal_model=True, use_recurrent_hidden=True, readout="membrane",
+input_scaling=2.0, class_weight_mode="sqrt_inv_freq", learning_rate=3e-3,
+weight_decay=1e-4, n_epochs=25, batch_size=128, early_stop_patience=5,
+seed=42, use_focal_loss=True, focal_gamma=2.0, delta_threshold=0.25,
+n_population_fields=5, label_horizon=20, label_entry_z=1.2,
+label_min_reversion=0.8, label_exit_z=0.5, train_ratio=0.7,
+top_n_pairs=20, rolling_window=60, retrain=False.
+
+None of these are exposed through `config/settings.yaml`; future YAML hoist
+listed in FUTURE_WORK F-2.
+
+**Dependencies:** `torch`, `snntorch` — both lazily imported via
+`_require_torch()`. Not installed by default. Install with
+`uv sync --extra snn`. Without them, the module imports clean but
+`run_snn_signals` raises `ImportError`; `run_pipeline.py` wraps the call
+in `try/except ImportError` so the rest of the pipeline still completes.
+
+**Complexity:** training is `O(epochs × n_samples × window_size ×
+n_timesteps × n_hidden²)` due to BPTT through the recurrent layer.
+On a laptop CPU: ~12 min full retrain; ~30 s re-inference using the
+cached `universal.pt`.
+
+**Known caveats** (see also `docs/SNN_Report.md` §§ 11.3, 15):
+- Δ-Sharpe of −1.11 on average — the SNN underperforms the simple
+  `|Z|>2` rule on 15 of 20 pairs. Reported as a documented
+  exploratory negative result with positive classification (macro-F1
+  0.668 above majority-class baseline 0.27).
+- Output layer uses continuous membrane readout, not pure spike-count
+  readout — necessary for training stability but means the network is
+  a hybrid spike-rate model, not strictly event-driven.
+- Sharpe annualisation uses overlapping 20-day holds and is internally
+  fair vs. the classical baseline but inflated in absolute terms.
+- No transaction costs in the backtest.
+
+**Tests:** `tests/test_snn_signals.py` — 12 tests (8 torch-free always
+run; 4 torch-dependent skip when `torch` is not installed).
+
+---
+
 ## Function reuse map
 
 The most reused functions (handy when adding a new method):

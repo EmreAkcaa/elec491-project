@@ -67,7 +67,7 @@ dashboard's Neuromorphic Signals sub-tab shows the live values.
 
 ## 2. Where SNN Fits in StoNeCoAl
 
-The pipeline is sequential. The SNN is **Step 13**, the very last step — it consumes the output of Steps 1–7 (the existing data ingest, correlation, and pair-dislocation modules) and produces buy/sell signals as the final inference layer:
+The pipeline is sequential. The SNN is **Stage 12**, the very last stage — it consumes the output of Stages 1–7 (the existing data ingest, correlation, and pair-dislocation modules) and produces buy/sell signals as the final inference layer:
 
 ```
 1.  data_acquisition       (yfinance daily prices)
@@ -349,7 +349,7 @@ Rather than training 20 separate per-pair models (the original approach), we tra
 - multiplies the effective training data by 20×,
 - lets the model learn general dislocation patterns that transfer across stocks,
 - still allows per-pair specialization (the one-hot lets `fc1` produce a pair-specific bias),
-- ends up training **3× faster** than the per-pair version (11.9 min vs the original 11.2 min per-pair, on 20 pairs and a larger model).
+- ends up training **~19× faster** than the per-pair version end-to-end (11.9 min for one universal pooled run vs ~11.2 min × 20 pairs = ~224 min total for 20 separate per-pair models), even with a slightly larger hidden layer.
 
 The val/test gap shrank substantially with this change — going from one-model-per-pair (heavy overfit risk on 1000 training days) to one universal model with 20× the data largely solved the generalization problem.
 
@@ -682,6 +682,61 @@ Even with universal training and membrane readout, F1 was capped at 0.38 — clo
 
 These three iterations are documented in this report deliberately — the SNN's final architecture is informed by the failure modes, and explaining them in the project report demonstrates engineering judgment.
 
+### 15.4. Operational limitations (current state)
+
+§§ 15.1–15.3 above are the development-history journal — failure modes
+that have been fixed. This subsection consolidates the **remaining
+operational caveats** of the shipped implementation; each is also
+referenced from the relevant headline section so a reader who jumps
+straight to §1 or §11 sees them in context.
+
+- **Hybrid spike-rate readout.** The hidden layer fires binary spikes
+  (LIF dynamics with surrogate gradients — the EEE-relevant part), but
+  the output layer uses `reset_mechanism="none"` and reads the
+  *continuous membrane potential* as the classification logit (§15.1).
+  A pure spike-count readout is more biologically faithful but
+  collapsed to the majority class in our setting; we therefore label
+  the architecture as a *hybrid spike-rate model*, not a strictly
+  event-driven SNN. Deployment to neuromorphic silicon (Loihi 2,
+  TrueNorth, SpiNNaker) would require a rate-to-spike conversion of
+  the readout, which is left as future work.
+- **Negative trading result.** Mean Δ-Sharpe = −1.11 over the 20 test
+  pairs; the SNN beats the classical `|Z|>2` rule on only 5 of 20
+  pairs, and 4 of those wins are within ≤ +0.5 Sharpe of break-even
+  (§11.1, §11.3). We retain the SNN for methodological-breadth value
+  (spike-coded counterpart to other rate-coded methods in the project)
+  rather than as an alpha-generating signal.
+- **Per-pair `.pt` orphans deliberately omitted.** Earlier iterations
+  trained one model per pair and wrote per-pair `.pt` files. The
+  current code path only saves `universal.pt`; the per-pair files are
+  unused. We deliberately do not commit them to `data/results/
+  snn_model_weights/` (§13.1) to avoid leaving dead binary artifacts
+  in version control.
+- **Sharpe annualisation uses overlapping 20-day holds.** The
+  `_backtest_sharpe` helper scales per-trade Sharpe by
+  `√(252 / horizon)` with `horizon = 20`. Consecutive trades share
+  ~19 days of the spread path, so returns are highly autocorrelated
+  and the i.i.d. annualisation overstates absolute Sharpe by roughly
+  √20 ≈ 4.5×. **The comparison vs. the classical baseline is
+  internally fair** (same construction on both arms), but the
+  absolute Sharpe numbers in §11.1 should not be read as realisable
+  annualised performance.
+- **Zero transaction costs.** A pair trade requires four fills.
+  At Turkish-equity ~30 bps per leg the round-trip cost is ~120 bps,
+  which is large relative to the per-trade spread vol of the top
+  pairs (≈ 0.17 log-points for AKBNK–YKBNK). Realistic net Sharpe is
+  materially smaller than the reported gross values; the *relative*
+  ranking is preserved because both strategies are charged the same
+  costs.
+- **Forward-look labels.** Labels are computed from a K=20-day
+  forward-look mean-reversion oracle (§6). Inference is strictly
+  causal — the trained model never sees the future — but the supervised
+  target itself benefits from hindsight that no real-time system has.
+- **`SNNConfig` not exposed through YAML.** Every architectural and
+  training hyperparameter lives as a Python default in
+  `snn_signals.py:80`. Hoist to `config/settings.yaml` is filed under
+  FUTURE_WORK F-2.
+
 ---
 
 ## 16. EEE Framing for the Project Report
@@ -712,4 +767,7 @@ Suggested talking points for the final ELEC 491 report:
 
 ---
 
-*Last updated: 2026-05-14.*
+*Last updated: 2026-05-17 (canonical doc-set integration: §15.4 operational
+limitations added; "Step 13" → "Stage 12" to match pipeline numbering;
+universal-vs-per-pair training-time figure corrected from 3× to ~19× total
+end-to-end; Phase H merge of `origin/main`).*

@@ -24,6 +24,25 @@ the dev extras (only `pytest` currently):
 uv sync --extra dev
 ```
 
+### Optional: SNN extra (torch + snntorch)
+
+The SNN module (`src/snn_signals.py`, stage 12 of the pipeline, surfaced
+under the dashboard's **EEE Analysis → Neuromorphic Signals** sub-tab)
+needs PyTorch and snntorch. They are not installed by default because
+they pull ~700 MB of binaries that most contributors don't need; the
+pre-computed SNN artifacts under `data/results/snn_*` let the dashboard
+render the sub-tab without torch installed.
+
+To enable training / re-inference locally:
+
+```bash
+uv sync --extra snn
+```
+
+Then `run_pipeline.py` will execute stage 12; without the extra, the
+stage logs a warning and the rest of the pipeline still completes
+(`try/except ImportError` in `run_pipeline.py`).
+
 ## Run the full pipeline
 
 ```bash
@@ -32,8 +51,11 @@ uv run python run_pipeline.py
 
 Stages execute in the order documented in
 [`ARCHITECTURE.md`](ARCHITECTURE.md). Total wall time ~10–30 min depending
-on network and CPU. The slowest stage by far is **transfer entropy**
-(`O(N² · S · T)` ≈ 10k pair-shuffles), typically 5–10 min on its own.
+on network and CPU (~12 additional minutes for SNN training if the `[snn]`
+extra is installed). The slowest stages are **transfer entropy**
+(`O(N² · S · T)` ≈ 10k pair-shuffles, typically 5–10 min) and **SNN
+training** (~12 min CPU; subsequent re-inference is ~30 s when the cached
+`universal.pt` exists).
 
 Logging goes to stdout at INFO; redirect to a file if you want a record:
 
@@ -51,6 +73,7 @@ modified one module and don't want to redo the whole chain:
 uv run python -m src.preprocessing            # re-run preprocessing
 uv run python -m src.partial_correlation      # re-run Glasso only
 uv run python -m src.transfer_entropy         # slow — 5–10 min
+uv run python -m src.snn_signals              # requires `[snn]` extra; ~12 min
 ```
 
 Stages have data dependencies; check `data/processed/` and `data/results/`
@@ -63,7 +86,10 @@ exist for the inputs the stage needs (see PIPELINE_REFERENCE.md per-stage
 uv run python -m pytest -q
 ```
 
-Expect **87 passed** in ~5 seconds. There are no slow / integration markers.
+Expect **96 passed, 3 skipped** in ~10 seconds when the `[snn]` extra is
+not installed (the 3 skips are the torch-dependent SNN tests). With
+`uv sync --extra snn` all 99 tests run. There are no slow / integration
+markers.
 
 ## Launch the dashboard
 
@@ -167,14 +193,17 @@ uv run python -m src.rmt_denoising          # ~5s
 uv run python -m src.partial_correlation    # ~30s
 uv run python -m src.wavelet_analysis       # ~30s
 uv run python -m src.transfer_entropy       # ~5–10 min
+uv run python -m src.snn_signals            # ~12 min (requires `[snn]` extra)
 ```
 
 ### Wipe everything and start fresh
 
 ```bash
-rm -rf data/raw data/processed data/results .venv
-uv sync
-uv run python run_pipeline.py
+rm -rf data/bist/{raw,processed,results} data/sp500/{raw,processed,results} .venv
+uv sync --all-extras                                                              # core + snn + eeg + dev
+uv run python run_pipeline.py                                                     # BIST
+uv run python run_pipeline.py --config config/settings_sp500.yaml                 # S&P-500 (~95 min)
+uv run python scripts/sp500_vs_bist.py                                            # refresh cross-market table
 ```
 
 ## Configuration reference
@@ -198,3 +227,10 @@ What's **not** in YAML and lives as Python defaults (FUTURE_WORK F-2):
 - Glasso `cv`, `max_iter`, edge `threshold`
 - Wavelet family (`'db4'`), max level cap (7)
 - Clustering `linkage_method='single'`, `distance_threshold=1.0`
+- SNN: every field of `SNNConfig` (`snn_signals.py:80`) — architecture
+  (`n_hidden`, `beta`, `v_threshold`, `n_timesteps`, `window_size`,
+  `readout`, etc.), training (`learning_rate`, `weight_decay`,
+  `n_epochs`, `early_stop_patience`, `seed`), encoders
+  (`delta_threshold`, `n_population_fields`), and label-oracle
+  (`label_horizon`, `label_entry_z`, `label_min_reversion`, `train_ratio`,
+  `top_n_pairs`)
