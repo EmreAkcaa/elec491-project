@@ -134,7 +134,12 @@ def render_chart(
             )
 
     config = get_plotly_config(chart_id)
-    st.plotly_chart(fig, width=width, config=config)
+    # NOTE: st.plotly_chart does NOT accept width= in Streamlit 1.41.1 (kwarg
+    # landed in ~1.45+). Translate the public `width=` API to the legacy
+    # use_container_width= kwarg for the actual call. When the Streamlit pin
+    # is bumped past 1.45 (see docs/STREAMLIT_VERSION_BUMP.md), this can
+    # revert to: st.plotly_chart(fig, width=width, config=config).
+    st.plotly_chart(fig, use_container_width=(width == "stretch"), config=config)
     render_export_popover(fig, chart_id, filename_base)
 
 
