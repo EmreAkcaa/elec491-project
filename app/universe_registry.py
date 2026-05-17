@@ -146,17 +146,70 @@ UNIVERSES: dict[str, Universe] = {
 
 
 def available_universes() -> list[Universe]:
-    """Return only universes whose data/<key>/results/ tree is populated.
+    """Return only universes whose data/<key>/results/ tree is populated AND
+    whose bulk data files are real (not Git LFS pointer stubs).
 
-    Used by the sidebar selector so a half-installed clone never offers a
-    universe whose loaders would all return empty.
+    Used by the sidebar selector so a half-installed clone or a Streamlit
+    Cloud deploy without git-lfs never offers a universe whose loaders
+    would all crash on `pd.read_parquet()` of a 134-byte pointer file.
     """
     out: list[Universe] = []
     for u in UNIVERSES.values():
         meta_path = PROJECT_ROOT / "data" / u.key / "results" / "pipeline_metadata.json"
-        if meta_path.exists():
-            out.append(u)
+        if not meta_path.exists():
+            continue
+        # Belt-and-suspenders: also verify the bulk processed parquets are
+        # real files (not 134-byte LFS pointer stubs). EEG is the only
+        # universe currently shipping any LFS-tracked data; this check is
+        # cheap (stat + tiny read) and runs once per dashboard render.
+        if not _bulk_data_materialised(u):
+            continue
+        out.append(u)
     return out
+
+
+# Magic-bytes check for Git LFS pointer files: real LFS pointers start with
+# "version https://git-lfs.github.com/spec/" and are ~130 bytes. Real parquet
+# files start with the 4-byte "PAR1" magic and are MB+ in size.
+_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/"
+_LFS_POINTER_MAX_SIZE = 1024  # generous cap; real pointers are ~130 B
+
+
+def _is_lfs_pointer_stub(path: Path) -> bool:
+    """Return True iff `path` exists but holds an unresolved Git LFS pointer.
+
+    Streamlit Cloud's default clone does not run `git lfs pull`, so any
+    LFS-tracked file lands as a small text file containing only the pointer
+    metadata. Loaders that `pd.read_parquet()` such a stub crash hard.
+    """
+    try:
+        size = path.stat().st_size
+        if size == 0:
+            return True
+        if size > _LFS_POINTER_MAX_SIZE:
+            return False
+        with open(path, "rb") as f:
+            head = f.read(min(_LFS_POINTER_MAX_SIZE, size))
+        return head.startswith(_LFS_POINTER_PREFIX)
+    except OSError:
+        # If we can't even stat or read the file, treat as broken (skip).
+        return True
+
+
+def _bulk_data_materialised(u: "Universe") -> bool:
+    """Verify a universe's pipeline-required parquets are real files, not LFS
+    pointer stubs. Currently only EEG ships LFS-tracked data; financial
+    universes' files are well under 100 MB and stored as regular git blobs
+    (always materialised after a clone).
+    """
+    processed_dir = PROJECT_ROOT / "data" / u.key / "processed"
+    for fname in ("adj_close.parquet", "log_returns.parquet"):
+        p = processed_dir / fname
+        if not p.exists():
+            return False
+        if _is_lfs_pointer_stub(p):
+            return False
+    return True
 
 
 def get_universe(key: str) -> Universe:
