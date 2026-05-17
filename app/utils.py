@@ -85,6 +85,208 @@ def apply_chart_style(fig, height: int = 420, title: str = "", **overrides):
     return fig
 
 
+# Matrices wider than this render as a server-rasterized PNG (kaleido) shipped
+# via st.image() instead of an interactive Plotly heatmap. Upstream's
+# downsample_matrix_for_display already block-averages to ~97×97 (485-ticker
+# S&P), which gets each heatmap to ~0.5 MB — but the EEE tab stacks 5+
+# heatmaps plus IT artifacts, MI scatter, MST traces, and rolling info-theory
+# panels, easily summing past the ~21 MB browser-side WebSocket frame cap.
+# PNG shrinks each matrix to ~150–500 KB regardless of N, and preserves full
+# per-ticker resolution (no block-averaging on this path).
+N_INTERACTIVE_MATRIX_MAX = 160
+
+
+@st.cache_data(show_spinner=False)
+def _rasterize_matrix_png(
+    matrix_bytes: bytes,
+    shape: tuple[int, int],
+    columns: tuple[str, ...],
+    index: tuple[str, ...],
+    title: str,
+    zmin: float,
+    zmax: float,
+    diverging: bool,
+    colorbar_tickvals: tuple[float, ...] | None,
+    colorbar_ticktext: tuple[str, ...] | None,
+    colorbar_title: str,
+    width: int,
+    height: int,
+) -> bytes:
+    """Build a Plotly heatmap server-side and rasterize to PNG via kaleido.
+
+    Cached on the matrix bytes + render params so re-renders (widget changes,
+    tab switches) don't re-spawn the kaleido subprocess.
+    """
+    z = np.frombuffer(matrix_bytes, dtype=np.float64).reshape(shape)
+    colorscale = "RdBu" if diverging else "Blues"
+    colorbar = dict(thickness=12, len=0.85)
+    if colorbar_title:
+        colorbar["title"] = colorbar_title
+    if colorbar_tickvals is not None and colorbar_ticktext is not None:
+        colorbar["tickvals"] = list(colorbar_tickvals)
+        colorbar["ticktext"] = list(colorbar_ticktext)
+
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=list(columns),
+        y=list(index),
+        zmin=zmin, zmax=zmax,
+        zmid=0 if diverging else None,
+        colorscale=colorscale,
+        reversescale=diverging,
+        showscale=True,
+        colorbar=colorbar,
+        hoverinfo="skip",
+    ))
+    apply_chart_style(
+        fig, height=height,
+        title=title,
+        margin=dict(l=80, r=20, t=40 if title else 10, b=80),
+        xaxis=dict(tickfont=dict(size=6), tickangle=-90, automargin=True,
+                   showticklabels=(shape[0] <= 80)),
+        yaxis=dict(tickfont=dict(size=6), autorange="reversed", automargin=True,
+                   showticklabels=(shape[0] <= 80)),
+        width=width,
+    )
+    return fig.to_image(format="png", width=width, height=height,
+                        scale=2, engine="kaleido")
+
+
+def render_matrix_heatmap(
+    matrix: "pd.DataFrame",
+    *,
+    chart_id: str,
+    filename_base: str = "matrix_heatmap",
+    title_key: str = "",
+    default_title: str = "Matrix heatmap",
+    ordered_tickers: list | None = None,
+    zmin: float = -1.0,
+    zmax: float = 1.0,
+    diverging: bool = True,
+    height: int = 520,
+    hover_label: str = "value",
+    n_interactive_max: int = N_INTERACTIVE_MATRIX_MAX,
+    colorbar_tickvals: tuple[float, ...] | None = None,
+    colorbar_ticktext: tuple[str, ...] | None = None,
+    colorbar_title: str = "",
+) -> None:
+    """Render a square correlation / precision / TE matrix as a heatmap.
+
+    For N <= ``n_interactive_max`` (BIST, EEG) renders an interactive Plotly
+    heatmap with hover, downsampling via ``downsample_matrix_for_display``
+    only when needed. For larger matrices (S&P-500) rasterizes to PNG
+    server-side via kaleido and ships the bytes via ``st.image()`` to keep
+    the WebSocket frame well under the browser's ~21 MB JS-buffer limit.
+    """
+    if matrix.empty:
+        st.info("No data available.")
+        return
+
+    if ordered_tickers:
+        present = [t for t in ordered_tickers if t in matrix.columns and t in matrix.index]
+        if len(present) >= 2:
+            matrix = matrix.loc[present, present]
+
+    n_original = len(matrix)
+
+    if n_original <= n_interactive_max:
+        # Interactive Plotly path — BIST/EEG behavior unchanged. Apply
+        # upstream's downsample helper defensively (no-op below max_dim).
+        display_matrix, block_size = downsample_matrix_for_display(matrix, max_dim=200)
+        n_after = display_matrix.shape[0]
+        colorscale = "RdBu" if diverging else "Blues"
+        if block_size > 1:
+            hovertemplate = (
+                f"block ({block_size}×{block_size}) mean<br>"
+                f"row %{{y}} · col %{{x}}<br>"
+                f"{hover_label}=%{{z:.4f}}<extra></extra>"
+            )
+        else:
+            hovertemplate = f"%{{y}} ↔ %{{x}}<br>{hover_label}=%{{z:.4f}}<extra></extra>"
+        colorbar = dict(thickness=12, len=0.85)
+        if colorbar_title:
+            colorbar["title"] = colorbar_title
+        if colorbar_tickvals is not None and colorbar_ticktext is not None:
+            colorbar["tickvals"] = list(colorbar_tickvals)
+            colorbar["ticktext"] = list(colorbar_ticktext)
+        _show_labels = n_after <= 80
+        fig = go.Figure(go.Heatmap(
+            z=display_matrix.values,
+            x=list(display_matrix.columns),
+            y=list(display_matrix.index),
+            zmin=zmin, zmax=zmax,
+            zmid=0 if diverging else None,
+            colorscale=colorscale,
+            reversescale=diverging,
+            hovertemplate=hovertemplate,
+            colorbar=colorbar,
+        ))
+        apply_chart_style(
+            fig, height=height,
+            xaxis=dict(tickfont=dict(size=8), tickangle=-90, showticklabels=_show_labels),
+            yaxis=dict(tickfont=dict(size=8), autorange="reversed", showticklabels=_show_labels),
+        )
+        render_chart(fig, chart_id=chart_id, filename_base=filename_base,
+                     title_key=title_key, default_title=default_title)
+        return
+
+    # Large-N static PNG path — preserves full N×N resolution. No client-side
+    # plotly bytes; the entire heatmap is server-rendered and shipped as a
+    # ~150–500 KB image.
+    title_text = default_title
+    if title_key:
+        user_title = st.text_input(
+            "Chart title",
+            value=st.session_state.get(f"_title_{title_key}", default_title),
+            key=f"_title_{title_key}",
+            label_visibility="collapsed",
+            placeholder="Add chart title...",
+        )
+        if user_title.strip():
+            title_text = user_title.strip()
+
+    st.caption(
+        f":material/info: {n_original}×{n_original} matrix rendered as a static "
+        "PNG to stay under the WebSocket payload limit. Hover/zoom are disabled "
+        "on this path — per-pair lookups live in the Pair Analysis view."
+    )
+
+    png_width = 1400
+    png_height = 1400
+
+    z_arr = np.ascontiguousarray(matrix.values, dtype=np.float64)
+    try:
+        png_bytes = _rasterize_matrix_png(
+            z_arr.tobytes(),
+            z_arr.shape,
+            tuple(map(str, matrix.columns)),
+            tuple(map(str, matrix.index)),
+            title_text,
+            float(zmin), float(zmax),
+            bool(diverging),
+            colorbar_tickvals,
+            colorbar_ticktext,
+            colorbar_title,
+            png_width, png_height,
+        )
+    except Exception as exc:
+        st.error(f"Failed to rasterize heatmap: {exc}")
+        st.caption("kaleido may be missing — `uv sync` to reinstall.")
+        return
+
+    st.image(png_bytes, use_container_width=True)
+
+    _, dl_col = st.columns([8, 1])
+    with dl_col:
+        st.download_button(
+            ":material/download: PNG",
+            data=png_bytes,
+            file_name=f"{filename_base}.png",
+            mime="image/png",
+            key=f"_dl_matrix_{chart_id}",
+        )
+
+
 def render_chart(
     fig: go.Figure,
     chart_id: str,

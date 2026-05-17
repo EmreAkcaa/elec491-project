@@ -91,7 +91,7 @@ from utils import (  # noqa: E402
     load_rolling_market_stats_precomputed, load_rolling_sector_stats_precomputed,
     draw_event_markers, event_marker_manager_ui,
     get_colors, SECTOR_PALETTE, CHART_LAYOUT, apply_chart_style, inject_custom_css,
-    section_header, render_chart,
+    section_header, render_chart, render_matrix_heatmap,
 )
 from chart_themes import render_theme_sidebar  # noqa: E402
 
@@ -808,50 +808,28 @@ with tab_corr:
                 "Toggle method and clustering reorder above.",
             )
 
-            from utils import downsample_matrix_for_display
-            corr_for_plot, _block = downsample_matrix_for_display(corr_display, max_dim=200)
-            n_tickers = len(corr_for_plot)
-            _hover_lbl = (
-                f"block ({_block}×{_block}) mean of {corr_display.shape[0]} {_cap(_active_universe, 'items_label', 'tickers').lower()}"
-                if _block > 1 else "pair correlation"
+            render_matrix_heatmap(
+                corr_display,
+                chart_id="mo_heatmap",
+                filename_base="correlation_heatmap",
+                title_key="mo_heatmap",
+                default_title="Correlation Matrix",
+                zmin=-1.0, zmax=1.0, diverging=True,
+                height=_heatmap_height(min(len(corr_display), 200)),
+                hover_label="corr",
+                colorbar_title="Corr",
             )
-            fig_heat = go.Figure(data=go.Heatmap(
-                z=corr_for_plot.values,
-                x=corr_for_plot.columns.tolist(),
-                y=corr_for_plot.index.tolist(),
-                colorscale=get_colors().get("heatmap_cs", "RdBu_r"), zmid=0, zmin=-1, zmax=1,
-                hovertemplate=f"{_hover_lbl}<br>(%{{x}}, %{{y}}): %{{z:.3f}}<extra></extra>",
-                colorbar=dict(title="Corr", thickness=15, len=0.6),
-            ))
-            _tf = _heatmap_axis_tickfont(n_tickers)
-            _dt = _heatmap_axis_dtick(n_tickers)
-            _font_size = max(1, _tf)
-            _show_labels = _tf > 0
-            apply_chart_style(fig_heat,
-                height=_heatmap_height(n_tickers),
-                margin=dict(l=0, r=0, t=0, b=0),
-                xaxis=dict(tickfont=dict(size=_font_size), dtick=_dt, showticklabels=_show_labels),
-                yaxis=dict(tickfont=dict(size=_font_size), dtick=_dt, showticklabels=_show_labels, autorange="reversed"),
-            )
-            if _block > 1:
-                st.caption(
-                    f":material/info: {corr_display.shape[0]}×{corr_display.shape[0]} "
-                    f"matrix displayed at {n_tickers}×{n_tickers} via "
-                    f"{_block}×{_block} block-averaging (keeps the wire payload "
-                    "under the websocket cap; hover any cell for the block mean)."
+            with st.expander(
+                f"Download full-resolution matrix as CSV "
+                f"({corr_display.shape[0]}×{corr_display.shape[0]})"
+            ):
+                st.download_button(
+                    "Download CSV",
+                    data=corr_display.to_csv().encode("utf-8"),
+                    file_name=f"correlation_{_active_universe.key}.csv",
+                    mime="text/csv",
+                    key="mo_heatmap_csv_dl",
                 )
-                with st.expander(
-                    "Download full-resolution matrix as CSV "
-                    f"({corr_display.shape[0]}×{corr_display.shape[0]})"
-                ):
-                    st.download_button(
-                        "Download CSV",
-                        data=corr_display.to_csv().encode("utf-8"),
-                        file_name=f"correlation_{_active_universe.key}.csv",
-                        mime="text/csv",
-                    )
-            render_chart(fig_heat, chart_id="mo_heatmap", filename_base="correlation_heatmap",
-                         title_key="mo_heatmap", default_title="Correlation Matrix")
 
     # ── Sub-tab: Point-in-Time Correlation Snapshot ────────────────────────
     with _corr_pit_tab:
@@ -910,39 +888,17 @@ with tab_corr:
                     pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
                     pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
 
-                    from utils import downsample_matrix_for_display
-                    pit_for_plot, _pit_block = downsample_matrix_for_display(pit_display, max_dim=200)
-                    n_pit = len(pit_for_plot)
-                    _pit_hover = (
-                        f"block ({_pit_block}×{_pit_block}) mean"
-                        if _pit_block > 1 else "pair correlation"
+                    render_matrix_heatmap(
+                        pit_display,
+                        chart_id="mo_pit_heatmap",
+                        filename_base="pit_correlation",
+                        title_key="mo_pit_heatmap",
+                        default_title="Point-in-Time Correlation",
+                        zmin=-1.0, zmax=1.0, diverging=True,
+                        height=_heatmap_height(min(len(pit_display), 200)),
+                        hover_label="corr",
+                        colorbar_title="Corr",
                     )
-                    fig_pit = go.Figure(data=go.Heatmap(
-                        z=pit_for_plot.values,
-                        x=pit_for_plot.columns.tolist(),
-                        y=pit_for_plot.index.tolist(),
-                        colorscale=get_colors().get("heatmap_cs", "RdBu_r"), zmid=0, zmin=-1, zmax=1,
-                        hovertemplate=f"{_pit_hover}<br>(%{{x}}, %{{y}}): %{{z:.3f}}<extra></extra>",
-                        colorbar=dict(title="Corr", thickness=15, len=0.6),
-                    ))
-                    _tf_p = _heatmap_axis_tickfont(n_pit)
-                    _dt_p = _heatmap_axis_dtick(n_pit)
-                    _font_size_p = max(1, _tf_p)
-                    _show_labels_p = _tf_p > 0
-                    apply_chart_style(fig_pit,
-                        height=_heatmap_height(n_pit),
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        xaxis=dict(tickfont=dict(size=_font_size_p), dtick=_dt_p, showticklabels=_show_labels_p),
-                        yaxis=dict(tickfont=dict(size=_font_size_p), dtick=_dt_p, showticklabels=_show_labels_p, autorange="reversed"),
-                    )
-                    if _pit_block > 1:
-                        st.caption(
-                            f":material/info: PIT matrix displayed at "
-                            f"{n_pit}×{n_pit} via {_pit_block}×{_pit_block} "
-                            "block-averaging for performance."
-                        )
-                    render_chart(fig_pit, chart_id="mo_pit_heatmap", filename_base="pit_correlation",
-                                 title_key="mo_pit_heatmap", default_title="Point-in-Time Correlation")
                 else:
                     st.warning("Not enough data for the selected date and window size.")
 

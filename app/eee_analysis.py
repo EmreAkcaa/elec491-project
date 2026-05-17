@@ -15,6 +15,7 @@ except ImportError:
 
 from utils import (
     get_colors, SECTOR_PALETTE, apply_chart_style, section_header, render_chart,
+    render_matrix_heatmap,
     load_eigenvalue_spectrum, load_denoised_corr, load_denoised_mst_edges,
     load_denoised_mst_metrics,
     load_mst_edges, load_mst_metrics, load_batch_corr,
@@ -398,16 +399,15 @@ def render_rmt(sector_map: dict, *, u=None):
         st.markdown("**Denoised Correlation Matrix** — eigenvalues outside the MP band reconstructed; noise eigenvalues replaced with their mean.")
         denoised = load_denoised_corr()
         order = load_dendrogram_order()
-        fig_den = _plot_matrix_heatmap(
-            denoised, order,
-            zmin=-1.0, zmax=1.0, diverging=True,
-            height=520, hover_label="ρ (denoised)",
-        )
-        render_chart(
-            fig_den, chart_id="rmt_denoised_heatmap",
+        render_matrix_heatmap(
+            denoised,
+            chart_id="rmt_denoised_heatmap",
             filename_base="rmt_denoised_corr_heatmap",
             title_key="rmt_den_hm",
             default_title="Denoised correlation heatmap (ordered by dendrogram leaves)",
+            ordered_tickers=order,
+            zmin=-1.0, zmax=1.0, diverging=True,
+            height=520, hover_label="ρ (denoised)",
         )
 
 
@@ -479,16 +479,15 @@ def render_glasso(sector_map: dict, *, u=None):
                 # Zero diagonal so it doesn't dominate the colorscale
                 pc_display = partial.copy()
                 np.fill_diagonal(pc_display.values, 0.0)
-                fig_pc = _plot_matrix_heatmap(
-                    pc_display, order,
-                    zmin=-0.3, zmax=0.3, diverging=True,
-                    height=460, hover_label="partial ρ",
-                )
-                render_chart(
-                    fig_pc, chart_id="glasso_partial_heatmap",
+                render_matrix_heatmap(
+                    pc_display,
+                    chart_id="glasso_partial_heatmap",
                     filename_base="glasso_partial_corr_heatmap",
                     title_key="glasso_pc_hm",
                     default_title="Partial correlation heatmap",
+                    ordered_tickers=order,
+                    zmin=-0.3, zmax=0.3, diverging=True,
+                    height=460, hover_label="partial ρ",
                 )
             else:
                 st.info("Run the pipeline to generate the partial correlation matrix.")
@@ -503,25 +502,20 @@ def render_glasso(sector_map: dict, *, u=None):
                 np.fill_diagonal(prec_abs.values, 0.0)
                 threshold = 1e-3
                 sparsity = (prec_abs > threshold).astype(float)
-                fig_prec = _plot_matrix_heatmap(
-                    sparsity, order,
-                    zmin=0.0, zmax=1.0, diverging=False,
-                    height=460, hover_label="|Θ| > 1e-3",
-                )
-                # Override colorbar tick labels to show binary semantics
-                fig_prec.update_traces(colorbar=dict(
-                    thickness=12, len=0.85,
-                    tickvals=[0, 1],
-                    ticktext=["zero", "non-zero"],
-                ))
                 n_offdiag = sparsity.values.sum() // 2  # symmetric
                 total_offdiag = (sparsity.shape[0] * (sparsity.shape[0] - 1)) // 2
                 density = (n_offdiag / total_offdiag * 100) if total_offdiag else 0.0
-                render_chart(
-                    fig_prec, chart_id="glasso_precision_heatmap",
+                render_matrix_heatmap(
+                    sparsity,
+                    chart_id="glasso_precision_heatmap",
                     filename_base="glasso_precision_sparsity",
                     title_key="glasso_prec_hm",
                     default_title=f"Precision matrix sparsity ({int(n_offdiag)} edges, {density:.1f}% density)",
+                    ordered_tickers=order,
+                    zmin=0.0, zmax=1.0, diverging=False,
+                    height=460, hover_label="|Θ| > 1e-3",
+                    colorbar_tickvals=(0.0, 1.0),
+                    colorbar_ticktext=("zero", "non-zero"),
                 )
             else:
                 st.info("Run the pipeline to generate the precision matrix.")
@@ -800,16 +794,15 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
             order = load_dendrogram_order()
             v = float(np.nanmax(np.abs(net_te.to_numpy()))) if net_te.size else 1.0
             v = max(v, 1e-6)
-            fig_net = _plot_matrix_heatmap(
-                net_te, order,
-                zmin=-v, zmax=v, diverging=True,
-                height=520, hover_label="net TE",
-            )
-            render_chart(
-                fig_net, chart_id="te_net_heatmap",
+            render_matrix_heatmap(
+                net_te,
+                chart_id="te_net_heatmap",
                 filename_base="te_net_flow_heatmap",
                 title_key="te_net_hm",
                 default_title="Net transfer-entropy flow (red = source, blue = sink)",
+                ordered_tickers=order,
+                zmin=-v, zmax=v, diverging=True,
+                height=520, hover_label="net TE",
             )
         else:
             st.info("Run the pipeline to generate the net transfer-entropy matrix.")
@@ -1210,17 +1203,16 @@ def render_info_theory(sector_map: dict, *, u=None):
                 off = mi.copy()
                 np.fill_diagonal(off.values, np.nan)
                 order = load_dendrogram_order()
-                fig_mi = _plot_matrix_heatmap(
-                    off, order,
-                    zmin=0.0, zmax=float(np.nanpercentile(off.values, 99)),
-                    diverging=False, height=440,
-                    hover_label="MI (bits)",
-                )
-                render_chart(
-                    fig_mi, chart_id="it_mi_heatmap",
+                render_matrix_heatmap(
+                    off,
+                    chart_id="it_mi_heatmap",
                     filename_base="it_mi_heatmap",
                     title_key="it_mi_heatmap",
                     default_title="Pairwise mutual information (bits, off-diagonal only)",
+                    ordered_tickers=order,
+                    zmin=0.0, zmax=float(np.nanpercentile(off.values, 99)),
+                    diverging=False, height=440,
+                    hover_label="MI (bits)",
                 )
 
             with colb2:
