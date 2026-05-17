@@ -1,0 +1,36 @@
+# Streamlit reads this from $CWD/.streamlit/config.toml.
+# HF Spaces and `uv run streamlit run app/dashboard.py` both invoke from the
+# repo root, so this file is the canonical config. A second copy lived at
+# `app/.streamlit/config.toml` for months and was silently ignored — that
+# file has been removed to avoid drift. If you need a config when invoking
+# `streamlit run` from inside app/, copy this file under app/.streamlit/.
+
+[theme]
+primaryColor = "#4361EE"
+backgroundColor = "#FAFBFC"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#2B2D42"
+font = "sans serif"
+
+[server]
+headless = true
+
+# HF Spaces wraps the dashboard in an iframe at huggingface.co/spaces/...
+# while the WebSocket connects to *.hf.space — a cross-origin context.
+# With XSRF + CORS at their defaults, the handshake fails: the React app
+# never receives a NewSession message, then logs "Tried to use SessionInfo
+# before it was initialized" and "Bad message format" on every subsequent
+# action. Disabling both unblocks the iframe path. There is no real
+# security loss here — the Space is public and stateless.
+enableCORS = false
+enableXsrfProtection = false
+
+# Bumped from the 200 MB default for the 485-ticker S&P heatmap stack +
+# rolling info-theory traces, which can exceed it. The browser-side cap
+# (~22 MB JS frame buffer) is the actually-binding limit and is addressed
+# by app/utils.py:render_matrix_heatmap; this is just server-side headroom.
+maxMessageSize = 500
+maxUploadSize = 500
+
+[browser]
+gatherUsageStats = false
