@@ -95,12 +95,11 @@ from utils import (  # noqa: E402
 )
 from chart_themes import render_theme_sidebar  # noqa: E402
 
-# Defensive import — Streamlit Cloud's hot-reload sometimes caches a stale
-# universe_registry module across deploys. Force a clean reload so dashboard.py
-# always sees the latest Universe dataclass (Phase I capability flags etc.).
-import importlib                                 # noqa: E402
-import universe_registry as _ur_mod              # noqa: E402
-importlib.reload(_ur_mod)
+# HF Spaces rebuilds the container on every deploy, so the stale-module cache
+# problem that motivated importlib.reload on Streamlit Cloud no longer applies.
+# Removing the reload eliminates Universe class identity churn across reruns —
+# previously a contributor to "Tried to use SessionInfo before it was
+# initialized" warnings in the server logs (PR #23).
 from universe_registry import available_universes, get_universe  # noqa: E402
 
 
@@ -176,10 +175,19 @@ _AVAIL_KEYS      = [u.key for u in _AVAIL_UNIVERSES] or ["bist"]
 _BOOT_KEY        = os.environ.get("DASHBOARD_UNIVERSE", "bist")
 if _BOOT_KEY not in _AVAIL_KEYS:
     _BOOT_KEY = _AVAIL_KEYS[0]
-if "universe" not in st.session_state or st.session_state["universe"] not in _AVAIL_KEYS:
-    st.session_state["universe"] = _BOOT_KEY
+# Defensive: HF Spaces health-probes and reconnecting browser tabs can invoke
+# this script before Streamlit has a full session context. Touching
+# session_state then raises "Tried to use SessionInfo before it was
+# initialized". Fall back to the boot key without crashing — the user's real
+# request will re-run the script with a proper session attached.
+try:
+    if "universe" not in st.session_state or st.session_state["universe"] not in _AVAIL_KEYS:
+        st.session_state["universe"] = _BOOT_KEY
+    _active_universe_key = st.session_state["universe"]
+except Exception:  # noqa: BLE001 — SessionInfo not yet initialised
+    _active_universe_key = _BOOT_KEY
 
-_active_universe = get_universe(st.session_state["universe"])
+_active_universe = get_universe(_active_universe_key)
 
 st.set_page_config(
     page_title=f"StoNeCoAl — {_cap(_active_universe, 'short_label', 'BIST 100')}",
@@ -472,47 +480,88 @@ with tab_data:
                         ),
                     )
 
-    # ── Section 2: Descriptive Stats & Return Distribution ──────────────────
+    # ── Section 2: Descriptive Stats & Distribution ─────────────────────────
     with st.container(border=True):
-        section_header(
-            "Descriptive Statistics & Returns",
-            "Left: per-stock risk-return metrics from daily log returns. "
-            "Right: histogram for a selected ticker — look for fat tails and skewness.",
-        )
+        _is_finance     = _cap(_active_universe, 'domain', 'finance') == "finance"
+        _item_label     = _cap(_active_universe, 'item_label', 'Ticker')
+        _items_label    = _cap(_active_universe, 'items_label', 'Tickers')
+        _series_label   = _cap(_active_universe, 'series_label', 'Log return')
+        _series_units   = _cap(_active_universe, 'series_units', '')
+        _series_axis    = f"{_series_label} ({_series_units})" if _series_units else _series_label
+
+        if _is_finance:
+            section_header(
+                "Descriptive Statistics & Returns",
+                f"Left: per-{_item_label.lower()} risk-return metrics from daily log returns. "
+                f"Right: histogram for a selected {_item_label.lower()} — look for fat tails and skewness.",
+            )
+        else:
+            section_header(
+                f"Descriptive Statistics & {_series_label} Distribution",
+                f"Left: per-{_item_label.lower()} distribution shape (skewness, kurtosis, extremes). "
+                f"Annualised return / volatility columns are hidden — they're a financial-only construct. "
+                f"Right: amplitude histogram for a selected {_item_label.lower()}.",
+            )
 
         col_stats, col_hist = st.columns([3, 2])
 
         with col_stats:
             summary = load_summary_stats()
-            display_cols = [
-                "ticker", "count", "annualized_return", "annualized_vol",
-                "skewness", "kurtosis", "min_return", "max_return",
-            ]
-            display_df = summary[display_cols].copy()
-            for c in ["annualized_return", "annualized_vol", "min_return", "max_return"]:
-                display_df[c] = display_df[c].map(lambda x: f"{x:.4f}")
+            if _is_finance:
+                display_cols = [
+                    "ticker", "count", "annualized_return", "annualized_vol",
+                    "skewness", "kurtosis", "min_return", "max_return",
+                ]
+                float4_cols = ["annualized_return", "annualized_vol", "min_return", "max_return"]
+            else:
+                # Non-financial (EEG): drop "annualized_*" — meaningless on
+                # 160 Hz sampled voltages. Keep distribution-shape metrics +
+                # extremes.
+                display_cols = [
+                    "ticker", "count", "skewness", "kurtosis", "min_return", "max_return",
+                ]
+                float4_cols = ["min_return", "max_return"]
+            display_df = summary[[c for c in display_cols if c in summary.columns]].copy()
+            for c in float4_cols:
+                if c in display_df.columns:
+                    display_df[c] = display_df[c].map(lambda x: f"{x:.4f}")
             for c in ["skewness", "kurtosis"]:
-                display_df[c] = display_df[c].map(lambda x: f"{x:.2f}")
+                if c in display_df.columns:
+                    display_df[c] = display_df[c].map(lambda x: f"{x:.2f}")
+            # Rename column headers to the active universe's vocabulary.
+            _rename = {"ticker": _item_label}
+            if not _is_finance:
+                _rename.update({
+                    "min_return": f"min ({_series_units})" if _series_units else "min",
+                    "max_return": f"max ({_series_units})" if _series_units else "max",
+                })
+            display_df = display_df.rename(columns=_rename)
             st.dataframe(display_df, width="stretch", height=420)
 
         with col_hist:
-            selected_ticker = st.selectbox("Ticker", sorted(returns.columns.tolist()))
+            selected_ticker = st.selectbox(
+                _item_label, sorted(returns.columns.tolist()), key="mo_hist_pick",
+            )
             if selected_ticker:
                 ticker_returns = returns[selected_ticker].dropna()
                 fig_hist = go.Figure()
                 fig_hist.add_trace(go.Histogram(
                     x=ticker_returns, nbinsx=80,
                     marker_color=get_colors()["primary"], opacity=0.75,
-                    hovertemplate="Return: %{x:.4f}<br>Count: %{y}<extra></extra>",
+                    hovertemplate=f"{_series_label}: %{{x:.4f}}<br>Count: %{{y}}<extra></extra>",
                 ))
                 _mean_r = ticker_returns.mean()
                 fig_hist.add_vline(x=_mean_r, line_dash="dash", line_color=get_colors()["secondary"],
                                    annotation_text=f"Mean: {_mean_r:.4f}", annotation_font_size=10)
-                apply_chart_style(fig_hist, height=420, xaxis_title="Daily Log Return",
-                                  yaxis_title="Frequency", showlegend=False,
-                                  margin=dict(l=0, r=0, t=10, b=0))
-                render_chart(fig_hist, chart_id="mo_hist", filename_base="return_distribution",
-                             title_key="mo_hist", default_title="Return Distribution")
+                apply_chart_style(
+                    fig_hist, height=420,
+                    xaxis_title=("Daily Log Return" if _is_finance else _series_axis),
+                    yaxis_title="Frequency", showlegend=False,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                )
+                _hist_title = "Return Distribution" if _is_finance else f"{_series_label} Distribution"
+                render_chart(fig_hist, chart_id="mo_hist", filename_base="distribution",
+                             title_key="mo_hist", default_title=_hist_title)
 
     # ── Section 3: Return Anomalies (financial universes only) ──────────────
     if _cap(_active_universe, 'has_anomaly_detection', True):
@@ -598,9 +647,12 @@ with tab_data:
                       default_title=f"Anomaly Timeline ({len(anom_view)} flagged events)",
                   )
 
-    # ── Section 9: Market Summary ───────────────────────────────────────────
+    # ── Section 9: Universe-wide correlation summary ────────────────────────
     with st.container(border=True):
-        section_header("Market Summary")
+        section_header(
+            "Market Summary" if _cap(_active_universe, 'domain', 'finance') == "finance"
+            else "Network Summary"
+        )
         if market_summary:
             cols = st.columns(5)
             cols[0].metric("Avg Pairwise Corr", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
@@ -623,7 +675,9 @@ with tab_corr:
             key="heat_method",
         )
     with _heat_c2:
-        use_clustering_order = st.checkbox("Reorder by hierarchical clustering", value=True)
+        use_clustering_order = st.checkbox(
+            "Reorder by hierarchical clustering", value=True, key="mo_corr_reorder",
+        )
 
     with st.status("Computing correlation matrix...", expanded=False) as _corr_st:
         corr = _compute_corr(_returns_json, dynamic_min_periods, heat_method)
@@ -642,8 +696,13 @@ with tab_corr:
     # ── Sub-tab: Full-period heatmap ──────────────────────────────────────
     with _corr_heatmap_tab:
         with st.container(border=True):
+            _series_lower = _cap(_active_universe, 'series_label', 'Log return').lower()
+            _samp_unit = (
+                "trading days" if _cap(_active_universe, 'domain', 'finance') == "finance"
+                else "samples"
+            )
             st.caption(
-                "Pairwise correlation matrix of daily log returns. "
+                f"Pairwise correlation matrix of {_series_lower}s across all {_samp_unit} in the window. "
                 "Toggle method and clustering reorder above.",
             )
 
@@ -668,15 +727,19 @@ with tab_corr:
     # ── Sub-tab: Point-in-Time Correlation Snapshot ────────────────────────
     with _corr_pit_tab:
         with st.container(border=True):
+            _is_finance_pit = _cap(_active_universe, 'domain', 'finance') == "finance"
             st.caption(
                 "Slide to a specific date to see the correlation matrix for that rolling window. "
-                "Useful for comparing market structure during crises vs calm periods."
+                + ("Useful for comparing market structure during crises vs calm periods."
+                   if _is_finance_pit else
+                   "Useful for tracking how network structure shifts across the recording.")
             )
 
             pit_c1, pit_c2, pit_c3 = st.columns(3)
             with pit_c1:
+                _win_label = "Window (days)" if _is_finance_pit else "Window (samples)"
                 pit_window = st.selectbox(
-                    "Window (days)", [60, 120, 252], index=2, key="pit_window",
+                    _win_label, [60, 120, 252], index=2, key="pit_window",
                 )
             with pit_c2:
                 pit_method = st.selectbox(
@@ -710,7 +773,10 @@ with tab_corr:
                     pit_vals = pit_vals[~np.isnan(pit_vals)]
 
                     pm1, pm2, pm3, pm4 = st.columns(4)
-                    pm1.metric("Tickers in Window", len(pit_display))
+                    pm1.metric(
+                        f"{_cap(_active_universe, 'items_label', 'Tickers')} in Window",
+                        len(pit_display),
+                    )
                     pm2.metric("Mean Corr", f"{np.mean(pit_vals):.4f}")
                     pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
                     pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
@@ -744,11 +810,15 @@ with tab_cluster:
 
     # ── Section 4: Dendrogram & Cluster Assignments ─────────────────────────
     with st.container(border=True):
+        _items_cl   = _cap(_active_universe, 'items_label', 'Tickers')
+        _item_cl    = _cap(_active_universe, 'item_label', 'Ticker')
+        _sector_cl  = _cap(_active_universe, 'sector_label', 'Sector')
+        _series_cl  = _cap(_active_universe, 'series_label', 'log return').lower()
         section_header(
-            "Hierarchical Clustering & Sector Validation",
-            "Dendrogram built from d = sqrt(2(1-rho)). Stocks merging at lower heights "
-            "have more similar return dynamics. Sector validation metrics (ARI, NMI) measure "
-            "how well statistical clusters align with the universe's official sector classifications.",
+            f"Hierarchical Clustering & {_sector_cl} Validation",
+            f"Dendrogram built from d = sqrt(2(1-rho)). {_items_cl} merging at lower heights "
+            f"have more similar {_series_cl} dynamics. Validation metrics (ARI, NMI) measure "
+            f"how well statistical clusters align with the universe's {_sector_cl.lower()} labels.",
         )
 
         col_dendro, col_clusters = st.columns([3, 2])
@@ -785,7 +855,7 @@ with tab_cluster:
                 st.dataframe(display_clusters, width="stretch", height=350, hide_index=True)
 
                 if "sector" in cluster_df.columns:
-                    st.markdown("**Cluster vs Sector**")
+                    st.markdown(f"**Cluster vs {_sector_cl}**")
                     crosstab = pd.crosstab(cluster_df["cluster_id"], cluster_df["sector"])
                     st.dataframe(crosstab, width="stretch")
 
@@ -801,15 +871,19 @@ with tab_cluster:
                         ari = adjusted_rand_score(sector_labels, cluster_labels)
                         nmi = normalized_mutual_info_score(sector_labels, cluster_labels)
 
-                        st.markdown("**Sector Validation**")
+                        st.markdown(f"**{_sector_cl} Validation**")
                         st.caption(
-                            "How well do statistical clusters match the universe's official "
-                            "sector classifications? ARI and NMI range from 0 (random) to 1 (perfect match)."
+                            f"How well do statistical clusters match the universe's "
+                            f"{_sector_cl.lower()} labels? ARI and NMI range from 0 (random) to 1 (perfect match)."
                         )
                         sv1, sv2, sv3 = st.columns(3)
                         sv1.metric("Adjusted Rand Index", f"{ari:.3f}")
                         sv2.metric("Normalized Mutual Info", f"{nmi:.3f}")
-                        sv3.metric("Sectors Represented", f"{cluster_df['sector'].nunique()}")
+                        sv3.metric(
+                            f"{_sector_cl}s Represented" if not _sector_cl.endswith("s")
+                            else f"{_sector_cl} Represented",
+                            f"{cluster_df['sector'].nunique()}",
+                        )
 
                         # Universe-appropriate sanity-check banners. The
                         # groups come from the Universe.sanity_check_groups
@@ -847,8 +921,9 @@ with tab_cluster:
 
                         st.markdown("**Cluster Purity**")
                         st.caption(
-                            "Purity = fraction of the dominant sector within each cluster. "
-                            "A purity of 1.0 means every stock in the cluster belongs to the same sector."
+                            f"Purity = fraction of the dominant {_sector_cl.lower()} within each cluster. "
+                            f"A purity of 1.0 means every {_item_cl.lower()} in the cluster shares the same "
+                            f"{_sector_cl.lower()}."
                         )
                         purity_rows = []
                         for cid, grp in cluster_df.groupby("cluster_id"):
@@ -858,7 +933,7 @@ with tab_cluster:
                             purity_rows.append({
                                 "Cluster": cid,
                                 "Size": len(grp),
-                                "Dominant Sector": dominant,
+                                f"Dominant {_sector_cl}": dominant,
                                 "Purity": f"{purity:.2f}",
                                 "Members": ", ".join(sorted(grp["ticker"].tolist())),
                             })
@@ -869,10 +944,15 @@ with tab_cluster:
 
     # ── Section 5: MST Network ──────────────────────────────────────────────
     with st.container(border=True):
+        _items_mst    = _cap(_active_universe, 'items_label', 'Tickers')
+        _sector_mst   = _cap(_active_universe, 'sector_label', 'Sector')
+        _domain_mst   = _cap(_active_universe, 'domain', 'finance')
+        _bridge_scope = "across the market" if _domain_mst == "finance" else "across the network"
         section_header(
             "Minimum Spanning Tree",
-            "The MST reveals the backbone correlation structure. Nodes are colored by "
-            "sector and sized by degree. Hub stocks act as bridges across the market.",
+            f"The MST reveals the backbone correlation structure. Nodes are colored by "
+            f"{_sector_mst.lower()} and sized by degree. Hub {_items_mst.lower()} act as bridges "
+            f"{_bridge_scope}.",
         )
 
         mst_edges = load_mst_edges()
@@ -917,7 +997,7 @@ with tab_cluster:
                     node_y.append(y)
                     sec = sector_map.get(node, "Unknown")
                     deg = degree_map.get(node, 1)
-                    node_text.append(f"<b>{node}</b><br>Sector: {sec}<br>Degree: {deg}")
+                    node_text.append(f"<b>{node}</b><br>{_sector_mst}: {sec}<br>Degree: {deg}")
                     node_color.append(color_map.get(sec, get_colors()["muted"]))
                     node_size.append(14 + deg * 6)
 
@@ -957,33 +1037,41 @@ with tab_cluster:
                              title_key="mo_mst", default_title="Minimum Spanning Tree")
 
             with col_mst_table:
-                st.markdown("**Hub Stocks (by degree)**")
+                st.markdown(f"**Hub {_items_mst} (by degree)**")
                 display_metrics = mst_metrics.copy()
                 display_metrics["betweenness_centrality"] = display_metrics[
                     "betweenness_centrality"
                 ].map(lambda x: f"{x:.4f}")
                 st.dataframe(display_metrics, width="stretch", height=500, hide_index=True)
 
-                st.markdown("---")
-                st.markdown("**Quick Jump to Pair Analysis**")
-                _hub_tickers = mst_metrics.head(10)["ticker"].tolist()
-                _sel = st.selectbox("Select hub stock", _hub_tickers, key="mst_hub_jump")
-                if st.button("Analyze this pair", key="mst_jump_btn"):
-                    st.session_state["pa_ticker_a"] = _sel
-                    # Ensure ticker_b is set AND differs from ticker_a,
-                    # otherwise Pair Analysis lands on the same-ticker
-                    # degraded state. (The collision-resolver in
-                    # pair_analysis.render will also catch this, but
-                    # picking a meaningful partner here avoids the
-                    # auto-snap surprise for the user.)
-                    _existing_b = st.session_state.get("pa_ticker_b")
-                    if _existing_b is None or _existing_b == _sel:
-                        st.session_state["pa_ticker_b"] = next(
-                            (t for t in _hub_tickers if t != _sel),
-                            _sel,
-                        )
-                    st.session_state["_goto_pair_analysis"] = True
-                    st.rerun()
+                # Quick-jump to Pair Analysis is finance-only — the EEG
+                # universe doesn't have a pair-trading concept (no spread,
+                # no Z-score signal, etc.), so suppress the whole block
+                # when has_pair_trading=False.
+                if _cap(_active_universe, 'has_pair_trading', True):
+                    st.markdown("---")
+                    st.markdown("**Quick Jump to Pair Analysis**")
+                    _hub_tickers = mst_metrics.head(10)["ticker"].tolist()
+                    _sel = st.selectbox(
+                        f"Select hub {_cap(_active_universe, 'item_label', 'Ticker').lower()}",
+                        _hub_tickers, key="mst_hub_jump",
+                    )
+                    if st.button("Analyze this pair", key="mst_jump_btn"):
+                        st.session_state["pa_ticker_a"] = _sel
+                        # Ensure ticker_b is set AND differs from ticker_a,
+                        # otherwise Pair Analysis lands on the same-ticker
+                        # degraded state. (The collision-resolver in
+                        # pair_analysis.render will also catch this, but
+                        # picking a meaningful partner here avoids the
+                        # auto-snap surprise for the user.)
+                        _existing_b = st.session_state.get("pa_ticker_b")
+                        if _existing_b is None or _existing_b == _sel:
+                            st.session_state["pa_ticker_b"] = next(
+                                (t for t in _hub_tickers if t != _sel),
+                                _sel,
+                            )
+                        st.session_state["_goto_pair_analysis"] = True
+                        st.rerun()
 
         elif not HAS_NETWORKX:
             st.warning("Install `networkx` to display the MST network graph (`pip install networkx`).")
@@ -1018,7 +1106,15 @@ with tab_rolling:
         rc_expanding = rc_window_type == "expanding"
         show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
 
-        tab_market, tab_pair, tab_sector = st.tabs(["Market Overview", "Pair Correlation", "Sector Breakdown"])
+        _sector_rc = _cap(_active_universe, 'sector_label', 'Sector')
+        _ra_market_label = (
+            "Market Overview"
+            if _cap(_active_universe, 'domain', 'finance') == "finance"
+            else "Network Overview"
+        )
+        tab_market, tab_pair, tab_sector = st.tabs(
+            [_ra_market_label, "Pair Correlation", f"{_sector_rc} Breakdown"]
+        )
 
         # ── Sub-Tab 1: Market correlation over time ─────────────────────────
         with tab_market:
@@ -1168,11 +1264,14 @@ with tab_rolling:
                 render_chart(fig_pair, chart_id="mo_pair_corr", filename_base="pair_correlation",
                              title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
 
-                if st.button(f"Open full Pair Analysis for {pair_a} / {pair_b}", key="pair_deep_dive"):
-                    st.session_state["pa_ticker_a"] = pair_a
-                    st.session_state["pa_ticker_b"] = pair_b
-                    st.session_state["_goto_pair_analysis"] = True
-                    st.rerun()
+                # Pair Analysis deep-dive button only when the universe
+                # actually has a Pair Analysis nav target (financial only).
+                if _cap(_active_universe, 'has_pair_trading', True):
+                    if st.button(f"Open full Pair Analysis for {pair_a} / {pair_b}", key="pair_deep_dive"):
+                        st.session_state["pa_ticker_a"] = pair_a
+                        st.session_state["pa_ticker_b"] = pair_b
+                        st.session_state["_goto_pair_analysis"] = True
+                        st.rerun()
 
                 if pair_a in prices_window.columns and pair_b in prices_window.columns:
                     pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
@@ -1229,19 +1328,20 @@ with tab_rolling:
                     fig_sec = go.Figure()
                     fig_sec.add_trace(go.Scatter(
                         x=sector_stats.index, y=sector_stats["intra_sector_avg"],
-                        mode="lines", name="Intra-Sector Avg",
+                        mode="lines", name=f"Intra-{_sector_rc} Avg",
                         line=dict(color=get_colors()["secondary"], width=2.2),
                     ))
                     fig_sec.add_trace(go.Scatter(
                         x=sector_stats.index, y=sector_stats["inter_sector_avg"],
-                        mode="lines", name="Inter-Sector Avg",
+                        mode="lines", name=f"Inter-{_sector_rc} Avg",
                         line=dict(color=get_colors()["primary"], width=2.2),
                     ))
                     draw_event_markers(fig_sec, show_defaults, custom_events,
                                        sector_stats.index.min(), sector_stats.index.max())
                     apply_chart_style(fig_sec, height=420, yaxis_title="Average Correlation")
                     render_chart(fig_sec, chart_id="mo_sector_corr", filename_base="sector_correlation",
-                                 title_key="mo_sector_corr", default_title="Sector Correlation")
+                                 title_key="mo_sector_corr",
+                                 default_title=f"{_sector_rc} Correlation")
 
                     intra_cols = [c for c in sector_stats.columns
                                   if c.startswith("intra_") and c != "intra_sector_avg"]
@@ -1256,13 +1356,14 @@ with tab_rolling:
                                     line=dict(color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)], width=1.5),
                                 ))
                             apply_chart_style(fig_per, height=420,
-                                              yaxis_title="Intra-Sector Correlation")
+                                              yaxis_title=f"Intra-{_sector_rc} Correlation")
                             render_chart(fig_per, chart_id="mo_per_sector", filename_base="per_sector_corr",
-                                         title_key="mo_per_sector", default_title="Per-Sector Correlation")
+                                         title_key="mo_per_sector",
+                                         default_title=f"Per-{_sector_rc} Correlation")
                 else:
-                    st.warning("Not enough data for sector stats with this window.")
+                    st.warning(f"Not enough data for {_sector_rc.lower()} stats with this window.")
             else:
-                st.info("Run the clustering pipeline to enable sector breakdown.")
+                st.info(f"Run the clustering pipeline to enable {_sector_rc.lower()} breakdown.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
