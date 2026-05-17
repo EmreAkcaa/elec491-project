@@ -26,6 +26,50 @@ for _p in (str(_PROJECT_ROOT), str(_APP_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EEG bulk-data materialisation
+# ──────────────────────────────────────────────────────────────────────────────
+# HF Spaces caps per-repo storage at 1 GB. Our 2 EEG processed parquets are
+# 308 MB each — too big to ship in the Space repo. The canonical HF workaround
+# is to put bulk data in a companion Dataset repo (50 GB per file) and have
+# the Space download it on first launch.
+#
+# Local dev: parquets already on disk → no-op early-return.
+# HF Spaces:  files absent → snapshot_download from EEG_DATASET_REPO once;
+#             cached under ~/.cache/huggingface on subsequent reruns.
+# Fallback:   if the download fails, EEG silently drops from the sidebar
+#             selector (available_universes() detects the absence and filters).
+def _materialise_eeg_data_if_needed() -> None:
+    eeg_dir = _PROJECT_ROOT / "data" / "eeg_motor_left_right" / "processed"
+    sentinel = eeg_dir / "log_returns.parquet"
+    if sentinel.exists() and sentinel.stat().st_size > 1_000_000:
+        return  # local dev, or already-cached HF Spaces rebuild
+
+    import os as _os
+    repo_id = _os.environ.get("EEG_DATASET_REPO", "FlyingSubmarine33/stonecoal-eeg")
+    print(f"[EEG] Bulk parquets not on disk; fetching from dataset repo {repo_id} …")
+    try:
+        from huggingface_hub import snapshot_download
+        eeg_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            local_dir=str(eeg_dir),
+            allow_patterns=["*.parquet", "*.csv"],
+        )
+        print(f"[EEG] Materialised bulk data from {repo_id} into {eeg_dir}")
+    except Exception as exc:  # noqa: BLE001 — best-effort; failure is non-fatal
+        # Don't crash the dashboard — available_universes() will see the
+        # missing files and quietly omit EEG from the sidebar selector.
+        print(f"[EEG] Could not fetch from {repo_id}: {exc}")
+        print(f"[EEG] Dashboard will run with BIST + S&P only. To enable EEG, "
+              f"upload the parquets with: uv run python scripts/upload_eeg_to_hf_dataset.py")
+
+
+_materialise_eeg_data_if_needed()
+
+
 from src.rolling_correlation import (  # noqa: E402
     compute_rolling_market_stats,
     compute_rolling_pair_correlation,

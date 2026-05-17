@@ -15,6 +15,32 @@ comfortably even without the `_downsample_if_oversize` shim.
 
 ---
 
+## Architecture: Space + companion Dataset
+
+HF Spaces has a **hard 1 GB per-repo storage limit** that can't be raised
+even on paid plans. Our 2 EEG processed parquets are 308 MB each (616 MB
+combined) which blows past that on its own.
+
+The canonical HF workaround — and what this project does — is to store the
+bulk data in a separate **Dataset repo** (which allows 50 GB per file) and
+have the Space download it on first launch.
+
+```
+   GitHub repo (this one) ─────► HF Space (UI + code, < 100 MB)
+                                       │
+                                       │ huggingface_hub.snapshot_download() at startup
+                                       ▼
+                              HF Dataset (EEG bulk parquets, ~620 MB)
+```
+
+The Space's `app/dashboard.py:_materialise_eeg_data_if_needed()` runs at
+module top, checks if the EEG parquets are on disk, and downloads them
+from the Dataset repo if missing. After the first download HF caches them
+in `~/.cache/huggingface/` for subsequent reruns.
+
+Local dev is unaffected — the parquets already exist on disk so the
+preload is a fast no-op stat check.
+
 ## One-time setup
 
 ### 1. Create a Hugging Face account
@@ -41,6 +67,38 @@ comfortably even without the `_downsample_if_oversize` shim.
 
 You now have a Git repo at `https://huggingface.co/spaces/<owner>/<spacename>`.
 It's seeded with a hello-world `app.py` you'll overwrite by pushing this repo.
+
+### 4. Create the companion EEG Dataset
+
+- https://huggingface.co/new-dataset
+- **Owner:** same HF username as the Space
+- **Dataset name:** `stonecoal-eeg` (or whatever — but it must match what's
+  in `app/dashboard.py:_materialise_eeg_data_if_needed()` or be overridden
+  via the `EEG_DATASET_REPO` env var)
+- **License:** MIT
+- **Visibility:** **Public** (the Space downloads via the anonymous read
+  endpoint; no token needed at runtime if public)
+- Click **Create dataset**
+
+The Dataset starts empty. You'll fill it in step 5.
+
+### 5. Upload EEG bulk parquets to the Dataset
+
+Run once from the repo root:
+
+```bash
+# Uses HF_DEPLOY_TOKEN env var (or huggingface-cli login fallback) to push
+# the local EEG parquets to the Dataset repo. Takes ~2-3 min for the 616 MB.
+HF_DEPLOY_TOKEN=hf_xxx \
+EEG_DATASET_REPO=FlyingSubmarine33/stonecoal-eeg \
+uv run python scripts/upload_eeg_to_hf_dataset.py
+```
+
+(Re-run any time the EEG pipeline regenerates fresh parquets that you want
+the deployed dashboard to pick up.)
+
+Verify in the browser: https://huggingface.co/datasets/FlyingSubmarine33/stonecoal-eeg
+should list `adj_close.parquet`, `log_returns.parquet`, `coverage_report.csv`.
 
 ---
 

@@ -34,3 +34,9 @@ PyWavelets>=1.6
 # a second requirements file).
 yfinance>=0.2.40
 isyatirimhisse>=2.1
+
+# Hugging Face Hub client — used by app/dashboard.py to fetch the EEG bulk
+# parquets from the companion Dataset repo on first Space launch (the Space
+# repo itself is capped at 1 GB so the parquets live in a separate Dataset).
+# Also used by scripts/upload_eeg_to_hf_dataset.py for the one-time upload.
+huggingface_hub>=0.24
