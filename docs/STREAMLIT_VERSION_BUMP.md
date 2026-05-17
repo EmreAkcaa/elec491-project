@@ -11,9 +11,9 @@ Streamlit is pinned **exactly** in three places, all of which must match:
 
 | Where | What |
 |---|---|
-| `requirements.txt` | `streamlit==1.54.0` |
-| `README.md` YAML | `sdk_version: 1.54.0` |
-| `pyproject.toml` `[project.dependencies]` | `"streamlit==1.54.0"` |
+| `requirements.txt` | `streamlit==1.41.1` |
+| `README.md` YAML | `sdk_version: 1.41.1` |
+| `pyproject.toml` (if present) | `"streamlit==1.41.1"` |
 
 A mismatch means local dev, Streamlit Cloud, and HF Spaces install
 different versions and we end up debugging API-incompatibility bugs in
@@ -115,16 +115,15 @@ in" line below, the migration in the same PR is mandatory.
 
 ### APIs we use (sorted by introduction version)
 
-| API | Min version | Status @ 1.54.0 | Notes |
+| API | Min version | Status @ 1.41.1 | Notes |
 |---|---|---|---|
 | `st.selectbox`, `st.dataframe`, `st.button`, `st.checkbox`, `st.slider`, `st.radio`, `st.text_input`, `st.markdown`, `st.write`, `st.metric`, `st.columns`, `st.tabs`, `st.expander`, `st.form`, `st.form_submit_button`, `st.date_input`, `st.color_picker`, `st.select_slider` | ≤ 1.16 | ✅ Stable | Core widgets — safe across the foreseeable future |
 | `@st.cache_data`, `@st.cache_resource` | 1.18 | ✅ Stable | Replaces legacy `@st.cache` |
 | `st.status` | 1.22 | ✅ Stable | Spinner-like context manager |
 | `st.popover` | 1.32 | ⚠️ **Strict** | 1.41+ rejects: nested in popover, columns inside (when popover is itself in a column) |
-| `st.column_config.NumberColumn` (+ `format=`) | 1.36 | ✅ Stable | Format-string syntax stable through 1.54.0 |
+| `st.column_config.NumberColumn` (+ `format=`) | 1.36 | ✅ Stable | Format-string syntax stable through 1.41.1 |
 | `st.container(border=True)` | 1.40 | ✅ Stable | `border=` kwarg specifically |
-| `st.segmented_control` | 1.41 | ✅ Stable | Floor: a downgrade past 1.41 would break the dashboard; current pin (1.54.0) is well past |
-| **`width="stretch"` / `width="content"`** on `st.dataframe`, `st.button`, `st.popover`, `st.download_button`, `st.plotly_chart` | **1.49** (data widgets) / **1.50** (`st.button`, `st.popover`) | ✅ Stable | **Used in 21 call sites across `app/`. Replaces deprecated `use_container_width=`. Pin must stay ≥ 1.50 or the live Space crashes on `render_theme_sidebar` (see [app/chart_themes.py:397](../app/chart_themes.py:397)).** |
+| **`st.segmented_control`** | **1.41** | ✅ Stable | **At pinned version — downgrade past 1.41 breaks the dashboard** |
 
 ### Deprecated APIs we still touch
 

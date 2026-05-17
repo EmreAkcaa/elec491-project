@@ -125,12 +125,16 @@ def render_export_popover(
                     "pdf": "application/pdf",
                 }[fmt]
 
+                # NOTE: st.download_button does NOT accept width= in
+                # Streamlit 1.41.1 (landed in 1.43+). Keep the deprecated
+                # use_container_width= until the Streamlit pin is bumped;
+                # otherwise this raises TypeError at render time.
                 st.download_button(
                     label=f"Download {fmt.upper()}",
                     data=img_bytes,
                     file_name=filename,
                     mime=mime,
-                    width="stretch",
+                    use_container_width=True,
                     key=f"_exp_dl_{chart_id}_{fmt}",
                 )
             except Exception as exc:

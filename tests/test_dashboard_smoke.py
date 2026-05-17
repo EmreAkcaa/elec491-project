@@ -360,27 +360,70 @@ def test_no_expanders_inside_popovers():
 # Any other reintroduction (a contributor copy-pasting old example code,
 # a stale snippet, etc.) fails this test instantly with file:line.
 
-def test_no_use_container_width_outside_shim():
-    """No `use_container_width=` calls anywhere in app/ except the documented
-    back-compat shim in utils.py:render_chart. New widgets must use `width=`."""
+def test_no_width_stretch_or_content_string_on_pinned_streamlit():
+    """On the pinned Streamlit 1.41.1, **no widget accepts `width="stretch"`
+    or `width="content"` as a string** — every site that tried to use this
+    "future" API crashed at render time. The string-API for `width=` was
+    rolled out per-widget across 1.42–1.45+.
+
+    Confirmed crash modes from PR #23's deploy + local-against-pinned tests:
+
+      * st.popover(..., width="stretch")          → TypeError: popover() got
+                                                    an unexpected keyword
+                                                    argument 'width'
+      * st.button(..., width="stretch")           → TypeError: button() got
+                                                    an unexpected keyword
+                                                    argument 'width'
+      * st.download_button(..., width="stretch")  → TypeError: download_button()
+      * st.plotly_chart(..., width="stretch")     → TypeError: plotly_chart()
+      * st.dataframe(..., width="stretch")        → TypeError: 'str' object
+                                                    cannot be interpreted as
+                                                    an integer  (dataframe
+                                                    DID accept width=, but
+                                                    only as an int pixel count)
+
+    Until the Streamlit pin is bumped past the version where every widget
+    we touch supports the string API (target ~1.45+), `use_container_width=`
+    is the ONLY portable spelling.
+
+    When we do bump the pin, the migration is mechanical: search-and-replace
+    `use_container_width=True` → `width="stretch"` and re-run this test
+    after deleting or relaxing this guard.
+
+    Allowed exceptions:
+      * utils.py docstrings/comments may still discuss the public `width=`
+        API of render_chart, which threads the value through to the
+        plotly_chart call internally (translated to use_container_width=
+        until 1.45).
+    """
     import re
+    string_pattern = re.compile(r'\bwidth\s*=\s*"(stretch|content)"')
     violations: list[str] = []
-    # Allowlist: the render_chart shim lives in app/utils.py and explicitly
-    # uses `use_container_width` as a parameter name + back-compat translator.
-    # We allow that one file's mentions.
-    ALLOWLISTED = {"utils.py"}
-    pattern = re.compile(r"\buse_container_width\b")
+    # utils.py:render_chart deals in `width="stretch"/"content"` as its
+    # public API contract (translated internally to use_container_width=
+    # before the actual st.plotly_chart call). The internal translation
+    # legitimately assigns `width = "stretch" if ... else "content"` —
+    # that's not a Streamlit call, so allowlist the whole file.
+    FILE_ALLOWLIST = {"utils.py"}
     for py_path in sorted(_APP_DIR.glob("*.py")):
-        if py_path.name in ALLOWLISTED:
+        if py_path.name in FILE_ALLOWLIST:
             continue
         for i, line in enumerate(py_path.read_text().splitlines(), start=1):
-            if pattern.search(line):
-                rel = py_path.relative_to(_REPO_ROOT)
-                violations.append(f"  {rel}:{i}  — {line.strip()}")
+            if not string_pattern.search(line):
+                continue
+            stripped = line.strip()
+            # Skip pure comment lines and docstring-style backtick mentions.
+            if stripped.startswith("#"):
+                continue
+            if "``" in stripped:
+                continue
+            rel = py_path.relative_to(_REPO_ROOT)
+            violations.append(f"  {rel}:{i}  — {stripped}")
     if violations:
         raise AssertionError(
-            "`use_container_width=` is deprecated in Streamlit (slated for removal "
-            "end-2025). Migrate to `width=\"stretch\"` (or `width=\"content\"`). "
+            'width="stretch" / width="content" is unsupported on the pinned '
+            "Streamlit 1.41.1 (string-API rolled out per-widget across 1.42–1.45+). "
+            "Use `use_container_width=True/False` until the pin is bumped.\n"
             "Violations:\n" + "\n".join(violations)
         )
 
@@ -457,7 +500,13 @@ def test_render_chart_signature_and_passthrough():
         f"render_chart must accept a `width` parameter; got {sorted(arg_names)}"
     )
 
-    # 2. Body must call st.plotly_chart(...) somewhere with width=width
+    # 2. Body must call st.plotly_chart(...) somewhere that propagates the
+    #    width semantic — EITHER as a literal forward (`width=width`, valid
+    #    once Streamlit ≥1.45 is pinned) OR translated to the legacy kwarg
+    #    (`use_container_width=...`, required on the current 1.41.1 pin
+    #    because plotly_chart didn't accept width= back then). Either form
+    #    keeps the chart filling its container; we reject only the case
+    #    where the kwarg disappears entirely.
     found_plotly_call = False
     for sub in ast.walk(render_chart_def):
         if not isinstance(sub, ast.Call):
@@ -466,12 +515,14 @@ def test_render_chart_signature_and_passthrough():
         if not (isinstance(func, ast.Attribute) and func.attr == "plotly_chart"):
             continue
         for kw in sub.keywords:
-            if kw.arg == "width" and isinstance(kw.value, ast.Name) and kw.value.id == "width":
+            if kw.arg in {"width", "use_container_width"}:
                 found_plotly_call = True
                 break
     assert found_plotly_call, (
-        "render_chart must call st.plotly_chart(fig, width=width, ...) — "
-        "the width parameter is no longer being forwarded"
+        "render_chart must call st.plotly_chart(fig, width=... [or "
+        "use_container_width=...], ...) — the container-fill kwarg is no "
+        "longer being forwarded, which would silently degrade every chart "
+        "to Streamlit's default narrow width."
     )
 
 

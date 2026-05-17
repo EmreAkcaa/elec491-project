@@ -14,7 +14,13 @@ dependencies = [
     # Chrome to be installed". The 5.x line has every feature this project
     # uses; we lose nothing.
     "plotly>=5.22,<6",
-    "streamlit==1.54.0",
+    # Streamlit pinned EXACTLY to match requirements.txt and README.md
+    # sdk_version. Loose pin (>=) caused a smoke-gate blind spot:
+    # `uv sync` installed 1.54+ locally, where st.button accepts width=;
+    # HF Spaces installs the pinned 1.41.1 where it doesn't, and the
+    # sidebar crashed on every render after PR #23. See
+    # docs/STREAMLIT_VERSION_BUMP.md.
+    "streamlit==1.41.1",
     "pyarrow>=16.0",
     "pyyaml>=6.0",
     "isyatirimhisse>=2.1",

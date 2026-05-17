@@ -20,15 +20,11 @@ pyyaml>=6.0
 #   — keep the two in sync when bumping. See docs/STREAMLIT_VERSION_BUMP.md
 #   for the upgrade procedure.
 #
-#   Why 1.54.x: dashboard.py uses st.segmented_control (added in 1.41) AND
-#   the post-1.49 `width="stretch"/"content"` widget API (used in 21 sites
-#   across app/ after PR feat/streamlit-resilience-pass migrated off the
-#   deprecated `use_container_width=`). 1.54.0 is the version uv.lock has
-#   been resolving to during local dev, so it's the most-tested floor.
+#   Why 1.41.x: dashboard.py uses st.segmented_control (added in 1.41).
 #   plotly pinned <6 because plotly 6 + kaleido 1.x require a system Chrome
 #   install for static-image export. Streamlit Cloud / HF Spaces don't have
 #   Chrome → static export crashes. 5.x has every feature this project uses.
-streamlit==1.54.0
+streamlit==1.41.1
 plotly>=5.22,<6
 #   kaleido 0.2.1 bundles its own Chromium; kaleido 1.0+ delegates to system
 #   Chrome via plotly_get_chrome which we can't trigger on hosted envs. Pin.
