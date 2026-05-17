@@ -1,0 +1,21 @@
+ticker_1,ticker_2,correlation,sector_1,sector_2,rank_type
+AMAT,LRCX,0.9186192680624274,Information Technology,Information Technology,top
+V,MA,0.9057680213322369,Financials,Financials,top
+JPM,BAC,0.8811142279483964,Financials,Financials,top
+LOW,HD,0.8767150954353309,Consumer Discretionary,Consumer Discretionary,top
+MS,GS,0.8748617221564721,Financials,Financials,top
+C,BAC,0.8692928567591921,Financials,Financials,top
+WFC,BAC,0.8629226907252652,Financials,Financials,top
+PNC,BAC,0.8580579598056772,Financials,Financials,top
+CVX,COP,0.854516374265245,Energy,Energy,top
+CVX,XOM,0.8527546427699695,Energy,Energy,top
+CRWD,VZ,0.008385757892519111,Information Technology,Communication Services,bottom
+CRWD,JNJ,0.01072694223478585,Information Technology,Health Care,bottom
+MO,CRWD,0.012922199068473033,Consumer Staples,Information Technology,bottom
+T,CRWD,0.023061676548800154,Communication Services,Information Technology,bottom
+SPOT,BMY,0.031762754444212636,Communication Services,Health Care,bottom
+CRWD,KO,0.03334240525594459,Information Technology,Consumer Staples,bottom
+SPOT,JNJ,0.04424882304479798,Communication Services,Health Care,bottom
+GILD,CRWD,0.0456249005403232,Health Care,Information Technology,bottom
+NVDA,VZ,0.04834000935481726,Information Technology,Communication Services,bottom
+VZ,AMD,0.0527912880726873,Communication Services,Information Technology,bottom

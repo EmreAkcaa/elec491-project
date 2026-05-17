@@ -1,0 +1,101 @@
+ticker,cluster_id,sector
+AAPL,1,Information Technology
+MDLZ,1,Consumer Staples
+VRTX,7,Health Care
+UNP,1,Industrials
+T,1,Communication Services
+SYK,1,Health Care
+SPOT,4,Communication Services
+SPGI,1,Financials
+SCHW,1,Financials
+PM,1,Consumer Staples
+PGR,1,Financials
+NEE,1,Utilities
+LOW,1,Consumer Discretionary
+ADP,1,Industrials
+ISRG,1,Health Care
+HON,1,Industrials
+GILD,5,Health Care
+DE,1,Industrials
+C,1,Financials
+BMY,1,Health Care
+BLK,1,Financials
+BKNG,1,Consumer Discretionary
+BA,1,Industrials
+AXP,1,Financials
+AMAT,1,Information Technology
+AON,1,Financials
+APD,1,Materials
+APO,1,Financials
+REGN,8,Health Care
+ZTS,1,Health Care
+WMB,1,Energy
+TJX,1,Consumer Discretionary
+TGT,1,Consumer Discretionary
+SHW,1,Materials
+SBUX,1,Consumer Discretionary
+PNC,1,Financials
+MO,1,Consumer Staples
+LRCX,1,Information Technology
+LMT,1,Industrials
+KKR,1,Financials
+FDX,1,Industrials
+ETN,1,Industrials
+ELV,1,Health Care
+CRWD,1,Information Technology
+CI,1,Health Care
+CHTR,1,Communication Services
+CDNS,1,Information Technology
+BX,1,Financials
+BSX,1,Health Care
+ABBV,2,Health Care
+AMGN,1,Health Care
+WFC,1,Financials
+LLY,9,Health Care
+WMT,1,Consumer Staples
+V,1,Financials
+UNH,1,Health Care
+PG,1,Consumer Staples
+ORCL,3,Information Technology
+NVDA,1,Information Technology
+NFLX,1,Communication Services
+MSFT,1,Information Technology
+META,1,Communication Services
+MA,1,Financials
+KO,1,Consumer Staples
+VZ,1,Communication Services
+JPM,1,Financials
+JNJ,1,Health Care
+HD,1,Consumer Discretionary
+GOOGL,1,Communication Services
+CVX,1,Energy
+CRM,1,Information Technology
+COST,1,Consumer Staples
+BRK-B,1,Financials
+BAC,1,Financials
+AMZN,1,Consumer Discretionary
+XOM,1,Energy
+ACN,1,Information Technology
+ADBE,1,Information Technology
+AMD,1,Information Technology
+TXN,1,Information Technology
+TMUS,6,Communication Services
+RTX,1,Industrials
+QCOM,1,Information Technology
+PFE,1,Health Care
+PEP,1,Consumer Staples
+NOW,1,Information Technology
+MS,1,Financials
+MRK,1,Health Care
+MCD,1,Consumer Discretionary
+LIN,1,Materials
+INTU,1,Information Technology
+IBM,1,Information Technology
+GS,1,Financials
+GE,1,Industrials
+DIS,1,Communication Services
+CSCO,1,Information Technology
+COP,1,Energy
+CMCSA,1,Communication Services
+CAT,1,Industrials
+SNPS,1,Information Technology

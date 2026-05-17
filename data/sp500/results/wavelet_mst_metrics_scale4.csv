@@ -1,0 +1,101 @@
+ticker,degree,betweenness_centrality,sector
+JPM,6,0.6691403834260977,Financials
+AMGN,5,0.07957122242836528,Health Care
+MDLZ,5,0.2527313955885384,Consumer Staples
+BRK-B,5,0.5654504225932797,Financials
+MSFT,5,0.32055246340960625,Information Technology
+KO,4,0.3102453102453102,Consumer Staples
+UNP,4,0.07936507936507936,Industrials
+LIN,4,0.11688311688311688,Materials
+KKR,4,0.38033395176252316,Financials
+AXP,4,0.2733457019171305,Financials
+HON,4,0.2554112554112554,Industrials
+TJX,3,0.15151515151515152,Consumer Discretionary
+ELV,3,0.04019789734075448,Health Care
+NVDA,3,0.04019789734075448,Information Technology
+HD,3,0.09812409812409811,Consumer Discretionary
+JNJ,3,0.17109874252731394,Health Care
+COST,3,0.04019789734075448,Consumer Staples
+BAC,3,0.04019789734075448,Financials
+AMZN,3,0.07895279323850753,Consumer Discretionary
+MS,3,0.4518655947227376,Financials
+MRK,3,0.05978148835291692,Health Care
+CAT,3,0.04019789734075448,Industrials
+AMAT,3,0.1352298495155638,Information Technology
+SNPS,3,0.1686250257678829,Information Technology
+BA,3,0.09771181199752628,Industrials
+SYK,3,0.05978148835291692,Health Care
+ADP,3,0.04019789734075448,Industrials
+BLK,3,0.39641311069882496,Financials
+C,3,0.5174190888476602,Financials
+IBM,2,0.0202020202020202,Information Technology
+INTU,2,0.0202020202020202,Information Technology
+T,2,0.0202020202020202,Communication Services
+GS,2,0.4007421150278293,Financials
+NOW,2,0.32570603999175424,Information Technology
+BX,2,0.33766233766233766,Financials
+QCOM,2,0.03999175427746856,Information Technology
+XOM,2,0.0202020202020202,Energy
+PM,2,0.0202020202020202,Consumer Staples
+CRM,2,0.313337456194599,Information Technology
+COP,2,0.03999175427746856,Energy
+LOW,2,0.11502782931354359,Consumer Discretionary
+CMCSA,2,0.0202020202020202,Communication Services
+ISRG,2,0.0202020202020202,Health Care
+PG,2,0.18346732632446916,Consumer Staples
+PFE,2,0.0202020202020202,Health Care
+MA,2,0.0202020202020202,Financials
+AAPL,2,0.0202020202020202,Information Technology
+SHW,2,0.0202020202020202,Materials
+LRCX,2,0.05936920222634508,Information Technology
+CI,2,0.05936920222634508,Health Care
+WMB,2,0.05936920222634508,Energy
+BKNG,2,0.13275613275613274,Consumer Discretionary
+ACN,1,0.0,Information Technology
+ADBE,1,0.0,Information Technology
+AMD,1,0.0,Information Technology
+TXN,1,0.0,Information Technology
+TMUS,1,0.0,Communication Services
+RTX,1,0.0,Industrials
+PNC,1,0.0,Financials
+SBUX,1,0.0,Consumer Discretionary
+PEP,1,0.0,Consumer Staples
+TGT,1,0.0,Consumer Discretionary
+SPOT,1,0.0,Communication Services
+SPGI,1,0.0,Financials
+MCD,1,0.0,Consumer Discretionary
+ZTS,1,0.0,Health Care
+REGN,1,0.0,Health Care
+GE,1,0.0,Industrials
+DIS,1,0.0,Communication Services
+CSCO,1,0.0,Information Technology
+APO,1,0.0,Financials
+APD,1,0.0,Materials
+VRTX,1,0.0,Health Care
+MO,1,0.0,Consumer Staples
+CDNS,1,0.0,Information Technology
+CHTR,1,0.0,Communication Services
+NFLX,1,0.0,Communication Services
+BSX,1,0.0,Health Care
+ABBV,1,0.0,Health Care
+WFC,1,0.0,Financials
+LLY,1,0.0,Health Care
+WMT,1,0.0,Consumer Staples
+V,1,0.0,Financials
+UNH,1,0.0,Health Care
+CRWD,1,0.0,Information Technology
+ORCL,1,0.0,Information Technology
+DE,1,0.0,Industrials
+GILD,1,0.0,Health Care
+PGR,1,0.0,Financials
+META,1,0.0,Communication Services
+AON,1,0.0,Financials
+BMY,1,0.0,Health Care
+VZ,1,0.0,Communication Services
+ETN,1,0.0,Industrials
+FDX,1,0.0,Industrials
+NEE,1,0.0,Utilities
+GOOGL,1,0.0,Communication Services
+CVX,1,0.0,Energy
+LMT,1,0.0,Industrials
+SCHW,1,0.0,Financials
