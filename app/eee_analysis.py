@@ -1,4 +1,4 @@
-"""EEE Analysis dashboard tab — RMT, Graphical LASSO, Wavelets, Transfer Entropy."""
+"""EEE Analysis dashboard tab — RMT, Graphical LASSO, Wavelets, Transfer Entropy, SNN."""
 
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ from utils import (
     load_wavelet_mst_metrics,
     load_te_edges, load_te_node_roles, load_te_matrix, load_net_te_matrix,
     load_cluster_assignments,
-    load_rc_metrics, load_rc_predictions, load_rc_feature_importance,
+    load_snn_metrics, load_snn_pair_list, load_snn_signals,
+    load_snn_training_history, load_snn_raster_sample, load_snn_membrane_sample,
     load_dendrogram_order,
 )
 
@@ -652,204 +653,280 @@ def render_transfer_entropy(sector_map: dict):
             st.info("Run the pipeline to generate the net transfer-entropy matrix.")
 
 
-def render_forecasting(sector_map: dict):
-    """Render Reservoir Computing forecasting section."""
+# ---------------------------------------------------------------------------
+# SNN — Spiking Neural Network (pair-signal classifier)
+# ---------------------------------------------------------------------------
+
+CLASS_COLORS = {"HOLD": "#9CA3AF", "BUY": "#06D6A0", "SELL": "#E63946"}
+
+
+def render_snn(sector_map: dict):
+    """Render Spiking Neural Network (neuromorphic) section.
+
+    Honest framing: the SNN achieves macro-F1 ≈ 0.67 (3-class baseline 0.27)
+    but on the trading-Sharpe metric it underperforms the simple |Z|>2 rule
+    by an average Δ-Sharpe ≈ −1.1, beating the heuristic on only 5 of 20
+    pairs. We report this as a documented exploration of spike-coded neural
+    inference applied to pair-spread classification — complementary to the
+    rate-coded methods elsewhere in the project.
+    """
     with st.container(border=True):
         section_header(
-            "Reservoir Computing — Cross-Sectional Dispersion Forecast",
-            "An Echo State Network (sparse random reservoir + ridge readout) "
-            "predicts next-day cross-sectional return dispersion from market "
-            "features (cross-sectional stats, rolling vol, PCA components). "
-            "Walk-forward evaluation with persistence and mean baselines.",
+            "Neuromorphic Signals — Spiking Neural Network",
+            "A recurrent leaky-integrate-and-fire classifier trained with "
+            "surrogate-gradient backprop-through-time. Inputs are delta-modulated "
+            "(Σ-Δ ADC analogue) spike trains derived from the pair-dislocation "
+            "Z-score; outputs are 3-class BUY / SELL / HOLD decisions. "
+            "Same algorithmic substrate as Intel Loihi 2 / IBM TrueNorth / "
+            "SpiNNaker neuromorphic processors.",
         )
 
-        metrics = load_rc_metrics()
-        predictions = load_rc_predictions()
-        importance = load_rc_feature_importance()
-        colors = get_colors()
+        metrics = load_snn_metrics()
+        pair_list = load_snn_pair_list()
 
-        if not metrics:
-            st.info("Run the pipeline (`uv run python -m src.reservoir_computing`) to generate forecasting results.")
+        if not metrics or pair_list.empty:
+            st.info(
+                "Run the SNN pipeline to generate results: "
+                "`uv sync --extra snn && uv run python run_pipeline.py`."
+            )
             return
 
-        # Aggregate metrics
-        agg = metrics.get("dispersion_prediction", {})
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("R² (out-of-sample)", f"{agg.get('r2', 0):.4f}")
-        c2.metric("RMSE", f"{agg.get('rmse', 0):.5f}")
-        c3.metric("MAE", f"{agg.get('mae', 0):.5f}")
-        c4.metric("Direction-of-Change", f"{agg.get('direction_of_change_accuracy', 0)*100:.1f}%")
+        agg = metrics.get("aggregate", {})
+        cfg = metrics.get("config", {})
+        sample_pair = metrics.get("sample_pair", "BRYAT_BRSAN")
 
-        # Baseline comparison
-        baselines = metrics.get("baselines", {})
-        persistence_r2 = baselines.get("persistence", {}).get("r2", float("nan"))
-        mean_r2 = baselines.get("mean", {}).get("r2", float("nan"))
-        esn_r2 = agg.get("r2", float("nan"))
+        # ---- Headline metrics
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Pairs trained", metrics.get("n_pairs", len(pair_list)))
+        c2.metric("Mean macro-F1", f"{agg.get('mean_macro_f1', 0):.3f}",
+                  help="Classification quality. Random baseline ≈ 0.33; majority-class baseline ≈ 0.27.")
+        c3.metric("Mean SNN Sharpe", f"{agg.get('mean_snn_sharpe', 0):+.2f}",
+                  help="Annualised Sharpe on the SNN's BUY/SELL signals.")
+        c4.metric("Mean Classical Sharpe", f"{agg.get('mean_classical_sharpe', 0):+.2f}",
+                  help="Same metric on the simple |Z|>2 rule.")
+        delta_sh = agg.get("mean_delta_sharpe", 0)
+        c5.metric("Mean Δ-Sharpe", f"{delta_sh:+.2f}",
+                  delta=f"{delta_sh:+.2f}",
+                  delta_color="normal",
+                  help="SNN − Classical. Positive = SNN wins; negative = SNN loses.")
 
-        st.markdown("**Baseline comparison (R²):**")
-        b1, b2, b3 = st.columns(3)
-        b1.metric("ESN", f"{esn_r2:.4f}", delta=f"vs persistence: {esn_r2 - persistence_r2:+.3f}")
-        b2.metric("Persistence (yesterday)", f"{persistence_r2:.4f}")
-        b3.metric("Train-mean", f"{mean_r2:.4f}")
-
+        per_pair = metrics.get("per_pair", {})
+        n_beats = sum(1 for v in per_pair.values() if v.get("delta_sharpe", 0) > 0)
         st.caption(
-            f"Sample size: {agg.get('n_samples', 0)} test days · "
-            f"Train/test split: {metrics.get('train_size', '?')}/{metrics.get('test_size', '?')} · "
-            f"Reservoir: {metrics.get('esn_config', {}).get('reservoir_size', '?')} units, "
-            f"ρ={metrics.get('esn_config', {}).get('spectral_radius', '?')}, "
-            f"α={metrics.get('esn_config', {}).get('leak_rate', '?')}, "
-            f"ridge={metrics.get('esn_config', {}).get('ridge_alpha', '?')}."
+            f"**Honest framing.** The SNN beats the classical |Z|>2 rule on **{n_beats} of "
+            f"{len(per_pair)}** pairs by Sharpe. Aggregate Δ-Sharpe is negative "
+            f"({delta_sh:+.2f}), meaning the simple rule outperforms classifier-style ML on "
+            "average at this horizon. The macro-F1 of "
+            f"{agg.get('mean_macro_f1', 0):.2f} (vs random 0.33 / majority-only 0.27) "
+            "confirms the dislocation features carry learnable structure, but the predictive "
+            "information is concentrated in the current Z-score itself — adding neural "
+            "machinery does not extract additional alpha. This is a documented negative "
+            "result, consistent with weak-form EMH at daily frequency."
         )
 
-        # Predicted vs actual + scatter
-        col_ts, col_sc = st.columns([3, 2])
+        # ---- Per-pair leaderboard
+        st.markdown("**Per-pair leaderboard** (sorted by Δ-Sharpe vs |Z|>2 baseline)")
+        rows = []
+        for pid, p in per_pair.items():
+            rows.append({
+                "pair": pid,
+                "macro_f1": p.get("macro_f1"),
+                "snn_sharpe": p.get("snn_sharpe"),
+                "classical_sharpe": p.get("classical_sharpe"),
+                "delta_sharpe": p.get("delta_sharpe"),
+                "snn_hit_rate": p.get("snn_hit_rate"),
+                "snn_n_trades": p.get("snn_n_trades"),
+                "classical_n_trades": p.get("classical_n_trades"),
+                "n_test": p.get("n_test"),
+            })
+        leaderboard = (
+            pd.DataFrame(rows)
+            .sort_values("delta_sharpe", ascending=False)
+            .reset_index(drop=True)
+        )
+        st.dataframe(
+            leaderboard,
+            use_container_width=True,
+            height=320,
+            column_config={
+                "macro_f1": st.column_config.NumberColumn("F1", format="%.3f"),
+                "snn_sharpe": st.column_config.NumberColumn("SNN Sh", format="%+.2f"),
+                "classical_sharpe": st.column_config.NumberColumn("Cls Sh", format="%+.2f"),
+                "delta_sharpe": st.column_config.NumberColumn("Δ Sh", format="%+.2f"),
+                "snn_hit_rate": st.column_config.NumberColumn("Hit %", format="%.2f"),
+            },
+        )
 
-        with col_ts:
-            if not predictions.empty and {"date", "actual_dispersion", "predicted_dispersion"}.issubset(predictions.columns):
-                pdf = predictions.copy()
-                pdf["date"] = pd.to_datetime(pdf["date"])
-                fig_ts = go.Figure()
-                fig_ts.add_trace(go.Scatter(
-                    x=pdf["date"], y=pdf["actual_dispersion"],
-                    name="Actual", mode="lines",
-                    line=dict(color=colors["muted"], width=1.5),
-                    hovertemplate="%{x|%Y-%m-%d}<br>Actual: %{y:.5f}<extra></extra>",
-                ))
-                fig_ts.add_trace(go.Scatter(
-                    x=pdf["date"], y=pdf["predicted_dispersion"],
-                    name="Predicted (ESN)", mode="lines",
-                    line=dict(color=colors["primary"], width=1.8),
-                    hovertemplate="%{x|%Y-%m-%d}<br>Predicted: %{y:.5f}<extra></extra>",
-                ))
-                apply_chart_style(fig_ts, height=380,
-                                  xaxis_title="Date",
-                                  yaxis_title="Cross-sectional dispersion")
-                render_chart(
-                    fig_ts, chart_id="rc_pred_ts",
-                    filename_base="rc_dispersion_predicted_vs_actual",
-                    title_key="rc_pred_ts",
-                    default_title="Predicted vs Actual Dispersion (test set)",
-                )
-            else:
-                st.info("No prediction time series available.")
+        # ---- Per-pair signal explorer
+        st.markdown("**Per-pair signal explorer**")
+        pair_ids = pair_list["pair_id"].astype(str).tolist() if "pair_id" in pair_list.columns else list(per_pair.keys())
+        default_idx = pair_ids.index(sample_pair) if sample_pair in pair_ids else 0
+        selected_pair = st.selectbox(
+            "Select pair",
+            pair_ids,
+            index=default_idx,
+            key="snn_pair_selector",
+        )
 
-        with col_sc:
-            if not predictions.empty and {"actual_dispersion", "predicted_dispersion"}.issubset(predictions.columns):
-                a = predictions["actual_dispersion"].to_numpy()
-                p = predictions["predicted_dispersion"].to_numpy()
-                lo = float(np.nanmin([a.min(), p.min()]))
-                hi = float(np.nanmax([a.max(), p.max()]))
-                fig_sc = go.Figure()
-                fig_sc.add_trace(go.Scatter(
-                    x=a, y=p, mode="markers",
-                    marker=dict(size=5, color=colors["primary"], opacity=0.55,
-                                line=dict(width=0.5, color="#fff")),
-                    hovertemplate="actual=%{x:.5f}<br>pred=%{y:.5f}<extra></extra>",
-                    showlegend=False,
-                ))
-                fig_sc.add_trace(go.Scatter(
-                    x=[lo, hi], y=[lo, hi], mode="lines",
-                    line=dict(color=colors["secondary"], dash="dash", width=1),
-                    name="y = x", showlegend=True,
-                ))
-                apply_chart_style(fig_sc, height=380,
-                                  xaxis_title="Actual",
-                                  yaxis_title="Predicted")
-                render_chart(
-                    fig_sc, chart_id="rc_pred_scatter",
-                    filename_base="rc_predicted_vs_actual_scatter",
-                    title_key="rc_pred_sc",
-                    default_title="Predicted vs Actual (scatter, ideal = y=x)",
-                )
-
-        # Per-fold stability + feature importance
-        col_fold, col_fi = st.columns(2)
-
-        with col_fold:
-            folds = metrics.get("dispersion_fold_metrics", [])
-            if folds:
-                fold_df = pd.DataFrame(folds)
-                fold_labels = [t.replace("fold_", "Fold ") for t in fold_df["target"]]
-                fold_r2 = fold_df["r2"].astype(float).tolist()
-                bar_colors = [colors["primary"] if r >= 0 else colors["secondary"] for r in fold_r2]
-                fig_fold = go.Figure()
-                fig_fold.add_trace(go.Bar(
-                    x=fold_labels, y=fold_r2,
-                    marker_color=bar_colors,
-                    hovertemplate="%{x}: R²=%{y:.4f}<extra></extra>",
-                ))
-                fig_fold.add_hline(y=0, line_dash="dot", line_color=colors["muted"])
-                fig_fold.add_hline(
-                    y=esn_r2, line_dash="dash", line_color=colors["primary"],
-                    annotation_text=f"Aggregate R²={esn_r2:.3f}",
-                    annotation_font_size=10, annotation_position="top right",
-                )
-                apply_chart_style(fig_fold, height=380,
-                                  xaxis_title="Walk-forward fold",
-                                  yaxis_title="R²", showlegend=False)
-                render_chart(
-                    fig_fold, chart_id="rc_fold_r2",
-                    filename_base="rc_fold_r2",
-                    title_key="rc_fold",
-                    default_title="Per-fold R² (walk-forward stability)",
-                )
-            else:
-                st.info("No fold-level metrics available.")
-
-        with col_fi:
-            if not importance.empty and {"feature", "weight_magnitude"}.issubset(importance.columns):
-                top = importance.sort_values("weight_magnitude", ascending=False).head(10)
-                top = top.iloc[::-1]  # reverse for horizontal bar (largest at top)
-                fig_fi = go.Figure()
-                fig_fi.add_trace(go.Bar(
-                    x=top["weight_magnitude"], y=top["feature"],
-                    orientation="h",
-                    marker_color=colors["tertiary"],
-                    hovertemplate="%{y}: |w|=%{x:.4f}<extra></extra>",
-                ))
-                apply_chart_style(fig_fi, height=380,
-                                  xaxis_title="|Readout weight|",
-                                  yaxis_title="", showlegend=False)
-                render_chart(
-                    fig_fi, chart_id="rc_feat_imp",
-                    filename_base="rc_feature_importance",
-                    title_key="rc_fi",
-                    default_title="Feature importance (top 10 readout weights)",
-                )
-            else:
-                st.info("No feature-importance data available.")
-
-        # Pair-spread predictions
-        pair_results = metrics.get("pair_spread_prediction", {})
-        if pair_results:
-            st.markdown("**Pair-spread Z-score forecasts (top-3 dislocation pairs)**")
-            rows = []
-            for pair_name, m in pair_results.items():
-                if not isinstance(m, dict):
-                    continue
-                rows.append({
-                    "Pair": pair_name,
-                    "R²": round(float(m.get("r2", float("nan"))), 4),
-                    "RMSE": round(float(m.get("rmse", float("nan"))), 4),
-                    "MAE": round(float(m.get("mae", float("nan"))), 4),
-                    "Direction Acc": round(float(m.get("direction_of_change_accuracy", float("nan"))) * 100, 1),
-                    "n samples": int(m.get("n_samples", 0)),
-                })
-            if rows:
-                pair_df = pd.DataFrame(rows)
-                st.dataframe(
-                    pair_df, use_container_width=True, hide_index=True,
-                    column_config={
-                        "Direction Acc": st.column_config.NumberColumn(
-                            "Direction Acc (%)", format="%.1f",
+        signals = load_snn_signals(selected_pair)
+        if not signals.empty and {"date", "zscore", "signal"}.issubset(signals.columns):
+            fig_sig = go.Figure()
+            fig_sig.add_trace(go.Scatter(
+                x=signals["date"], y=signals["zscore"],
+                name="Z-score", mode="lines",
+                line=dict(color=get_colors().get("muted", "#888"), width=1.2),
+            ))
+            for cls in ("BUY", "SELL"):
+                mask = signals["signal"] == cls
+                if mask.any():
+                    fig_sig.add_trace(go.Scatter(
+                        x=signals.loc[mask, "date"],
+                        y=signals.loc[mask, "zscore"],
+                        name=f"SNN {cls}",
+                        mode="markers",
+                        marker=dict(
+                            color=CLASS_COLORS[cls], size=8,
+                            symbol="triangle-up" if cls == "BUY" else "triangle-down",
+                            line=dict(width=0.5, color="#222"),
                         ),
-                    },
+                    ))
+            fig_sig.add_hline(y=2.0, line=dict(color="rgba(150,150,150,0.4)", dash="dot"))
+            fig_sig.add_hline(y=-2.0, line=dict(color="rgba(150,150,150,0.4)", dash="dot"))
+            fig_sig.add_hline(y=0.0, line=dict(color="rgba(150,150,150,0.6)", dash="dash"))
+            apply_chart_style(
+                fig_sig, height=360,
+                xaxis_title="Date", yaxis_title="Z-score (rolling 60d)",
+            )
+            render_chart(
+                fig_sig, chart_id=f"snn_signal_{selected_pair}",
+                filename_base=f"snn_signal_{selected_pair}",
+                default_title=f"SNN signals on Z-score — {selected_pair}",
+            )
+        else:
+            st.info("No signals for this pair.")
+
+        # ---- Training history
+        st.markdown("**Training history** (universal model, pooled across all pairs)")
+        history = load_snn_training_history()
+        if not history.empty and "epoch" in history.columns:
+            fig_h = go.Figure()
+            if "train_loss" in history.columns:
+                fig_h.add_trace(go.Scatter(
+                    x=history["epoch"], y=history["train_loss"],
+                    name="Train loss", mode="lines+markers",
+                    line=dict(color=get_colors().get("primary", "#3B82F6")),
+                ))
+            if "val_loss" in history.columns:
+                fig_h.add_trace(go.Scatter(
+                    x=history["epoch"], y=history["val_loss"],
+                    name="Val loss", mode="lines+markers",
+                    line=dict(color=get_colors().get("secondary", "#EF4444"), dash="dash"),
+                ))
+            if "val_macro_f1" in history.columns:
+                fig_h.add_trace(go.Scatter(
+                    x=history["epoch"], y=history["val_macro_f1"],
+                    name="Val macro-F1", mode="lines+markers", yaxis="y2",
+                    line=dict(color="#06D6A0"),
+                ))
+            fig_h.update_layout(
+                yaxis=dict(title="Loss"),
+                yaxis2=dict(title="Val macro-F1", overlaying="y", side="right", range=[0, 1]),
+            )
+            apply_chart_style(fig_h, height=300, xaxis_title="Epoch")
+            render_chart(
+                fig_h, chart_id="snn_training_history",
+                filename_base="snn_training_history",
+                default_title="SNN training convergence (early-stopped on val loss)",
+            )
+
+        # ---- Spike raster + membrane V(t) for the sample pair only
+        st.markdown(
+            f"**Sample pair internals — `{sample_pair}`** "
+            "(spike output + membrane-potential readout)"
+        )
+        raster = load_snn_raster_sample()
+        membrane = load_snn_membrane_sample()
+
+        col_r, col_m = st.columns(2)
+
+        with col_r:
+            if not raster.empty and {"day_index", "timestep", "neuron_name"}.issubset(raster.columns):
+                # Compose a continuous "tick" axis = day_index * n_timesteps + timestep
+                ticks_per_day = int(cfg.get("n_timesteps", 20))
+                raster = raster.assign(
+                    global_tick=raster["day_index"].astype(int) * ticks_per_day + raster["timestep"].astype(int)
                 )
-                st.caption(
-                    "Caveat: pair-spread forecasting is currently weak "
-                    "(near-zero or negative R²). Roadmap items M-2 (RC PCA refit per fold) "
-                    "and adding a pair-AR(1) baseline will be revisited in the research-rigour phase."
+                fig_r = go.Figure()
+                for cls, c in CLASS_COLORS.items():
+                    mask = raster["neuron_name"] == cls
+                    if mask.any():
+                        fig_r.add_trace(go.Scatter(
+                            x=raster.loc[mask, "global_tick"],
+                            y=[cls] * mask.sum(),
+                            mode="markers",
+                            name=cls,
+                            marker=dict(color=c, size=6, symbol="line-ns-open"),
+                        ))
+                apply_chart_style(fig_r, height=240, xaxis_title="SNN tick (day × 20 timesteps + t)")
+                render_chart(
+                    fig_r, chart_id="snn_raster",
+                    filename_base="snn_raster",
+                    default_title=f"Output-neuron spike raster — {sample_pair} window",
                 )
+            else:
+                st.info("Spike raster not available for the sample pair.")
+
+        with col_m:
+            if not membrane.empty and {"day_index", "timestep", "neuron_name", "membrane"}.issubset(membrane.columns):
+                ticks_per_day = int(cfg.get("n_timesteps", 20))
+                membrane = membrane.assign(
+                    global_tick=membrane["day_index"].astype(int) * ticks_per_day + membrane["timestep"].astype(int)
+                )
+                fig_m = go.Figure()
+                for cls, c in CLASS_COLORS.items():
+                    sub = membrane[membrane["neuron_name"] == cls].sort_values("global_tick")
+                    if not sub.empty:
+                        fig_m.add_trace(go.Scatter(
+                            x=sub["global_tick"], y=sub["membrane"],
+                            name=cls, mode="lines",
+                            line=dict(color=c, width=1.6),
+                        ))
+                fig_m.add_hline(
+                    y=float(cfg.get("v_threshold", 0.5)),
+                    line=dict(color="rgba(120,120,120,0.5)", dash="dot"),
+                    annotation_text="V_th",
+                )
+                apply_chart_style(fig_m, height=240, xaxis_title="SNN tick", yaxis_title="Membrane V(t)")
+                render_chart(
+                    fig_m, chart_id="snn_membrane",
+                    filename_base="snn_membrane",
+                    default_title=f"Output-layer membrane V(t) — {sample_pair} window",
+                )
+            else:
+                st.info("Membrane trace not available for the sample pair.")
+
+        # ---- Architecture / hyperparameter summary
+        with st.expander("Architecture and hyperparameters"):
+            st.markdown(
+                "- **Hidden layer:** recurrent LIF (`snn.RLeaky`), "
+                f"`n_hidden = {cfg.get('n_hidden', '?')}`, "
+                f"β = {cfg.get('beta', '?')}, V_th = {cfg.get('v_threshold', '?')}\n"
+                f"- **Output layer:** non-resetting LIF (membrane-potential readout)\n"
+                f"- **Input encoders:** delta modulation (Z, ΔZ) + population coding "
+                f"(`n_population_fields = {cfg.get('n_population_fields', '?')}`)\n"
+                f"- **Window:** {cfg.get('window_size', '?')} trading days × "
+                f"{cfg.get('n_timesteps', '?')} SNN ticks per day = "
+                f"{int(cfg.get('window_size', 1)) * int(cfg.get('n_timesteps', 1))} unrolled timesteps\n"
+                f"- **Universal model:** one network across all pairs with 20-dim "
+                "one-hot pair embedding (vs per-pair training)\n"
+                f"- **Loss:** focal loss (γ = {cfg.get('focal_gamma', '?')}) with "
+                f"`sqrt(inv_freq)` class weights\n"
+                f"- **Training:** Adam(lr={cfg.get('learning_rate', '?')}, "
+                f"wd={cfg.get('weight_decay', '?')}); early-stop patience "
+                f"{cfg.get('early_stop_patience', '?')}; seed {cfg.get('seed', '?')}\n"
+                f"- **Total inputs to fc1:** {metrics.get('n_inputs', '?')} channels "
+                "(45 spike channels + 20 pair one-hot)"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -861,9 +938,9 @@ def render():
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    sub_rmt, sub_glasso, sub_wavelet, sub_te, sub_fc = st.tabs([
+    sub_rmt, sub_glasso, sub_wavelet, sub_te, sub_snn = st.tabs([
         "RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale",
-        "Transfer Entropy", "Forecasting",
+        "Transfer Entropy", "Neuromorphic Signals",
     ])
 
     with sub_rmt:
@@ -878,5 +955,5 @@ def render():
     with sub_te:
         render_transfer_entropy(sector_map)
 
-    with sub_fc:
-        render_forecasting(sector_map)
+    with sub_snn:
+        render_snn(sector_map)

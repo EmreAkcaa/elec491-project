@@ -24,7 +24,6 @@ def main():
     from src.partial_correlation import run_partial_correlation
     from src.wavelet_analysis import run_wavelet_analysis
     from src.transfer_entropy import run_transfer_entropy
-    from src.reservoir_computing import run_reservoir_computing
 
     logger.info("========== StoNeCoAl Pipeline ==========")
 
@@ -45,8 +44,17 @@ def main():
     run_wavelet_analysis(config)
     run_transfer_entropy(config)
 
-    # --- Reservoir Computing (prediction layer) ---
-    run_reservoir_computing(config)
+    # --- Spiking Neural Network (pair-signal classifier) ---
+    # Optional: requires torch + snntorch (install with `uv sync --extra snn`).
+    # The pipeline completes regardless of whether torch is installed.
+    try:
+        from src.snn_signals import run_snn_signals
+        run_snn_signals(config)
+    except ImportError as exc:
+        logger.warning(
+            "SNN step skipped: %s. Install with `uv sync --extra snn` to enable.",
+            exc,
+        )
 
     logger.info("========== Pipeline Complete ==========")
 
