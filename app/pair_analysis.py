@@ -95,12 +95,17 @@ def render(
     nonsensical pair-trading view on non-financial data.
     """
 
+    # Defensive import — force fresh load so a stale module in sys.modules
+    # (Streamlit Cloud caches across deploys) can't strip the Phase I fields.
+    import importlib
+    import universe_registry as _ur
+    importlib.reload(_ur)
     from universe_registry import get_universe
     from utils import current_universe
     _active = get_universe(current_universe())
-    if not _active.has_pair_trading:
+    if not getattr(_active, "has_pair_trading", True):
         st.warning(
-            f"Pair Analysis isn't applicable to the **{_active.label}** universe "
+            f"Pair Analysis isn't applicable to the **{getattr(_active, 'label', 'current')}** universe "
             "(no pair-trading semantics). Switch back to a financial universe "
             "from the sidebar selector."
         )

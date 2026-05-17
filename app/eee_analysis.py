@@ -940,6 +940,11 @@ def render():
     has ``has_snn=False`` in app/universe_registry.py — the SNN classifier is
     pair-trading-specific and doesn't apply to non-financial universes (EEG).
     """
+    # Defensive import — force a fresh load so a stale module in sys.modules
+    # (Streamlit Cloud caches between deploys) can't strip the new fields.
+    import importlib
+    import universe_registry as _ur
+    importlib.reload(_ur)
     from universe_registry import get_universe
     from utils import current_universe
     _active = get_universe(current_universe())
@@ -948,7 +953,7 @@ def render():
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
     _sub_labels = ["RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale", "Transfer Entropy"]
-    if _active.has_snn:
+    if getattr(_active, "has_snn", True):
         _sub_labels.append("Neuromorphic Signals")
     _subs = st.tabs(_sub_labels)
     _sub_by_label = dict(zip(_sub_labels, _subs))
@@ -962,7 +967,7 @@ def render():
     with _sub_by_label["Wavelet Multi-Scale"]:
         render_wavelets(sector_map)
         # Neuroscience caption: scales are time-bands at 160 Hz, not days.
-        if _active.domain == "neuroscience":
+        if getattr(_active, "domain", "finance") == "neuroscience":
             st.caption(
                 ":material/info: For EEG (160 Hz sampling), wavelet scales 1-7 "
                 "correspond to bands ranging from ~12.5 ms (gamma, scale 1) up to "
