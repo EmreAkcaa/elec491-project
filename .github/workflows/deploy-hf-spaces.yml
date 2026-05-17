@@ -1,0 +1,113 @@
+name: Deploy to Hugging Face Spaces
+
+# Mirrors GitHub `main` → the configured HF Space repo on every push.
+#
+# Required GitHub configuration (Settings → Secrets and variables → Actions):
+#   - Environment "top" with secret HF_DEPLOY_TOKEN
+#       Token type:  Write
+#       Source:      https://huggingface.co/settings/tokens
+#   - Repository variable HF_SPACE_REPO
+#       Format:      <hf-username-or-org>/<space-name>
+#       Example:     EmreAkcaa/stonecoal
+#
+# Manual trigger is also enabled (workflow_dispatch) — useful for one-off
+# redeploys without pushing a new commit.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only one in-flight deploy at a time. If a new push lands while a deploy
+# is still running, the queued one waits; the queued one is replaced if
+# yet-another push lands behind it (cancel-in-progress on group head).
+concurrency:
+  group: hf-spaces-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Push to HF Space
+    runs-on: ubuntu-latest
+    # The HF_DEPLOY_TOKEN secret lives in the "top" environment so the deploy
+    # is gated behind whatever protection rules you've attached to it
+    # (none by default — add manual approval / branch protection here later
+    # if you want extra safety).
+    environment: top
+
+    steps:
+      - name: Verify HF_SPACE_REPO is configured
+        run: |
+          if [ -z "${{ vars.HF_SPACE_REPO }}" ]; then
+            echo "::error::Repository variable HF_SPACE_REPO is not set."
+            echo ""
+            echo "Add it under: Settings → Secrets and variables → Actions → Variables tab"
+            echo "Format:       <hf-username-or-org>/<space-name>"
+            echo "Example:      EmreAkcaa/stonecoal"
+            exit 1
+          fi
+          echo "Deploy target: https://huggingface.co/spaces/${{ vars.HF_SPACE_REPO }}"
+
+      - name: Checkout repo (with LFS objects)
+        uses: actions/checkout@v4
+        with:
+          lfs: true              # pull LFS objects so HF gets real files, not pointers
+          fetch-depth: 0         # full history; HF Space ends up byte-identical to GitHub
+
+      - name: Set up Git LFS
+        # ubuntu-latest runners include git-lfs but `git lfs install` is
+        # required to activate the smudge/clean filters in this checkout.
+        # `git lfs pull` is belt-and-suspenders: actions/checkout's lfs:true
+        # should already have fetched, but a second pull is cheap and proves
+        # the objects are local before we push.
+        run: |
+          git lfs install
+          git lfs pull
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN:       ${{ secrets.HF_DEPLOY_TOKEN }}
+          HF_SPACE_REPO:  ${{ vars.HF_SPACE_REPO }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Secret HF_DEPLOY_TOKEN is empty (or not visible to environment 'top')."
+            echo "Add a Write-scope token at: https://huggingface.co/settings/tokens"
+            echo "Then set it under: Settings → Environments → top → Add secret HF_DEPLOY_TOKEN"
+            exit 1
+          fi
+
+          # Token is embedded in the remote URL via x-access-token. This is the
+          # canonical pattern HF documents — the token is scoped to its Write
+          # permission and never gets logged (GitHub Actions auto-masks the
+          # secret in any output).
+          git remote add hf "https://x-access-token:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}.git"
+
+          # --force because the HF Space repo is initialised with a
+          # hello-world commit that doesn't share history with GitHub main.
+          # After the first successful push, future pushes are normal
+          # fast-forwards (the force flag is still harmless).
+          git push hf HEAD:main --force
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "::notice::Deployed commit ${{ github.sha }}"
+          echo "::notice::HF Space:  https://huggingface.co/spaces/${{ vars.HF_SPACE_REPO }}"
+          echo "::notice::Build log: https://huggingface.co/spaces/${{ vars.HF_SPACE_REPO }}/logs"
+
+      - name: Failure hint
+        if: failure()
+        run: |
+          echo "::error::HF Spaces deploy failed. Common causes:"
+          echo "  1. HF_DEPLOY_TOKEN is wrong scope (need Write, not Read)"
+          echo "  2. HF_SPACE_REPO points at a Space that doesn't exist (create it first at https://huggingface.co/new-space)"
+          echo "  3. LFS bandwidth quota exhausted (rare — free public Spaces have unlimited LFS bandwidth)"
+          echo "  4. Network glitch — re-run the failed job from the GitHub Actions UI"

@@ -44,7 +44,61 @@ It's seeded with a hello-world `app.py` you'll overwrite by pushing this repo.
 
 ---
 
-## Deploy
+## Deploy (automatic, via GitHub Actions — recommended)
+
+This repo ships a GitHub Actions workflow at
+`.github/workflows/deploy-hf-spaces.yml` that mirrors `main` → the HF Space
+on every push. Set it up once and never re-type the push commands.
+
+### One-time GitHub setup
+
+1. **GitHub repo → Settings → Environments → New environment**
+   - Name: `top` (this is what the workflow references)
+   - Add secret: **`HF_DEPLOY_TOKEN`** = the `hf_xxx…` Write-scope token from
+     step 2 of "One-time setup" above.
+
+2. **GitHub repo → Settings → Secrets and variables → Actions → Variables tab**
+   - Add variable: **`HF_SPACE_REPO`** = `<your-hf-username>/<space-name>`
+     e.g. `EmreAkcaa/stonecoal`
+
+That's it. Both are configured per-repo; nothing is hard-coded.
+
+### How it runs
+
+- **Auto-deploy** on every push to `main` (after PR merge).
+- **Manual trigger** from the GitHub Actions UI (Actions → "Deploy to Hugging
+  Face Spaces" → Run workflow). Useful for redeploys without a new commit.
+- **Concurrency**: one deploy in flight at a time. Pushes that land while a
+  deploy is running queue up.
+
+### What the workflow does
+
+1. Checks out the repo **with LFS objects materialised** (so the EEG parquets
+   are real files, not pointers).
+2. Re-runs `git lfs install && git lfs pull` for safety.
+3. Adds the HF Space as a `git remote` with the token embedded in the URL.
+4. `git push hf HEAD:main --force` — pushes the GitHub `main` tree byte-for-
+   byte onto the HF Space's `main` branch. The first push is `--force`
+   because the HF Space repo is initialised with an unrelated "hello world"
+   commit; subsequent pushes are normal fast-forwards (force is harmless).
+
+The HF Space then auto-rebuilds (its own build, separate from GitHub Actions).
+
+### Watch a deploy
+
+After merging a PR, go to the GitHub repo's **Actions** tab → "Deploy to
+Hugging Face Spaces" → click the latest run.
+
+The job's **Summary** step prints two links:
+- `https://huggingface.co/spaces/<repo>` — the live dashboard
+- `https://huggingface.co/spaces/<repo>/logs` — HF's own build log
+
+If a step fails, the **Failure hint** step prints a 4-row troubleshooting
+checklist.
+
+---
+
+## Deploy (manual fallback — if Actions are unavailable)
 
 From the repo root (any branch with the HF YAML frontmatter in README.md):
 
@@ -114,7 +168,12 @@ If anything crashes, **Logs** tab shows the actual error.
 
 ## Update the deploy
 
-Just push:
+**If you set up the GitHub Actions workflow** (recommended path above): just
+push to GitHub `main` — Actions takes care of mirroring to HF Spaces. Watch
+the Actions tab for the deploy run, then HF's own build logs for the
+container start.
+
+**If you're using the manual fallback**:
 
 ```bash
 git push hf main
@@ -160,7 +219,10 @@ This runbook assumes you keep both unless you say otherwise.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Permission denied` on `git push hf` | Wrong token, or token not write-scoped | Regenerate token with **Write** type at https://huggingface.co/settings/tokens |
+| Actions workflow fails at "Verify HF_SPACE_REPO is configured" | Repo variable not set | Settings → Secrets and variables → Actions → **Variables** tab → add `HF_SPACE_REPO` = `<user>/<space>` |
+| Actions workflow fails at "Push to Hugging Face Space" with auth error | Token missing or wrong scope | Settings → Environments → `top` → confirm `HF_DEPLOY_TOKEN` exists and has **Write** scope (regenerate at https://huggingface.co/settings/tokens) |
+| Actions workflow fails at LFS pull | LFS bandwidth quota exhausted (rare on public spaces) | Wait an hour and re-run; or check HF status |
+| `Permission denied` on `git push hf` (manual path) | Wrong token, or token not write-scoped | Regenerate token with **Write** type at https://huggingface.co/settings/tokens |
 | Build hangs at "Cloning LFS objects..." | Repo's LFS bandwidth exhausted (rare on public spaces) | Wait it out, or check HF status page |
 | App starts but EEG tab is missing from the sidebar | `available_universes()` filtered EEG out → either LFS didn't pull or parquets are stubs | Click **Logs**; if you see "EEG bulk parquets are LFS pointer stubs", file a GitHub issue. Workaround: `git lfs pull` locally and re-push. |
 | `streamlit: command not found` in build logs | `requirements.txt` malformed | Verify the file parses with `pip install -r requirements.txt --dry-run` locally |
