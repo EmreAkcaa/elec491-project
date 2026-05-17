@@ -135,8 +135,19 @@ def test_lfs_pointer_detection_missing_file(registry, tmp_path):
 
 def test_bulk_data_materialised_for_locally_present_universes(registry):
     """Whatever universes are on this clone with a pipeline_metadata.json must
-    also have real parquets — otherwise local development would be broken."""
+    also have real parquets — otherwise local dev would be broken.
+
+    EEG is the exception: on CI runners + Streamlit Cloud + HF Spaces, the
+    EEG bulk parquets are absent from the repo (1 GB cap) and only arrive via
+    the dashboard's `_materialise_eeg_data_if_needed()` preload that fetches
+    from the companion HF Dataset. We skip EEG here because there's no way
+    to satisfy the assertion without running the dashboard preload itself.
+    """
     for u in registry.UNIVERSES.values():
+        if u.key == "eeg_motor_left_right":
+            # See docstring — EEG bulk lives in the companion dataset, not the
+            # repo. The dashboard's preload handles materialisation at runtime.
+            continue
         meta = registry.PROJECT_ROOT / "data" / u.key / "results" / "pipeline_metadata.json"
         if not meta.exists():
             continue

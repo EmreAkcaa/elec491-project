@@ -12,9 +12,37 @@ from pathlib import Path
 
 import pytest
 
-_APP_DIR = Path(__file__).resolve().parent.parent / "app"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_APP_DIR = _REPO_ROOT / "app"
 if str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
+
+
+def _eeg_bulk_parquets_present() -> bool:
+    """True iff the EEG bulk parquets are real on-disk files (not LFS pointer
+    stubs and not absent). On CI we skip the LFS pull → these are missing →
+    any test that requires EEG locally must skip cleanly."""
+    eeg_dir = _REPO_ROOT / "data" / "eeg_motor_left_right" / "processed"
+    f = eeg_dir / "log_returns.parquet"
+    if not f.exists():
+        return False
+    try:
+        # Real parquets start with the 4-byte PAR1 magic. LFS pointer stubs
+        # are tiny text files starting with "version https://git-lfs...".
+        if f.stat().st_size < 100_000:  # heuristic — real EEG parquet is 300 MB
+            return False
+    except OSError:
+        return False
+    return True
+
+
+needs_eeg_bulk = pytest.mark.skipif(
+    not _eeg_bulk_parquets_present(),
+    reason=(
+        "EEG bulk parquets not present locally — skipped on CI by design. "
+        "Run `uv run python run_pipeline_eeg.py` locally to enable EEG-specific tests."
+    ),
+)
 
 
 @pytest.fixture(scope="module")
@@ -88,9 +116,18 @@ def test_eeg_pipeline_metadata_present_on_disk(registry):
     )
 
 
+@needs_eeg_bulk
 def test_eeg_appears_in_available_universes_when_on_disk(registry):
-    """Regression for the dashboard sidebar selector."""
+    """Regression for the dashboard sidebar selector.
+
+    Skipped on CI where the EEG bulk parquets are excluded from the
+    `actions/checkout` step (we skip LFS to keep CI under a minute).
+    The deploy environment downloads them from the companion HF Dataset
+    via the dashboard's `_materialise_eeg_data_if_needed()` preload —
+    not the same code path as this test exercises.
+    """
     avail = {u.key for u in registry.available_universes()}
     assert "eeg_motor_left_right" in avail, (
-        "EEG should be selectable in the sidebar (its pipeline_metadata.json is on disk)"
+        "EEG should be selectable in the sidebar (its pipeline_metadata.json "
+        "AND bulk parquets are both on disk)"
     )
