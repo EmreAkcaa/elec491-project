@@ -780,6 +780,23 @@ def load_te_matrix() -> pd.DataFrame:
 
 
 @st.cache_data
+def _load_te_matrix_raw(universe: str) -> pd.DataFrame:
+    """Pre-FDR TE values — useful for ranking edges by magnitude even when
+    the FDR-corrected mask is sparse (the common case at 100-shuffle
+    resolution on N>50 ticker grids)."""
+    path = data_results(universe) / "transfer_entropy_raw.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    # Fall back to the legacy filtered matrix when the raw file doesn't exist
+    # (pre-Phase-1.3 pipeline runs).
+    return _load_te_matrix(universe)
+
+
+def load_te_matrix_raw() -> pd.DataFrame:
+    return _load_te_matrix_raw(current_universe())
+
+
+@st.cache_data
 def _load_net_te_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "net_transfer_entropy_matrix.parquet"
     if path.exists():

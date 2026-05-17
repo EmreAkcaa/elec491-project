@@ -1,0 +1,521 @@
+{
+  "n_bank_tickers_in_universe": 7,
+  "per_numeraire": {
+    "bist": {
+      "label": "TRY",
+      "n_tickers": 73,
+      "total_variance": 73.0,
+      "modes": [
+        {
+          "rank": 1,
+          "eigenvalue": 28.374847773601825,
+          "variance_share": 0.3886965448438606,
+          "bank_mass_share": 0.10224797633090024,
+          "top_tickers": [
+            {
+              "ticker": "KCHOL",
+              "mass": 0.02114494998644456,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "SAHOL",
+              "mass": 0.021065923487993906,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "SISE",
+              "mass": 0.02037944044097872,
+              "sector": "Industrials"
+            },
+            {
+              "ticker": "THYAO",
+              "mass": 0.019236029392971192,
+              "sector": "Airlines"
+            },
+            {
+              "ticker": "PETKM",
+              "mass": 0.01865411740799419,
+              "sector": "Chemicals"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Conglomerates",
+              "mass": 0.11046091111316868
+            },
+            {
+              "sector": "Banking",
+              "mass": 0.10224797633090024
+            },
+            {
+              "sector": "Energy",
+              "mass": 0.08912703404800701
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.08001719997175508
+            },
+            {
+              "sector": "Retail",
+              "mass": 0.06365104562516047
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "eigenvalue": 3.0394606124321317,
+          "variance_share": 0.04163644674564564,
+          "bank_mass_share": 0.6177443410074995,
+          "top_tickers": [
+            {
+              "ticker": "GARAN",
+              "mass": 0.11616664793634257,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "AKBNK",
+              "mass": 0.11417274127090675,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "ISCTR",
+              "mass": 0.11015396320171739,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "YKBNK",
+              "mass": 0.10773643313211598,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "VAKBN",
+              "mass": 0.08563447846777793,
+              "sector": "Banking"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Banking",
+              "mass": 0.6177443410074995
+            },
+            {
+              "sector": "Conglomerates",
+              "mass": 0.08819665531471513
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.044714859640972736
+            },
+            {
+              "sector": "Technology",
+              "mass": 0.03980178723180198
+            },
+            {
+              "sector": "Building Materials",
+              "mass": 0.03295787936833274
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "eigenvalue": 1.8300365284130362,
+          "variance_share": 0.025068993539904605,
+          "bank_mass_share": 0.1654447417140122,
+          "top_tickers": [
+            {
+              "ticker": "BRYAT",
+              "mass": 0.05878225039030288,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "BRSAN",
+              "mass": 0.05038634728489431,
+              "sector": "Steel"
+            },
+            {
+              "ticker": "TUPRS",
+              "mass": 0.04609612057984287,
+              "sector": "Energy"
+            },
+            {
+              "ticker": "BTCIM",
+              "mass": 0.03989567629053392,
+              "sector": "Building Materials"
+            },
+            {
+              "ticker": "FROTO",
+              "mass": 0.03958247396037154,
+              "sector": "Automotive"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Banking",
+              "mass": 0.1654447417140122
+            },
+            {
+              "sector": "Conglomerates",
+              "mass": 0.10413059559827514
+            },
+            {
+              "sector": "Steel",
+              "mass": 0.09965956670019238
+            },
+            {
+              "sector": "Energy",
+              "mass": 0.08756053434531526
+            },
+            {
+              "sector": "Retail",
+              "mass": 0.08069489292594573
+            }
+          ]
+        }
+      ]
+    },
+    "bist_usd": {
+      "label": "USD",
+      "n_tickers": 73,
+      "total_variance": 73.0,
+      "modes": [
+        {
+          "rank": 1,
+          "eigenvalue": 32.93248569938003,
+          "variance_share": 0.4511299410873977,
+          "bank_mass_share": 0.10580457624287677,
+          "top_tickers": [
+            {
+              "ticker": "SAHOL",
+              "mass": 0.019917191610311417,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "KCHOL",
+              "mass": 0.01980662527851761,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "SISE",
+              "mass": 0.01907038992703883,
+              "sector": "Industrials"
+            },
+            {
+              "ticker": "THYAO",
+              "mass": 0.018192683432232803,
+              "sector": "Airlines"
+            },
+            {
+              "ticker": "DOHOL",
+              "mass": 0.017505267716408805,
+              "sector": "Conglomerates"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Conglomerates",
+              "mass": 0.10912937035941568
+            },
+            {
+              "sector": "Banking",
+              "mass": 0.10580457624287677
+            },
+            {
+              "sector": "Energy",
+              "mass": 0.08685134758313895
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.08180632484433185
+            },
+            {
+              "sector": "Retail",
+              "mass": 0.06844601324391632
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "eigenvalue": 2.628401965754851,
+          "variance_share": 0.03600550638020344,
+          "bank_mass_share": 0.5953804991716549,
+          "top_tickers": [
+            {
+              "ticker": "GARAN",
+              "mass": 0.11096736876510113,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "AKBNK",
+              "mass": 0.10805227073310894,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "YKBNK",
+              "mass": 0.1056659886901326,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "ISCTR",
+              "mass": 0.10480166900515282,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "VAKBN",
+              "mass": 0.08228877215161502,
+              "sector": "Banking"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Banking",
+              "mass": 0.5953804991716549
+            },
+            {
+              "sector": "Conglomerates",
+              "mass": 0.0927210496881856
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.04664370649624091
+            },
+            {
+              "sector": "Technology",
+              "mass": 0.043433356984675806
+            },
+            {
+              "sector": "Steel",
+              "mass": 0.03670663369840932
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "eigenvalue": 1.585579138686832,
+          "variance_share": 0.02172026217379222,
+          "bank_mass_share": 0.1726525903440627,
+          "top_tickers": [
+            {
+              "ticker": "BRYAT",
+              "mass": 0.06050727766444545,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "BRSAN",
+              "mass": 0.054327089029672884,
+              "sector": "Steel"
+            },
+            {
+              "ticker": "TUPRS",
+              "mass": 0.047213692680081285,
+              "sector": "Energy"
+            },
+            {
+              "ticker": "DGATE",
+              "mass": 0.044723215818062954,
+              "sector": "Technology"
+            },
+            {
+              "ticker": "FROTO",
+              "mass": 0.04275949979245576,
+              "sector": "Automotive"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Banking",
+              "mass": 0.1726525903440627
+            },
+            {
+              "sector": "Steel",
+              "mass": 0.11289147475355636
+            },
+            {
+              "sector": "Conglomerates",
+              "mass": 0.10173222722694322
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.07846653663932009
+            },
+            {
+              "sector": "Energy",
+              "mass": 0.0726356066152439
+            }
+          ]
+        }
+      ]
+    },
+    "bist_gold": {
+      "label": "Gold",
+      "n_tickers": 73,
+      "total_variance": 73.00000000000003,
+      "modes": [
+        {
+          "rank": 1,
+          "eigenvalue": 37.570616677991275,
+          "variance_share": 0.5146659818902912,
+          "bank_mass_share": 0.10193003656267942,
+          "top_tickers": [
+            {
+              "ticker": "KCHOL",
+              "mass": 0.018837061226605382,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "SAHOL",
+              "mass": 0.018679369425454805,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "SISE",
+              "mass": 0.018431658621988103,
+              "sector": "Industrials"
+            },
+            {
+              "ticker": "THYAO",
+              "mass": 0.017570996716470975,
+              "sector": "Airlines"
+            },
+            {
+              "ticker": "ARCLK",
+              "mass": 0.01699738449173924,
+              "sector": "Consumer Durables"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Conglomerates",
+              "mass": 0.106165253562096
+            },
+            {
+              "sector": "Banking",
+              "mass": 0.10193003656267942
+            },
+            {
+              "sector": "Energy",
+              "mass": 0.0860917644064421
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.08256128956653268
+            },
+            {
+              "sector": "Retail",
+              "mass": 0.06951216344375781
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "eigenvalue": 2.3611801877996466,
+          "variance_share": 0.0323449340794472,
+          "bank_mass_share": 0.611394349358011,
+          "top_tickers": [
+            {
+              "ticker": "AKBNK",
+              "mass": 0.11184151148068378,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "GARAN",
+              "mass": 0.10977468581400274,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "ISCTR",
+              "mass": 0.10788598100418327,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "YKBNK",
+              "mass": 0.10683809168721238,
+              "sector": "Banking"
+            },
+            {
+              "ticker": "VAKBN",
+              "mass": 0.08602956964583183,
+              "sector": "Banking"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Banking",
+              "mass": 0.611394349358011
+            },
+            {
+              "sector": "Conglomerates",
+              "mass": 0.08937679813414323
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.04484037004017878
+            },
+            {
+              "sector": "Technology",
+              "mass": 0.04027597068765776
+            },
+            {
+              "sector": "Steel",
+              "mass": 0.033936618270823685
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "eigenvalue": 1.3987799146091269,
+          "variance_share": 0.019161368693275702,
+          "bank_mass_share": 0.16768491682163011,
+          "top_tickers": [
+            {
+              "ticker": "BRYAT",
+              "mass": 0.0633173338380636,
+              "sector": "Conglomerates"
+            },
+            {
+              "ticker": "BRSAN",
+              "mass": 0.05913828851736487,
+              "sector": "Steel"
+            },
+            {
+              "ticker": "FROTO",
+              "mass": 0.04583483171481439,
+              "sector": "Automotive"
+            },
+            {
+              "ticker": "TUPRS",
+              "mass": 0.04538492285033049,
+              "sector": "Energy"
+            },
+            {
+              "ticker": "BTCIM",
+              "mass": 0.04444586501642411,
+              "sector": "Building Materials"
+            }
+          ],
+          "top_sectors": [
+            {
+              "sector": "Banking",
+              "mass": 0.16768491682163011
+            },
+            {
+              "sector": "Conglomerates",
+              "mass": 0.11150517096000509
+            },
+            {
+              "sector": "Steel",
+              "mass": 0.10055925664562002
+            },
+            {
+              "sector": "Energy",
+              "mass": 0.08214069610125471
+            },
+            {
+              "sector": "Automotive",
+              "mass": 0.08136023104548232
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

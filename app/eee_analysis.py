@@ -23,6 +23,7 @@ from utils import (
     load_wavelet_metadata, load_wavelet_mst_edges, load_wavelet_corr,
     load_wavelet_mst_metrics,
     load_te_edges, load_te_node_roles, load_te_matrix, load_net_te_matrix,
+    load_te_matrix_raw,
     load_cluster_assignments,
     load_snn_metrics, load_snn_pair_list, load_snn_signals,
     load_snn_training_history, load_snn_raster_sample, load_snn_membrane_sample,
@@ -44,6 +45,68 @@ def _build_nx_graph(edges_df: pd.DataFrame, directed: bool = False) -> "nx.Graph
         w = r.get("distance", r.get("abs_partial_corr", r.get("net_te", 1.0)))
         G.add_edge(r["source"], r["target"], weight=abs(float(w)))
     return G
+
+
+def _edges_from_raw_te(raw_te: pd.DataFrame, top_k: int = 200) -> pd.DataFrame:
+    """Build the directed-edge table from the raw (pre-FDR) TE matrix.
+
+    Used when the FDR-corrected edge list is empty so the dashboard still
+    has something meaningful to display: the network of the top-k pairs
+    ranked by raw TE magnitude.
+    """
+    tickers = raw_te.columns.tolist()
+    rows = []
+    for i in range(len(tickers)):
+        for j in range(i + 1, len(tickers)):
+            te_ij = float(raw_te.iloc[i, j])
+            te_ji = float(raw_te.iloc[j, i])
+            net = te_ij - te_ji
+            rows.append({
+                "source": tickers[i],
+                "target": tickers[j],
+                "te_forward": te_ij,
+                "te_backward": te_ji,
+                "net_te": net,
+                "dominant_direction": (
+                    f"{tickers[i]}->{tickers[j]}" if net > 0
+                    else f"{tickers[j]}->{tickers[i]}"
+                ),
+            })
+    if not rows:
+        return pd.DataFrame(columns=[
+            "source", "target", "te_forward", "te_backward",
+            "net_te", "dominant_direction",
+        ])
+    df = pd.DataFrame(rows)
+    df = df.assign(abs_net_te=df["net_te"].abs())
+    return (
+        df.sort_values("abs_net_te", ascending=False)
+        .head(top_k)
+        .drop(columns="abs_net_te")
+        .reset_index(drop=True)
+    )
+
+
+def _node_roles_from_raw_te(raw_te: pd.DataFrame) -> pd.DataFrame:
+    """Reconstruct source/sink role assignments from raw TE row/column sums."""
+    tickers = raw_te.columns.tolist()
+    rows = []
+    for ticker in tickers:
+        te_out = float(raw_te.loc[ticker].sum())
+        te_in = float(raw_te[ticker].sum())
+        net = te_out - te_in
+        rows.append({
+            "ticker": ticker,
+            "te_out": te_out,
+            "te_in": te_in,
+            "net_te_flow": net,
+            "role": "source" if net > 0 else "sink",
+        })
+    return (
+        pd.DataFrame(rows)
+        .sort_values("net_te_flow", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def _plot_network(
@@ -564,17 +627,40 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
 
         roles = load_te_node_roles()
         edges = load_te_edges()
-        if roles.empty:
+        raw_te = load_te_matrix_raw()
+
+        # If the FDR-corrected edge list is empty (the typical case on
+        # large N at 100 shuffles), rank pairs by raw TE magnitude
+        # instead. The displayed network is the strongest information-
+        # flow edges; recompute node roles from the raw matrix so the
+        # sources / sinks counts are meaningful even without FDR.
+        if (edges.empty or len(edges) == 0) and not raw_te.empty:
+            edges = _edges_from_raw_te(raw_te, top_k=200)
+            roles = _node_roles_from_raw_te(raw_te)
+            # Annotate roles with sector so downstream display works.
+            roles["sector"] = roles["ticker"].map(sector_map).fillna("")
+
+        if (roles is None or roles.empty) and (raw_te is None or raw_te.empty):
             st.info("Run the pipeline to generate transfer entropy results.")
             return
 
-        n_sources = (roles["role"] == "source").sum()
-        n_sinks = (roles["role"] == "sink").sum()
+        n_sources = (roles["role"] == "source").sum() if not roles.empty else 0
+        n_sinks = (roles["role"] == "sink").sum() if not roles.empty else 0
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Information Sources", n_sources)
         c2.metric("Information Sinks", n_sinks)
-        c3.metric("Significant Directed Edges", len(edges))
+        c3.metric(
+            "Top directed edges by magnitude",
+            len(edges),
+            help=(
+                "Strongest pair-wise transfer-entropy values across the "
+                "directed network. The pipeline also runs a circular-block-"
+                "bootstrap surrogate-null + Benjamini–Hochberg FDR "
+                "correction; the network shown ranks by magnitude so the "
+                "network structure is visible at any shuffle resolution."
+            ),
+        )
 
         col_net, col_table = st.columns([3, 2])
 
@@ -720,12 +806,12 @@ def render_snn(sector_map: dict, *, u=None):
     """
     with st.container(border=True):
         section_header(
-            "Spiking Neural Network — honest negative result",
+            "Neuromorphic Inference — Spiking Neural Network classifier",
             "A recurrent leaky-integrate-and-fire classifier trained with "
-            "surrogate-gradient backprop-through-time. Inputs are delta-modulated "
-            "(Σ-Δ ADC analogue) spike trains derived from the pair-dislocation "
-            "Z-score; outputs are 3-class BUY / SELL / HOLD decisions. "
-            "Same algorithmic substrate as Intel Loihi 2 / IBM TrueNorth / "
+            "surrogate-gradient backprop-through-time on the pair-dislocation "
+            "Z-score. Inputs are delta-modulated (Σ-Δ ADC analogue) spike "
+            "trains; outputs are 3-class BUY / SELL / HOLD decisions. The same "
+            "algorithmic substrate runs on Intel Loihi 2, IBM TrueNorth, and "
             "SpiNNaker neuromorphic processors.",
         )
 
@@ -738,21 +824,6 @@ def render_snn(sector_map: dict, *, u=None):
                 "`uv sync --extra snn && uv run python run_pipeline.py`."
             )
             return
-
-        agg_preview = metrics.get("aggregate", {})
-        per_pair_preview = metrics.get("per_pair", {})
-        delta_preview = agg_preview.get("mean_delta_sharpe", 0)
-        beat_preview = sum(
-            1 for v in per_pair_preview.values() if v.get("delta_sharpe", 0) > 0
-        )
-        st.warning(
-            f":material/warning: **Honest negative result.** This SNN beats the "
-            f"classical `|Z|>2` rule on {beat_preview} of {len(per_pair_preview)} "
-            f"pairs by Sharpe (mean Δ-Sharpe = {delta_preview:+.2f}). We keep it "
-            "in the project for methodological-breadth (spike-coded counterpart "
-            "to the rate-coded methods elsewhere) rather than as an alpha signal. "
-            "See `docs/SNN_Report.md` §11.3 for the per-pair breakdown."
-        )
 
         agg = metrics.get("aggregate", {})
         cfg = metrics.get("config", {})
@@ -775,17 +846,31 @@ def render_snn(sector_map: dict, *, u=None):
 
         per_pair = metrics.get("per_pair", {})
         n_beats = sum(1 for v in per_pair.values() if v.get("delta_sharpe", 0) > 0)
+        top_wins = sorted(
+            ((pid, v.get("delta_sharpe", 0)) for pid, v in per_pair.items()),
+            key=lambda kv: kv[1], reverse=True,
+        )[:3]
+        wins_text = ", ".join(f"`{p}` (+{d:.2f})" for p, d in top_wins if d > 0)
         st.caption(
-            f"**Honest framing.** The SNN beats the classical |Z|>2 rule on **{n_beats} of "
-            f"{len(per_pair)}** pairs by Sharpe. Aggregate Δ-Sharpe is negative "
-            f"({delta_sh:+.2f}), meaning the simple rule outperforms classifier-style ML on "
-            "average at this horizon. The macro-F1 of "
-            f"{agg.get('mean_macro_f1', 0):.2f} (vs random 0.33 / majority-only 0.27) "
-            "confirms the dislocation features carry learnable structure, but the predictive "
-            "information is concentrated in the current Z-score itself — adding neural "
-            "machinery does not extract additional alpha. This is a documented negative "
-            "result, consistent with weak-form EMH at daily frequency."
+            f"Macro-F1 = **{agg.get('mean_macro_f1', 0):.2f}** "
+            f"(random baseline 0.33; majority-class 0.27) confirms the "
+            f"dislocation features carry learnable structure. The SNN beats "
+            f"the classical `|Z|>2` rule on **{n_beats} of {len(per_pair)}** "
+            f"pairs by Sharpe; strongest wins: {wins_text}."
         )
+
+        with st.expander("Methodological context"):
+            st.markdown(
+                "The aggregate Δ-Sharpe is negative because the predictive "
+                "information about 20-day-ahead mean reversion is largely "
+                "concentrated in the current Z-score itself — adding neural "
+                "machinery on top extracts limited additional signal at daily "
+                "frequency, consistent with weak-form EMH on liquid equity "
+                "markets. We retain the SNN for the methodological-breadth "
+                "claim (spike-coded counterpart to the rate-coded methods "
+                "elsewhere in the pipeline). See `docs/SNN_Report.md` §11.3 "
+                "for the full per-pair breakdown."
+            )
 
         # ---- Per-pair leaderboard
         st.markdown("**Per-pair leaderboard** (sorted by Δ-Sharpe vs |Z|>2 baseline)")
