@@ -8,7 +8,12 @@ dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",
     "scipy>=1.13",
-    "plotly>=5.22",
+    # plotly pinned <6 because plotly 6 + kaleido 1.x require a system Chrome
+    # install for static-image export (fig.to_image). Streamlit Cloud has no
+    # Chrome, so the export popover crashes with "Kaleido requires Google
+    # Chrome to be installed". The 5.x line has every feature this project
+    # uses; we lose nothing.
+    "plotly>=5.22,<6",
     "streamlit>=1.35",
     "pyarrow>=16.0",
     "pyyaml>=6.0",
@@ -16,7 +21,11 @@ dependencies = [
     "networkx>=3.2",
     "scikit-learn>=1.5",
     "PyWavelets>=1.6",
-    "kaleido>=0.2.1",
+    # kaleido pinned to the last 0.x release: it bundles its own Chromium
+    # binary and works out of the box on Streamlit Cloud. kaleido 1.0+
+    # delegates to a system Chrome install via plotly_get_chrome, which we
+    # cannot trigger in the hosted environment. Do not bump above 0.2.x.
+    "kaleido==0.2.1",
 ]
 
 [project.optional-dependencies]
