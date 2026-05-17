@@ -100,17 +100,20 @@ def render_export_popover(
             default_w_clamped = max(_EXPORT_W_MIN, min(_EXPORT_W_MAX, int(default_w)))
             default_h_clamped = max(_EXPORT_H_MIN, min(_EXPORT_H_MAX, int(default_h)))
 
-            c1, c2 = st.columns(2)
-            with c1:
-                w = st.number_input(
-                    "Width", _EXPORT_W_MIN, _EXPORT_W_MAX, default_w_clamped, 100,
-                    key=f"_exp_w_{chart_id}",
-                )
-            with c2:
-                h = st.number_input(
-                    "Height", _EXPORT_H_MIN, _EXPORT_H_MAX, default_h_clamped, 100,
-                    key=f"_exp_h_{chart_id}",
-                )
+            # Stacked (NOT st.columns) — render_chart is always called from
+            # inside a dashboard column, so this popover already lives in a
+            # column ancestor. Streamlit 1.41+ rejects st.columns 2 levels
+            # deep, so creating a 2-col layout here would crash on every
+            # chart's first render. Vertical stacking has the same UX in a
+            # narrow popover.
+            w = st.number_input(
+                "Width", _EXPORT_W_MIN, _EXPORT_W_MAX, default_w_clamped, 100,
+                key=f"_exp_w_{chart_id}",
+            )
+            h = st.number_input(
+                "Height", _EXPORT_H_MIN, _EXPORT_H_MAX, default_h_clamped, 100,
+                key=f"_exp_h_{chart_id}",
+            )
 
             filename = f"{filename_base}.{fmt}"
 

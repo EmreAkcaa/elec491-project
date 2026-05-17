@@ -995,46 +995,48 @@ def event_marker_manager_ui(
         evs: list = st.session_state[_key_evs]
         if evs:
             st.markdown("**Custom events**")
+            # NOTE: no st.columns here — event_marker_manager_ui is called
+            # from inside dashboard tabs which already have column ancestors,
+            # and the wrapping st.popover doesn't reset that. Streamlit 1.41+
+            # rejects st.columns 2 levels deep. Render the label + remove
+            # button inline (the X glyph wraps to a new line if needed).
             for _i, _cev in enumerate(evs):
                 _style_label = _DASH_LABELS.get(_cev["dash"], _cev["dash"])
-                _c1, _c2 = st.columns([6, 1])
-                with _c1:
-                    st.markdown(
-                        f"<span style='color:{_cev['color']}'>▌</span> "
-                        f"**{_cev['label']}** &nbsp; {_cev['date']} &nbsp;·&nbsp; "
-                        f"{_style_label}, {_cev['width']}px",
-                        unsafe_allow_html=True,
-                    )
-                with _c2:
-                    if st.button("✕", key=f"{key_prefix}_rm_{_i}", help="Remove this marker"):
-                        st.session_state[_key_evs].pop(_i)
-                        st.rerun()
+                st.markdown(
+                    f"<span style='color:{_cev['color']}'>▌</span> "
+                    f"**{_cev['label']}** &nbsp; {_cev['date']} &nbsp;·&nbsp; "
+                    f"{_style_label}, {_cev['width']}px",
+                    unsafe_allow_html=True,
+                )
+                if st.button("✕ Remove", key=f"{key_prefix}_rm_{_i}", help="Remove this marker"):
+                    st.session_state[_key_evs].pop(_i)
+                    st.rerun()
 
         st.markdown("**Add a new event marker**")
         with st.form(f"{key_prefix}_add_event_form", clear_on_submit=True):
-            _fa, _fb = st.columns(2)
-            with _fa:
-                _ev_date = st.date_input(
-                    "Date",
-                    value=min(pd.Timestamp.today().date(), max_date),
-                    min_value=min_date,
-                    max_value=max_date,
-                    key=f"{key_prefix}_new_ev_date",
-                )
-                _ev_label = st.text_input(
-                    "Caption / label", value="",
-                    placeholder="e.g. Fed Rate Hike",
-                    key=f"{key_prefix}_new_ev_label",
-                )
-            with _fb:
-                _ev_color = st.color_picker(
-                    "Line color", value="#E53935",
-                    key=f"{key_prefix}_new_ev_color",
-                )
-                _ev_style = st.selectbox(
-                    "Line style", list(DASH_OPTIONS.keys()), index=0,
-                    key=f"{key_prefix}_new_ev_style",
-                )
+            # Vertically stacked (no st.columns inside the popover form) for
+            # the same 1.41+ nesting reason — the popover is already inside
+            # the dashboard's column tree, so columns here would be 2 deep.
+            _ev_date = st.date_input(
+                "Date",
+                value=min(pd.Timestamp.today().date(), max_date),
+                min_value=min_date,
+                max_value=max_date,
+                key=f"{key_prefix}_new_ev_date",
+            )
+            _ev_label = st.text_input(
+                "Caption / label", value="",
+                placeholder="e.g. Fed Rate Hike",
+                key=f"{key_prefix}_new_ev_label",
+            )
+            _ev_color = st.color_picker(
+                "Line color", value="#E53935",
+                key=f"{key_prefix}_new_ev_color",
+            )
+            _ev_style = st.selectbox(
+                "Line style", list(DASH_OPTIONS.keys()), index=0,
+                key=f"{key_prefix}_new_ev_style",
+            )
             _ev_width = st.slider(
                 "Line thickness (px)", min_value=0.5, max_value=5.0,
                 value=1.5, step=0.5,
