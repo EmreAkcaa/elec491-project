@@ -53,6 +53,7 @@ def _plot_network(
     node_metrics: pd.DataFrame | None = None,
     size_metric: str = "betweenness_centrality",
     size_range: tuple[int, int] = (8, 28),
+    sector_node_label: str = "Sector",
 ) -> go.Figure:
     """Create a Plotly network graph from edges.
 
@@ -130,7 +131,7 @@ def _plot_network(
             marker=dict(size=size, color=color, line=dict(width=0.5, color="#fff")),
             text=node, textposition="top center", textfont=dict(size=7),
             hovertemplate=(
-                f"<b>{node}</b><br>Sector: {sector}<br>Degree: {deg}"
+                f"<b>{node}</b><br>{sector_node_label}: {sector}<br>Degree: {deg}"
                 f"{metric_text}<extra></extra>"
             ),
             showlegend=False,
@@ -194,7 +195,20 @@ def _plot_matrix_heatmap(
 # Section renderers
 # ---------------------------------------------------------------------------
 
-def render_rmt(sector_map: dict):
+def _sector_label(u) -> str:
+    """Anatomical-region for EEG, Sector for finance, etc. None-safe."""
+    return getattr(u, "sector_label", "Sector") if u is not None else "Sector"
+
+
+def _item_label(u) -> str:
+    return getattr(u, "item_label", "Ticker") if u is not None else "Ticker"
+
+
+def _items_label(u) -> str:
+    return getattr(u, "items_label", "Tickers") if u is not None else "Tickers"
+
+
+def render_rmt(sector_map: dict, *, u=None):
     """Render RMT denoising section."""
     with st.container(border=True):
         section_header(
@@ -271,6 +285,7 @@ def render_rmt(sector_map: dict):
                     raw_edges, sector_map,
                     edge_weight_col="distance",
                     node_metrics=metrics_df,
+                    sector_node_label=_sector_label(u),
                 )
             else:
                 metrics_df = load_denoised_mst_metrics()
@@ -278,6 +293,7 @@ def render_rmt(sector_map: dict):
                     denoised_edges, sector_map,
                     edge_weight_col="distance",
                     node_metrics=metrics_df,
+                    sector_node_label=_sector_label(u),
                 )
 
             render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
@@ -301,7 +317,7 @@ def render_rmt(sector_map: dict):
         )
 
 
-def render_glasso(sector_map: dict):
+def render_glasso(sector_map: dict, *, u=None):
     """Render Graphical LASSO section."""
     with st.container(border=True):
         section_header(
@@ -329,7 +345,8 @@ def render_glasso(sector_map: dict):
             # Partial correlation network
             fig = _plot_network(edges, sector_map,
                                 edge_weight_col="abs_partial_corr",
-                                title="Partial Correlation Network")
+                                title="Partial Correlation Network",
+                                sector_node_label=_sector_label(u))
             render_chart(fig, chart_id="glasso_net", filename_base="glasso_network",
                          title_key="glasso_net",
                          default_title="Partial Correlation Network (Direct Dependencies)")
@@ -353,7 +370,10 @@ def render_glasso(sector_map: dict):
         col_pc, col_prec = st.columns(2)
 
         with col_pc:
-            st.markdown("**Partial Correlation Matrix** — direct dependencies after conditioning on all other tickers (clipped to ±0.3 for visibility).")
+            st.markdown(
+                f"**Partial Correlation Matrix** — direct dependencies after conditioning "
+                f"on all other {_items_label(u).lower()} (clipped to ±0.3 for visibility)."
+            )
             partial = load_partial_corr()
             if not partial.empty:
                 # Zero diagonal so it doesn't dominate the colorscale
@@ -407,15 +427,29 @@ def render_glasso(sector_map: dict):
                 st.info("Run the pipeline to generate the precision matrix.")
 
 
-def render_wavelets(sector_map: dict):
+def render_wavelets(sector_map: dict, *, u=None):
     """Render Wavelet multi-scale analysis section."""
     with st.container(border=True):
-        section_header(
-            "Wavelet Multi-Scale Correlation",
-            "DWT (Daubechies-4) decomposes returns into frequency bands. "
-            "Each scale isolates a specific frequency — unlike rolling windows which mix all frequencies. "
-            "Short scales capture noise/day-trading; long scales reveal institutional/macro structure.",
+        _domain_wav = getattr(u, "domain", "finance") if u is not None else "finance"
+        _series_wav = (
+            getattr(u, "series_label", "returns").lower() + "s"
+            if u is not None and getattr(u, "domain", "finance") != "finance"
+            else "returns"
         )
+        if _domain_wav == "finance":
+            _wav_desc = (
+                "DWT (Daubechies-4) decomposes returns into frequency bands. "
+                "Each scale isolates a specific frequency — unlike rolling windows which mix all frequencies. "
+                "Short scales capture noise/day-trading; long scales reveal institutional/macro structure."
+            )
+        else:
+            _wav_desc = (
+                f"DWT (Daubechies-4) decomposes the {_series_wav} into frequency bands. "
+                "Each scale isolates a specific oscillation range — short scales capture "
+                "fast rhythms (gamma/beta in EEG), long scales reveal slow oscillations "
+                "(theta/delta)."
+            )
+        section_header("Wavelet Multi-Scale Correlation", _wav_desc)
 
         meta = load_wavelet_metadata()
         if not meta:
@@ -444,6 +478,7 @@ def render_wavelets(sector_map: dict):
                 fig = _plot_network(
                     edges, sector_map, edge_weight_col="distance",
                     node_metrics=scale_metrics,
+                    sector_node_label=_sector_label(u),
                 )
                 total_weight = edges["distance"].sum()
                 render_chart(fig, chart_id=f"wav_mst_{scale_level}", filename_base="wavelet_mst",
@@ -506,14 +541,16 @@ def render_wavelets(sector_map: dict):
             st.dataframe(pd.DataFrame(summary_rows), width="stretch", hide_index=True)
 
 
-def render_transfer_entropy(sector_map: dict):
+def render_transfer_entropy(sector_map: dict, *, u=None):
     """Render Transfer Entropy section."""
     with st.container(border=True):
+        _il = _item_label(u)
+        _items_lower = _items_label(u).lower()
         section_header(
             "Transfer Entropy — Directed Information Flow",
             "Unlike correlation (symmetric), transfer entropy measures directed causality: "
-            "'Does Stock A's past reduce uncertainty about Stock B's future?' "
-            "Produces an asymmetric network revealing which stocks lead and which follow.",
+            f"'Does {_il} A's past reduce uncertainty about {_il} B's future?' "
+            f"Produces an asymmetric network revealing which {_items_lower} lead and which follow.",
         )
 
         roles = load_te_node_roles()
@@ -660,7 +697,7 @@ def render_transfer_entropy(sector_map: dict):
 CLASS_COLORS = {"HOLD": "#9CA3AF", "BUY": "#06D6A0", "SELL": "#E63946"}
 
 
-def render_snn(sector_map: dict):
+def render_snn(sector_map: dict, *, u=None):
     """Render Spiking Neural Network (neuromorphic) section.
 
     Honest framing: the SNN achieves macro-F1 ≈ 0.67 (3-class baseline 0.27)
@@ -940,11 +977,11 @@ def render():
     has ``has_snn=False`` in app/universe_registry.py — the SNN classifier is
     pair-trading-specific and doesn't apply to non-financial universes (EEG).
     """
-    # Defensive import — force a fresh load so a stale module in sys.modules
-    # (Streamlit Cloud caches between deploys) can't strip the new fields.
-    import importlib
-    import universe_registry as _ur
-    importlib.reload(_ur)
+    # Note: previous versions called importlib.reload(universe_registry) here
+    # to defeat Streamlit Cloud's stale-module cache. HF Spaces rebuilds the
+    # container on every deploy, so the reload is unnecessary and was
+    # contributing to "SessionInfo before init" log noise via Universe class
+    # identity churn. Removed in PR #23.
     from universe_registry import get_universe
     from utils import current_universe
     _active = get_universe(current_universe())
@@ -959,13 +996,13 @@ def render():
     _sub_by_label = dict(zip(_sub_labels, _subs))
 
     with _sub_by_label["RMT Denoising"]:
-        render_rmt(sector_map)
+        render_rmt(sector_map, u=_active)
 
     with _sub_by_label["Graphical LASSO"]:
-        render_glasso(sector_map)
+        render_glasso(sector_map, u=_active)
 
     with _sub_by_label["Wavelet Multi-Scale"]:
-        render_wavelets(sector_map)
+        render_wavelets(sector_map, u=_active)
         # Neuroscience caption: scales are time-bands at 160 Hz, not days.
         if getattr(_active, "domain", "finance") == "neuroscience":
             st.caption(
@@ -976,8 +1013,8 @@ def render():
             )
 
     with _sub_by_label["Transfer Entropy"]:
-        render_transfer_entropy(sector_map)
+        render_transfer_entropy(sector_map, u=_active)
 
     if "Neuromorphic Signals" in _sub_by_label:
         with _sub_by_label["Neuromorphic Signals"]:
-            render_snn(sector_map)
+            render_snn(sector_map, u=_active)
