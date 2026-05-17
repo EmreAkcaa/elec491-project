@@ -175,3 +175,105 @@ class TestMSTEdgeDf:
 
 # Need to import networkx for the connectivity test
 import networkx as nx
+
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BIST_RESULTS = PROJECT_ROOT / "data" / "bist" / "results"
+SP500_RESULTS = PROJECT_ROOT / "data" / "sp500" / "results"
+BIST_UNIVERSE = PROJECT_ROOT / "config" / "universes" / "bist100.csv"
+SP500_UNIVERSE = PROJECT_ROOT / "config" / "universes" / "sp500_full.csv"
+
+
+def _load_artifact_clusters(results_dir: Path, universe_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(results_dir / "cluster_assignments.csv")
+    if "sector" not in df.columns or df["sector"].isna().any():
+        uni = pd.read_csv(universe_path)
+        df = df.merge(uni[["ticker", "sector"]], on="ticker", how="left", suffixes=("_old", ""))
+    return df.dropna(subset=["sector", "cluster_id"])
+
+
+@pytest.mark.skipif(
+    not (BIST_RESULTS / "cluster_assignments.csv").exists(),
+    reason="BIST pipeline artifacts not present",
+)
+class TestBistClusteringPostFix:
+    """Regression tests pinning the Phase 1.1 clustering fix.
+
+    Before: single-linkage + distance_threshold=1.0 → 45 of 73 tickers in one
+    cluster across 17 sectors; ARI vs sector ≈ 0.034.
+    After: ward + n_clusters=20 → max cluster ≈ 12; banks co-cluster;
+    ARI ≈ 0.27, NMI ≈ 0.72.
+    """
+
+    def test_max_cluster_under_15(self):
+        df = _load_artifact_clusters(BIST_RESULTS, BIST_UNIVERSE)
+        max_size = df.groupby("cluster_id").size().max()
+        assert max_size <= 15, f"max cluster size {max_size} > 15 (chaining returned)"
+
+    def test_banks_mostly_co_cluster(self):
+        df = _load_artifact_clusters(BIST_RESULTS, BIST_UNIVERSE)
+        banks = ["AKBNK", "GARAN", "YKBNK", "VAKBN", "HALKB", "SKBNK", "ISCTR"]
+        bank_rows = df[df["ticker"].isin(banks)]
+        cluster_counts = bank_rows["cluster_id"].value_counts()
+        # at least 6 of the 7 BIST major banks should share a single cluster
+        assert cluster_counts.iloc[0] >= 6, (
+            f"only {cluster_counts.iloc[0]} of {len(bank_rows)} banks "
+            f"share the largest bank-cluster (distribution: {cluster_counts.to_dict()})"
+        )
+
+    def test_ari_recovers_sector_structure(self):
+        from sklearn.metrics import adjusted_rand_score
+
+        df = _load_artifact_clusters(BIST_RESULTS, BIST_UNIVERSE)
+        ari = adjusted_rand_score(df["sector"], df["cluster_id"])
+        assert ari >= 0.20, (
+            f"BIST sector-recovery ARI {ari:.3f} below 0.20 floor "
+            "(pre-fix baseline was ~0.034)"
+        )
+
+
+@pytest.mark.skipif(
+    not (SP500_RESULTS / "cluster_assignments.csv").exists(),
+    reason="S&P pipeline artifacts not present",
+)
+class TestSP500ClusteringPostFix:
+    """Mirror of TestBistClusteringPostFix for the S&P 500 universe."""
+
+    def test_max_cluster_under_50(self):
+        df = _load_artifact_clusters(SP500_RESULTS, SP500_UNIVERSE)
+        max_size = df.groupby("cluster_id").size().max()
+        assert max_size <= 50, (
+            f"S&P max cluster size {max_size} > 50 "
+            "(pre-fix baseline was 446 of 485 in one mega-cluster)"
+        )
+
+    def test_ari_recovers_sector_structure(self):
+        from sklearn.metrics import adjusted_rand_score
+
+        df = _load_artifact_clusters(SP500_RESULTS, SP500_UNIVERSE)
+        ari = adjusted_rand_score(df["sector"], df["cluster_id"])
+        assert ari >= 0.25, (
+            f"S&P sector-recovery ARI {ari:.3f} below 0.25 floor "
+            "(pre-fix baseline was ~0.007)"
+        )
+
+
+class TestClusteringConfigPlumbing:
+    """The Phase 1.1 fix added ClusteringConfig. Confirm run_clustering honours it."""
+
+    def test_config_defaults_to_ward_maxclust(self):
+        from src.config import ClusteringConfig
+
+        cfg = ClusteringConfig()
+        assert cfg.linkage_method == "ward"
+        assert cfg.n_clusters == 20
+        assert cfg.criterion == "maxclust"
+
+    def test_load_config_picks_up_clustering_block(self):
+        from src.config import load_config
+
+        cfg = load_config(PROJECT_ROOT / "config" / "settings.yaml")
+        assert cfg.clustering.linkage_method == "ward"
+        assert cfg.clustering.n_clusters == 20

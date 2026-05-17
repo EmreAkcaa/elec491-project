@@ -79,6 +79,14 @@ class DislocationConfig:
 
 
 @dataclass
+class ClusteringConfig:
+    linkage_method: str = "ward"
+    n_clusters: int = 20
+    criterion: str = "maxclust"
+    distance_threshold: float = 1.0
+
+
+@dataclass
 class TransferEntropyConfig:
     lag: int = 1
     n_bins: int = 3
@@ -112,6 +120,7 @@ class PipelineConfig:
     universe_metadata: dict = field(default_factory=dict)
     rolling: RollingConfig = field(default_factory=RollingConfig)
     dislocation: DislocationConfig = field(default_factory=DislocationConfig)
+    clustering: ClusteringConfig = field(default_factory=ClusteringConfig)
     transfer_entropy: TransferEntropyConfig = field(default_factory=TransferEntropyConfig)
     eeg: EEGConfig = field(default_factory=EEGConfig)
 
@@ -199,6 +208,7 @@ def load_config(
 
     rolling_raw = raw.get("rolling", {})
     dislocation_raw = raw.get("dislocation", {})
+    clustering_raw = raw.get("clustering", {})
     transfer_entropy_raw = raw.get("transfer_entropy", {})
     eeg_raw = raw.get("eeg", {})
 
@@ -212,6 +222,7 @@ def load_config(
         universe_metadata=universe_meta,
         rolling=RollingConfig(**rolling_raw),
         dislocation=DislocationConfig(**dislocation_raw),
+        clustering=ClusteringConfig(**clustering_raw),
         transfer_entropy=TransferEntropyConfig(**transfer_entropy_raw),
         eeg=EEGConfig(**eeg_raw),
     )

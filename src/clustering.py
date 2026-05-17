@@ -166,7 +166,7 @@ def run_clustering(config: PipelineConfig) -> None:
     logger.info("Using %d tickers for clustering", len(dist))
 
     # --- Hierarchical clustering ---
-    Z, labels = compute_linkage(dist, method="single")
+    Z, labels = compute_linkage(dist, method=config.clustering.linkage_method)
 
     # Save linkage matrix
     np.save(config.data_results / "linkage_matrix.npy", Z)
@@ -181,8 +181,15 @@ def run_clustering(config: PipelineConfig) -> None:
         json.dump(leaf_order, f)
     logger.info("Saved dendrogram leaf order")
 
-    # Cluster assignments (default threshold)
-    clusters = get_cluster_assignments(Z, labels, distance_threshold=1.0)
+    # Cluster assignments — criterion + threshold are config-driven.
+    if config.clustering.criterion == "maxclust":
+        clusters = get_cluster_assignments(
+            Z, labels, n_clusters=config.clustering.n_clusters
+        )
+    else:
+        clusters = get_cluster_assignments(
+            Z, labels, distance_threshold=config.clustering.distance_threshold
+        )
     # Add sector info from universe
     sector_map = dict(zip(config.universe["ticker"], config.universe["sector"]))
     clusters["sector"] = clusters["ticker"].map(sector_map)

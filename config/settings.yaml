@@ -49,6 +49,19 @@ dislocation:
   lookback_window: 252
   min_correlation: 0.5
 
+clustering:
+  # Switched 2026-05-17 from single+distance_threshold=1.0 to ward+n_clusters=20
+  # via maxclust. Single linkage produced chaining: 45 of 73 BIST tickers fell
+  # into one mega-cluster spanning 17 sectors, breaking the proposal-promised
+  # "banks cluster together" sanity check. Ward keeps the cluster sizes
+  # balanced and recovers sector structure (banks, conglomerates, energy,
+  # steel separate). If a future result needs single-linkage chaining for
+  # comparison purposes, set linkage_method=single and criterion=distance.
+  linkage_method: "ward"
+  n_clusters: 20
+  criterion: "maxclust"
+  distance_threshold: 1.0  # only used when criterion=distance
+
 transfer_entropy:
   lag: 1
   n_bins: 3
