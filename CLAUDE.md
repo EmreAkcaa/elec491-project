@@ -47,7 +47,7 @@ uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
   module-level defaults or `dataclass` defaults, not the YAML. See the per-module
   hardcoded-params lists in `docs/PIPELINE_REFERENCE.md`. When adding a new param,
   hoist to YAML if it's user-facing; otherwise leave it as a default.
-- **Tests live in `tests/`** (8 files, 107 tests).
+- **Tests live in `tests/`** (9 files, 120 tests after Phase I).
   Stages without tests are listed in `docs/FUTURE_WORK.md` (F-4).
 - **Chart rendering** goes through `app/utils.py:render_chart` for consistent
   theming and PNG export. Don't call `st.plotly_chart` directly.
@@ -95,13 +95,19 @@ uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
 
 ## What's been confirmed about the codebase
 
-- Total lines: ~10,000+ across `src/` (12 modules incl. `snn_signals.py`),
+- Total lines: ~10,500+ across `src/` (12 modules incl. `snn_signals.py`),
   `app/` (8 files incl. `universe_registry.py` + `cross_market.py`), `tests/`
-  (8 files, 107 tests).
-- All tests pass under `uv run python -m pytest -q` (107 passed). When `[snn]`
+  (9 files, 120 tests after Phase I).
+- All tests pass under `uv run python -m pytest -q` (120 passed). When `[snn]`
   extra is missing, torch-dependent SNN tests skip cleanly.
 - Pipeline is reproducible end-to-end given the same
   `data/<market>/raw/prices_raw.parquet` and the seeded TE / SNN configs.
-- The dashboard runs against BIST and S&P-500 universes simultaneously via the
-  sidebar dataset selector (Phase H, 2026-05). EEG artifacts also exist on disk
-  but are not yet registered in `app/universe_registry.py`.
+- The dashboard runs against BIST, S&P-500, and EEG universes simultaneously
+  via the sidebar dataset selector (Phase H + Phase I). EEG hides the
+  Pair Analysis nav, the Pairs & Dislocations sub-tab, the Neuromorphic
+  Signals SNN sub-tab, the Return Anomalies section, and the market-index
+  trace overlay — driven by `Universe` capability flags in
+  `app/universe_registry.py`.
+- EEG bulk data ships via Git LFS (`data/eeg_motor_left_right/processed/*.parquet`,
+  ~616 MB). `git lfs install` is required once per machine before cloning;
+  see `docs/RUNBOOK.md` for the LFS setup.

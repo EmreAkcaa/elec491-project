@@ -26,10 +26,31 @@ The boot-time default still comes from the `DASHBOARD_UNIVERSE` env var so
 `DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py` lands
 directly on the S&P universe.
 
-Universes are registered in `app/universe_registry.py` — currently `bist`
-and `sp500`. EEG is registered separately in `data/eeg_motor_left_right/`
-but not added to the dashboard registry yet (the SNN and Pair Analysis
-sub-tabs assume stock semantics).
+Universes are registered in `app/universe_registry.py` — currently `bist`,
+`sp500`, and `eeg_motor_left_right` (Phase I).
+
+Each registered universe carries **capability flags** that the dashboard
+consults to gate financial-only sections:
+
+| Flag | Effect when False (EEG) |
+|---|---|
+| `has_pair_trading` | Pair Analysis nav option + Pairs & Dislocations sub-tab hidden |
+| `has_snn` | Neuromorphic Signals sub-tab hidden in EEE Analysis |
+| `has_index_series` | Price chart replaced with stacked voltage time-series; XU100/^GSPC overlay omitted |
+| `has_anomaly_detection` | Return Anomalies section hidden in Data & Stats |
+| `has_validation_report` | İş Yatırım validation row hidden in Data Freshness popover |
+| `eligible_for_cross_market` | Universe filtered out of Cross-Market comparison |
+
+Plus terminology fields (`item_label` / `items_label` / `sector_label` /
+`series_label` / `series_units` / `network_label`) that drive axis labels
+and captions throughout the dashboard, so EEG sees "Channels" / "Bandpass
+voltage (µV)" / "Functional Connectivity Network" instead of the financial
+defaults.
+
+EEG sanity checks: when the active universe declares `sanity_check_groups`,
+the Clustering & Network tab renders a per-group "members co-cluster"
+badge. EEG ships three: central-motor (C3/Cz/C4), occipital (O1/Oz/O2),
+prefrontal (Fp1/Fpz/Fp2).
 
 Page-header behaviour:
 - Browser tab title (`st.set_page_config(page_title=...)`) is set once at
@@ -46,11 +67,15 @@ directory). Page switching is done by re-rendering the same script with a
 different `nav_page` session-state value:
 
 ```python
+# Build the nav dynamically: Pair Analysis is hidden when the active
+# universe has has_pair_trading=False (e.g. EEG).
+_nav_options = ["Market Overview"]
+if _active_universe.has_pair_trading:
+    _nav_options.append("Pair Analysis")
+_nav_options.append("Cross-Market")
+
 st.segmented_control(
-    "Navigate",
-    ["Market Overview", "Pair Analysis", "Cross-Market"],
-    key="nav_page",
-    default="Market Overview",
+    "Navigate", _nav_options, key="nav_page", default="Market Overview",
 )
 ```
 
@@ -81,15 +106,16 @@ freshness, ticker count, day count, avg/median correlation).
 
 #### Tab 1 — Data & Stats (`tab_data`)
 
-| Section | Chart | Data file | Library |
-|---|---|---|---|
-| Coverage & Prices | Coverage bar (per-ticker %) | `data/processed/coverage_report.csv` | px.bar |
-| Coverage & Prices | Normalised price line (rebased to 100) + XU100 | `adj_close.parquet`, `xu100.parquet` | go.Scatter |
-| Stats & Returns | Per-ticker descriptive stats table | `summary_stats.parquet` | st.dataframe |
-| Stats & Returns | Return distribution histogram (selected ticker) | `log_returns.parquet` | go.Histogram |
-| Anomalies | Sortable anomaly table (`date`, `ticker`, `return_value`, `\|return\|`) | `data/processed/anomalies.csv` | st.dataframe |
-| Anomalies | Anomaly timeline scatter (date × ticker; triangle direction by sign, size by `\|return\|`) | `data/processed/anomalies.csv` | go.Scatter |
-| Market Summary | 5 metric tiles (avg/median/std/min/max corr) | `pipeline_metadata.json` | st.metric |
+| Section | Chart | Data file | Library | Gate |
+|---|---|---|---|---|
+| Coverage & Prices | Coverage bar (per-ticker %) | `data/<universe>/processed/coverage_report.csv` | px.bar | always |
+| Coverage & Prices | Normalised price line (rebased to 100) + index overlay (XU100 / ^GSPC) | `adj_close.parquet`, `xu100.parquet` | go.Scatter | `has_index_series` |
+| Coverage & Prices | **EEG voltage time-series** — stacked, 10 evenly-spaced channels, first 30 s, vertically offset by ~4σ each | `adj_close.parquet` | go.Scatter | `not has_index_series` |
+| Stats & Returns | Per-ticker (or per-channel) descriptive stats table | `summary_stats.parquet` | st.dataframe | always |
+| Stats & Returns | Return / voltage distribution histogram (selected item) | `log_returns.parquet` | go.Histogram | always |
+| Anomalies | Sortable anomaly table (`date`, `ticker`, `return_value`, `\|return\|`) | `data/<universe>/processed/anomalies.csv` | st.dataframe | `has_anomaly_detection` |
+| Anomalies | Anomaly timeline scatter (date × ticker; triangle direction by sign, size by `\|return\|`) | `data/<universe>/processed/anomalies.csv` | go.Scatter | `has_anomaly_detection` |
+| Market Summary | 5 metric tiles (avg/median/std/min/max corr) | `pipeline_metadata.json` | st.metric | always |
 
 #### Tab 2 — Correlation (`tab_corr`)
 

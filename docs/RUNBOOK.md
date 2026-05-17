@@ -12,8 +12,15 @@ Operational guide for installing, running, and deploying StoNeCoAl.
 ## Install
 
 ```bash
+# Git LFS hook setup (required ONCE per machine, not per clone).
+# Without this, `git clone` will skip downloading the bulky EEG parquets
+# and the EEG universe will appear empty in the dashboard.
+brew install git-lfs              # macOS — use your distro's equivalent on Linux/Win
+git lfs install
+
+# Now clone normally. LFS objects download as part of the clone.
 git clone <repo>
-cd Repo_2          # or whatever you've named the directory
+cd elec491-project
 uv sync            # creates .venv and installs all deps from uv.lock
 ```
 
@@ -22,6 +29,45 @@ the dev extras (only `pytest` currently):
 
 ```bash
 uv sync --extra dev
+```
+
+### Git LFS (Phase I)
+
+The EEG processed parquets (`data/eeg_motor_left_right/processed/*.parquet`,
+~616 MB total) ship via Git LFS — they're far over GitHub's 100 MB per-file
+blob limit. The financial universes (BIST, S&P 500) use regular git blobs;
+no LFS needed.
+
+If you already cloned without `git lfs install`, run:
+
+```bash
+git lfs install                                  # one-time per machine
+git lfs pull                                     # materialise the EEG parquets
+```
+
+To verify LFS is wired up correctly:
+
+```bash
+git lfs ls-files                                  # expect 2 entries (both EEG parquets)
+ls -lh data/eeg_motor_left_right/processed/      # parquets should be ~308 MB each (not 130 B pointers)
+```
+
+**GitHub LFS quota** (free tier: 1 GB storage / 1 GB bandwidth per month).
+The repo currently uses ~616 MB of LFS storage; each cold-clone or Streamlit
+Cloud rebuild pulls ~616 MB of LFS bandwidth. To skip the LFS download (e.g.
+for a financial-only deploy), set `GIT_LFS_SKIP_SMUDGE=1` before cloning —
+the EEG universe will then be hidden from the dashboard's sidebar selector.
+
+### Optional: EEG extra (mne)
+
+The EEG universe pipeline (`run_pipeline_eeg.py`) needs MNE-Python (~50 MB
+of binaries). The pre-computed EEG processed parquets ship via LFS so the
+dashboard works without the extra installed; you only need MNE if you want
+to re-run the EEG pipeline locally.
+
+```bash
+uv sync --extra eeg
+uv run python run_pipeline_eeg.py          # ~15 min; uses ~/mne_data cache
 ```
 
 ### Optional: SNN extra (torch + snntorch)
