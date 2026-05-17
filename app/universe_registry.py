@@ -154,60 +154,9 @@ def available_universes() -> list[Universe]:
     out: list[Universe] = []
     for u in UNIVERSES.values():
         meta_path = PROJECT_ROOT / "data" / u.key / "results" / "pipeline_metadata.json"
-        if not meta_path.exists():
-            continue
-        # Belt-and-suspenders: also verify the bulk processed parquets have
-        # been materialised (not left as 134-byte Git LFS pointer stubs).
-        # Streamlit Cloud sometimes deploys without git-lfs installed, in
-        # which case the parquet files exist on disk but only contain the
-        # LFS pointer text — pd.read_parquet() on those crashes hard. Skip
-        # the whole universe rather than offer a broken option.
-        if not _bulk_data_materialised(u):
-            continue
-        out.append(u)
+        if meta_path.exists():
+            out.append(u)
     return out
-
-
-# Magic bytes for a Git LFS pointer file: starts with "version https://git-lfs..."
-# Real parquet files start with the 4-byte magic "PAR1" (Apache Parquet header).
-_LFS_POINTER_PREFIX = b"version https://git-lfs.github.com/spec/"
-_PARQUET_MAGIC      = b"PAR1"
-_LFS_POINTER_MAX_SIZE = 1024  # real LFS pointer files are ~130 bytes; cap generously
-
-
-def _is_lfs_pointer_stub(path: Path) -> bool:
-    """Return True iff `path` exists but holds an unresolved Git LFS pointer.
-
-    The smudge filter wasn't run on this clone — typical on Streamlit Cloud
-    deploys without `git-lfs` in packages.txt. Detected via file size + magic
-    bytes (don't trust either alone; small parquets exist and the magic check
-    is what disambiguates).
-    """
-    try:
-        if path.stat().st_size > _LFS_POINTER_MAX_SIZE:
-            return False
-        with open(path, "rb") as f:
-            head = f.read(min(_LFS_POINTER_MAX_SIZE, path.stat().st_size))
-        return head.startswith(_LFS_POINTER_PREFIX)
-    except OSError:
-        # If we can't read the file, treat as broken — same outcome (skip).
-        return True
-
-
-def _bulk_data_materialised(u: "Universe") -> bool:
-    """Verify a universe's pipeline-required parquets are real files, not LFS
-    pointer stubs. Currently only the EEG universe ships LFS-tracked bulk
-    parquets; the financial universes' files are well under 100 MB and stored
-    as regular git blobs (always materialised after clone).
-    """
-    processed_dir = PROJECT_ROOT / "data" / u.key / "processed"
-    for fname in ("adj_close.parquet", "log_returns.parquet"):
-        p = processed_dir / fname
-        if not p.exists():
-            return False
-        if _is_lfs_pointer_stub(p):
-            return False
-    return True
 
 
 def get_universe(key: str) -> Universe:
