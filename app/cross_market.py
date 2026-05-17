@@ -263,6 +263,12 @@ def _kpi_row(comp_df: pd.DataFrame, label: str, key: str, kind: str = "raw") -> 
 # ---------------------------------------------------------------------------
 
 def render() -> None:
+    # Defensive import — force fresh load so a stale module in sys.modules
+    # (Streamlit Cloud caches across deploys) can't strip the Phase I fields.
+    import importlib
+    import universe_registry as _ur
+    importlib.reload(_ur)
+
     inject_custom_css()
     page_header(
         "Cross-Market Comparison",
@@ -276,8 +282,10 @@ def render() -> None:
     # participate here. EEG (eligible_for_cross_market=False) is filtered out
     # even if the page is reached programmatically — the BIST-vs-S&P comparison
     # numbers come from data/comparison_bist_vs_sp500.csv which only knows the
-    # two financial universes.
-    _eligible = [u for u in available_universes() if u.eligible_for_cross_market]
+    # two financial universes. getattr default True so a stale Universe class
+    # without the field falls back to the pre-Phase-I behaviour (all universes
+    # eligible).
+    _eligible = [u for u in available_universes() if getattr(u, "eligible_for_cross_market", True)]
     if len(_eligible) < 2:
         st.info(
             "Cross-Market Comparison needs at least two financial universes "

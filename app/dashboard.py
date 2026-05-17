@@ -45,7 +45,23 @@ from utils import (  # noqa: E402
     section_header, render_chart,
 )
 from chart_themes import render_theme_sidebar  # noqa: E402
+
+# Defensive import — Streamlit Cloud's hot-reload sometimes caches a stale
+# universe_registry module across deploys. Force a clean reload so dashboard.py
+# always sees the latest Universe dataclass (Phase I capability flags etc.).
+import importlib                                 # noqa: E402
+import universe_registry as _ur_mod              # noqa: E402
+importlib.reload(_ur_mod)
 from universe_registry import available_universes, get_universe  # noqa: E402
+
+
+def _cap(u, attr, default):
+    """Defensive capability lookup. If Streamlit Cloud has a stale `Universe`
+    class cached without a Phase I field, fall back to ``default`` rather than
+    crashing the dashboard with AttributeError. Treat finance defaults as the
+    safe fallback for unknown universes since the original dashboard was
+    finance-only."""
+    return getattr(u, attr, default)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -117,7 +133,7 @@ if "universe" not in st.session_state or st.session_state["universe"] not in _AV
 _active_universe = get_universe(st.session_state["universe"])
 
 st.set_page_config(
-    page_title=f"StoNeCoAl — {_active_universe.short_label}",
+    page_title=f"StoNeCoAl — {_cap(_active_universe, 'short_label', 'BIST 100')}",
     page_icon="<svg xmlns='http://www.w3.org/2000/svg'/>",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -137,7 +153,7 @@ with st.sidebar:
         )
         # Re-read after the selectbox in case the user just changed it.
         _active_universe = get_universe(st.session_state["universe"])
-        st.caption(_active_universe.description)
+        st.caption(_cap(_active_universe, 'description', ''))
         st.markdown("---")
     elif _AVAIL_UNIVERSES:
         # Single universe present — show as a static caption, no selector clutter.
@@ -155,7 +171,7 @@ st.markdown(
     f"<span style='font-size:1.3rem; font-weight:800; letter-spacing:-0.02em; "
     f"color:#2B2D42;'>StoNeCoAl</span>"
     f"<span style='font-size:0.72rem; color:#8D99AE; letter-spacing:0.06em;'>"
-    f"{_active_universe.short_label.upper()} NETWORK ANALYSIS</span></div>",
+    f"{_cap(_active_universe, 'short_label', 'BIST 100').upper()} NETWORK ANALYSIS</span></div>",
     unsafe_allow_html=True,
 )
 
@@ -168,7 +184,7 @@ if st.session_state.pop("_goto_cross_market", False):
 # Nav: hide Pair Analysis when the active universe has no pair-trading concept.
 # Cross-Market always visible (universe-independent page).
 _nav_options = ["Market Overview"]
-if _active_universe.has_pair_trading:
+if _cap(_active_universe, 'has_pair_trading', True):
     _nav_options.append("Pair Analysis")
 _nav_options.append("Cross-Market")
 
@@ -235,7 +251,7 @@ with _settings_col:
                 st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
                 if fetch_meta.get("failures"):
                     st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-            if _active_universe.has_validation_report:
+            if _cap(_active_universe, 'has_validation_report', True):
                 val_path = data_processed() / "validation_report.csv"
                 if val_path.exists():
                     val_df = pd.read_csv(val_path)
@@ -252,9 +268,9 @@ prices_window = adj_close.loc[start_dt:end_dt]
 window_length = len(returns)
 dynamic_min_periods = max(30, int(window_length * 0.6))
 
-m1.metric(_active_universe.items_label, f"{returns.shape[1]}")
+m1.metric(_cap(_active_universe, 'items_label', 'Tickers'), f"{returns.shape[1]}")
 m2.metric(
-    "Samples" if _active_universe.domain == "neuroscience" else "Trading Days",
+    "Samples" if _cap(_active_universe, 'domain', 'finance') == "neuroscience" else "Trading Days",
     f"{returns.shape[0]:,}",
 )
 m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
@@ -269,7 +285,7 @@ _returns_json = returns.to_json(orient="split", date_format="iso")
 # ══════════════════════════════════════════════════════════════════════════════
 
 _tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
-if _active_universe.has_pair_trading:
+if _cap(_active_universe, 'has_pair_trading', True):
     _tab_labels.append("Pairs & Dislocations")
 _tab_labels.append("EEE Analysis")
 _tabs = st.tabs(_tab_labels)
@@ -290,18 +306,18 @@ with tab_data:
 
     # ── Section 1: Coverage & Normalized Prices ─────────────────────────────
     with st.container(border=True):
-        if _active_universe.has_index_series:
+        if _cap(_active_universe, 'has_index_series', True):
             section_header(
                 "Data Coverage & Price Performance",
-                f"Left: per-{_active_universe.item_label.lower()} data availability "
+                f"Left: per-{_cap(_active_universe, 'item_label', 'Ticker').lower()} data availability "
                 f"(90% threshold). Right: all prices rebased to 100 — the bold black "
-                f"line is {_active_universe.index_ticker}.",
+                f"line is {_cap(_active_universe, 'index_ticker', 'XU100')}.",
             )
         else:
             section_header(
-                f"Data Coverage & {_active_universe.series_label} Performance",
-                f"Left: per-{_active_universe.item_label.lower()} data availability. "
-                f"Right: {_active_universe.series_label.lower()} time-series for a "
+                f"Data Coverage & {_cap(_active_universe, 'series_label', 'Log return')} Performance",
+                f"Left: per-{_cap(_active_universe, 'item_label', 'Ticker').lower()} data availability. "
+                f"Right: {_cap(_active_universe, 'series_label', 'Log return').lower()} time-series for a "
                 f"representative subset of channels (first 30 s).",
             )
 
@@ -327,11 +343,11 @@ with tab_data:
                          title_key="mo_coverage", default_title="Data Coverage by Ticker")
 
         with col_right:
-            if _active_universe.has_index_series:
+            if _cap(_active_universe, 'has_index_series', True):
                 # Financial universe: rebased prices + bold market-index overlay.
                 norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
                 xu100 = load_xu100()
-                _index_label = _active_universe.index_ticker  # "XU100" / "^GSPC"
+                _index_label = _cap(_active_universe, 'index_ticker', 'XU100')  # "XU100" / "^GSPC"
                 if not xu100.empty:
                     xu100_window = xu100.loc[start_dt:end_dt]
                     if not xu100_window.empty:
@@ -379,15 +395,15 @@ with tab_data:
                             y=series + cumulative_offset,
                             mode="lines", name=ch,
                             line=dict(width=0.8, color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)]),
-                            hovertemplate=f"{ch}: %{{y:.2f}} {_active_universe.series_units}<extra></extra>",
+                            hovertemplate=f"{ch}: %{{y:.2f}} {_cap(_active_universe, 'series_units', '')}<extra></extra>",
                         ))
                         cumulative_offset += spacing
                     apply_chart_style(
                         fig_volt, height=max(400, n_show * 38),
                         xaxis_title="Time (seconds)",
                         yaxis_title=(
-                            f"{_active_universe.series_label} "
-                            f"({_active_universe.series_units}) — stacked"
+                            f"{_cap(_active_universe, 'series_label', 'Log return')} "
+                            f"({_cap(_active_universe, 'series_units', '')}) — stacked"
                         ),
                         showlegend=True,
                         legend=dict(orientation="v", yanchor="top", y=1.0,
@@ -398,7 +414,7 @@ with tab_data:
                         filename_base="voltage_trace",
                         title_key="mo_voltage",
                         default_title=(
-                            f"{_active_universe.series_label} Time-Series "
+                            f"{_cap(_active_universe, 'series_label', 'Log return')} Time-Series "
                             f"(first {n_samples / sample_rate_hz:.0f}s, "
                             f"{n_show} sample channels)"
                         ),
@@ -447,7 +463,7 @@ with tab_data:
                              title_key="mo_hist", default_title="Return Distribution")
 
     # ── Section 3: Return Anomalies (financial universes only) ──────────────
-    if _active_universe.has_anomaly_detection:
+    if _cap(_active_universe, 'has_anomaly_detection', True):
       with st.container(border=True):
           section_header(
               "Return Anomalies",
@@ -752,7 +768,7 @@ with tab_cluster:
                         # match against the cluster_df['ticker'] column,
                         # since the registry lists concrete tickers or
                         # channel names (not sector keywords).
-                        for group_label, members in (_active_universe.sanity_check_groups or {}).items():
+                        for group_label, members in (_cap(_active_universe, 'sanity_check_groups', None) or {}).items():
                             present = cluster_df[cluster_df["ticker"].isin(members)]
                             if present.empty:
                                 continue
