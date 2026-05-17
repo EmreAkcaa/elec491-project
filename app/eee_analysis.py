@@ -27,6 +27,9 @@ from utils import (
     load_snn_metrics, load_snn_pair_list, load_snn_signals,
     load_snn_training_history, load_snn_raster_sample, load_snn_membrane_sample,
     load_dendrogram_order,
+    load_mi_matrix, load_mi_gaussian_matrix, load_mi_nonlinear_excess_top,
+    load_rolling_info_theory, load_regime_kl, load_it_summary,
+    load_entropy_rate_signs,
 )
 
 
@@ -975,6 +978,254 @@ def render_snn(sector_map: dict, *, u=None):
 
 
 # ---------------------------------------------------------------------------
+# Information Theory — MI / D_eff / ΔH / regime KL
+# ---------------------------------------------------------------------------
+
+def _is_domain_finance(u) -> bool:
+    return getattr(u, "domain", "finance") == "finance"
+
+
+def render_info_theory(sector_map: dict, *, u=None):
+    """Render the Information-Theory sub-tab (Phase 3 mutable-candy).
+
+    Composes four short panels: summary KPIs, MI vs Pearson, rolling D_eff(t),
+    and regime KL. Honest, not philosophical: the TA asked for an information-
+    theory perspective and this is it, framed as "what the system looks like
+    in nats and bits," not "a unifying overhead theorem."
+    """
+    with st.container(border=True):
+        section_header(
+            "Information Theory — joint distribution in bits and nats",
+            "Pairwise mutual information catches non-linear coupling Pearson "
+            "misses; effective dimensionality (D_eff) measures how much of the "
+            "joint distribution is informationally independent; KL divergence "
+            "between Gaussian covariances quantifies regime change.",
+        )
+
+        summary = load_it_summary()
+        if not summary:
+            st.info(
+                "Run the pipeline (or just `run_info_theory(config)`) to "
+                "generate the information-theory artifacts."
+            )
+            return
+
+        n_tickers = int(summary.get("n_tickers", 0))
+        d_eff_val = float(summary.get("d_eff", float("nan")))
+        dh_val = float(summary.get("log_det_term", float("nan")))
+        sign_h = float(summary.get("mean_sign_entropy_rate_bits", float("nan")))
+
+        # ---- Panel A: summary KPIs ----
+        c1, c2, c3, c4 = st.columns(4)
+        if np.isfinite(d_eff_val):
+            c1.metric(
+                "Effective dimensionality D_eff",
+                f"{d_eff_val:.2f}",
+                help=(
+                    f"Participation ratio of the correlation eigenspectrum: "
+                    f"(Σλ)² / Σλ². {n_tickers} tickers collapse into ≈ "
+                    f"{d_eff_val:.1f} informationally independent dimensions."
+                ),
+            )
+        if np.isfinite(dh_val):
+            c2.metric(
+                "Joint structure ΔH",
+                f"{dh_val:.2f} nats",
+                help=(
+                    "−½ log det Σ — the Gaussian-joint-structure piece. "
+                    "Larger means more redundant joint information; "
+                    "0 means independent."
+                ),
+            )
+        if np.isfinite(sign_h):
+            c3.metric(
+                "Mean sign-entropy rate",
+                f"{sign_h:.3f} bits/day",
+                help=(
+                    "H(sign_t | sign_{t-1}) averaged across tickers. "
+                    "≈ 1 bit/day means tomorrow's direction is independent "
+                    "of today's — the canonical weak-form-EMH fingerprint."
+                ),
+            )
+        c4.metric("Tickers / channels", n_tickers)
+
+        st.caption(
+            ":material/info: All four panels below are derived from the "
+            "`mi_matrix`, `rolling_info_theory`, `regime_kl` and "
+            "`it_summary` artifacts under `data/<market>/results/`."
+        )
+
+        # ---- Panel B: MI heatmap + MI-vs-Gaussian scatter ----
+        mi = load_mi_matrix()
+        mi_g = load_mi_gaussian_matrix()
+        top_excess = load_mi_nonlinear_excess_top()
+
+        if not mi.empty and not mi_g.empty:
+            st.markdown("**MI vs Pearson — where the linear model misses non-linear coupling**")
+            colb1, colb2 = st.columns(2)
+
+            with colb1:
+                # Strip the diagonal so heatmap colours are not dominated by H(X_i)
+                off = mi.copy()
+                np.fill_diagonal(off.values, np.nan)
+                order = load_dendrogram_order()
+                fig_mi = _plot_matrix_heatmap(
+                    off, order,
+                    zmin=0.0, zmax=float(np.nanpercentile(off.values, 99)),
+                    diverging=False, height=440,
+                    hover_label="MI (bits)",
+                )
+                render_chart(
+                    fig_mi, chart_id="it_mi_heatmap",
+                    filename_base="it_mi_heatmap",
+                    title_key="it_mi_heatmap",
+                    default_title="Pairwise mutual information (bits, off-diagonal only)",
+                )
+
+            with colb2:
+                idx = mi.index.tolist()
+                pts = []
+                for i, a in enumerate(idx):
+                    for j in range(i + 1, len(idx)):
+                        b = idx[j]
+                        if b in mi_g.columns and a in mi_g.index:
+                            pts.append({
+                                "pair": f"{a}–{b}",
+                                "mi_emp": float(mi.iloc[i, j]),
+                                "mi_gauss": float(mi_g.loc[a, b]),
+                            })
+                pts_df = pd.DataFrame(pts)
+                top_set = (
+                    set(
+                        tuple(sorted([r.ticker_a, r.ticker_b]))
+                        for _, r in top_excess.iterrows()
+                    )
+                    if not top_excess.empty else set()
+                )
+                pts_df["nonlinear"] = pts_df["pair"].apply(
+                    lambda p: tuple(sorted(p.split("–"))) in top_set
+                )
+                fig_sc = go.Figure()
+                base = pts_df[~pts_df.nonlinear]
+                hi = pts_df[pts_df.nonlinear]
+                fig_sc.add_trace(go.Scatter(
+                    x=base["mi_gauss"], y=base["mi_emp"],
+                    mode="markers",
+                    marker=dict(size=4, color="rgba(150,150,150,0.45)"),
+                    name="all pairs",
+                    hovertext=base["pair"], hovertemplate="%{hovertext}<br>"
+                    "Gauss MI %{x:.3f}<br>Empirical MI %{y:.3f}<extra></extra>",
+                ))
+                if not hi.empty:
+                    fig_sc.add_trace(go.Scatter(
+                        x=hi["mi_gauss"], y=hi["mi_emp"],
+                        mode="markers",
+                        marker=dict(size=8, color="#E63946", symbol="diamond"),
+                        name="non-linear excess",
+                        hovertext=hi["pair"], hovertemplate="%{hovertext}<br>"
+                        "Gauss MI %{x:.3f}<br>Empirical MI %{y:.3f}<extra></extra>",
+                    ))
+                if not pts_df.empty:
+                    m = float(max(pts_df["mi_emp"].max(), pts_df["mi_gauss"].max()))
+                    fig_sc.add_trace(go.Scatter(
+                        x=[0, m], y=[0, m],
+                        mode="lines", line=dict(color="black", dash="dot", width=1),
+                        name="y = x", hoverinfo="skip",
+                    ))
+                apply_chart_style(
+                    fig_sc, height=440,
+                    xaxis_title="Gaussian MI = −½ log(1 − ρ²) (bits)",
+                    yaxis_title="Empirical MI (plug-in, bits)",
+                )
+                render_chart(
+                    fig_sc, chart_id="it_mi_vs_gauss",
+                    filename_base="it_mi_vs_gaussian",
+                    title_key="it_mi_vs_gauss",
+                    default_title="Empirical MI vs Gaussian baseline (red = nonlinear excess)",
+                )
+
+            if not top_excess.empty:
+                st.markdown("**Top non-linear-excess pairs** (empirical MI above the Gaussian baseline)")
+                st.dataframe(
+                    top_excess.rename(columns={"nonlinear_excess": "Δ MI (bits)"}),
+                    use_container_width=True, hide_index=True,
+                )
+
+        # ---- Panel C: rolling D_eff(t) + ΔH(t) with crisis markers ----
+        rolling = load_rolling_info_theory()
+        if not rolling.empty:
+            st.markdown("**Rolling D_eff and ΔH over time** — joint-structure dynamics")
+            crisis_specs = load_regime_kl() or []
+            fig_roll = go.Figure()
+            fig_roll.add_trace(go.Scatter(
+                x=rolling.index, y=rolling["d_eff"],
+                name="D_eff (LHS)", mode="lines",
+                line=dict(color="#4361EE", width=1.6),
+                hovertemplate="%{x|%Y-%m-%d}<br>D_eff=%{y:.2f}<extra></extra>",
+            ))
+            fig_roll.add_trace(go.Scatter(
+                x=rolling.index, y=rolling["log_det_term"],
+                name="ΔH = −½ log det Σ (RHS)", mode="lines", yaxis="y2",
+                line=dict(color="#E63946", width=1.4, dash="dash"),
+                hovertemplate="%{x|%Y-%m-%d}<br>ΔH=%{y:.2f}<extra></extra>",
+            ))
+            # add_vline + annotation_text breaks on pandas Timestamp x-values
+            # in current plotly (it tries to mean two Timestamps). Add the
+            # line shape and the label separately.
+            for spec in crisis_specs:
+                date = pd.Timestamp(spec["date"])
+                fig_roll.add_shape(
+                    type="line",
+                    x0=date, x1=date, y0=0, y1=1,
+                    xref="x", yref="paper",
+                    line=dict(color="rgba(0,0,0,0.4)", width=1, dash="dot"),
+                )
+                fig_roll.add_annotation(
+                    x=date, y=1.02, xref="x", yref="paper",
+                    text=spec["label"], showarrow=False,
+                    font=dict(size=10), align="center",
+                )
+            apply_chart_style(
+                fig_roll, height=380,
+                xaxis_title="Date",
+                yaxis_title="D_eff",
+            )
+            fig_roll.update_layout(
+                yaxis2=dict(title="ΔH (nats)", overlaying="y", side="right"),
+            )
+            render_chart(
+                fig_roll, chart_id="it_rolling",
+                filename_base="it_rolling_d_eff_dh",
+                title_key="it_rolling",
+                default_title="Rolling D_eff and ΔH(t) with crisis markers",
+            )
+
+        # ---- Panel D: regime KL table ----
+        regime = load_regime_kl()
+        if regime:
+            st.markdown(
+                "**Regime KL divergence** — `D_KL(N(0, Σ_calm) ‖ N(0, Σ_crisis))` "
+                "in nats, with Ledoit–Wolf shrinkage so high-dim singularity "
+                "doesn't blow up the inverse-trace term."
+            )
+            tbl = pd.DataFrame([
+                {
+                    "Crisis": r["label"],
+                    "Date": r["date"][:10],
+                    "Calm window": f"{r['calm_start'][:10]} → {r['calm_end'][:10]}",
+                    "Crisis window": f"{r['crisis_start'][:10]} → {r['crisis_end'][:10]}",
+                    "KL (nats)": (
+                        f"{r['kl']:.1f}" if np.isfinite(r.get('kl', float('nan')))
+                        else "n/a"
+                    ),
+                    "Tickers": r.get("n_tickers", "—"),
+                }
+                for r in regime
+            ])
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Main render
 # ---------------------------------------------------------------------------
 
@@ -997,7 +1248,13 @@ def render():
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    _sub_labels = ["RMT Denoising", "Graphical LASSO", "Wavelet Multi-Scale", "Transfer Entropy"]
+    _sub_labels = [
+        "RMT Denoising",
+        "Graphical LASSO",
+        "Wavelet Multi-Scale",
+        "Transfer Entropy",
+        "Information Theory",
+    ]
     if getattr(_active, "has_snn", True):
         _sub_labels.append("Neuromorphic Signals")
     _subs = st.tabs(_sub_labels)
@@ -1022,6 +1279,9 @@ def render():
 
     with _sub_by_label["Transfer Entropy"]:
         render_transfer_entropy(sector_map, u=_active)
+
+    with _sub_by_label["Information Theory"]:
+        render_info_theory(sector_map, u=_active)
 
     if "Neuromorphic Signals" in _sub_by_label:
         with _sub_by_label["Neuromorphic Signals"]:

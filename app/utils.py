@@ -943,6 +943,113 @@ def load_snn_membrane_sample() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Information-theory layer (Phase 3 mutable-candy)
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def _load_mi_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_mi_matrix() -> pd.DataFrame:
+    return _load_mi_matrix(current_universe())
+
+
+@st.cache_data
+def _load_mi_gaussian_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_gaussian_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_mi_gaussian_matrix() -> pd.DataFrame:
+    return _load_mi_gaussian_matrix(current_universe())
+
+
+@st.cache_data
+def _load_mi_nonlinear_excess(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_nonlinear_excess.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_mi_nonlinear_excess() -> pd.DataFrame:
+    return _load_mi_nonlinear_excess(current_universe())
+
+
+@st.cache_data
+def _load_mi_nonlinear_excess_top(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_nonlinear_excess_top.csv"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return pd.read_csv(path)
+        except pd.errors.EmptyDataError:
+            return pd.DataFrame(columns=["ticker_a", "ticker_b", "nonlinear_excess"])
+    return pd.DataFrame(columns=["ticker_a", "ticker_b", "nonlinear_excess"])
+
+
+def load_mi_nonlinear_excess_top() -> pd.DataFrame:
+    return _load_mi_nonlinear_excess_top(current_universe())
+
+
+@st.cache_data
+def _load_rolling_info_theory(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "rolling_info_theory.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_rolling_info_theory() -> pd.DataFrame:
+    return _load_rolling_info_theory(current_universe())
+
+
+@st.cache_data
+def _load_regime_kl(universe: str) -> list:
+    import json
+    path = data_results(universe) / "regime_kl.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return []
+
+
+def load_regime_kl() -> list:
+    return _load_regime_kl(current_universe())
+
+
+@st.cache_data
+def _load_it_summary(universe: str) -> dict:
+    import json
+    path = data_results(universe) / "it_summary.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def load_it_summary() -> dict:
+    return _load_it_summary(current_universe())
+
+
+@st.cache_data
+def _load_entropy_rate_signs(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "entropy_rate_signs.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_entropy_rate_signs() -> pd.DataFrame:
+    return _load_entropy_rate_signs(current_universe())
+
+
+# ---------------------------------------------------------------------------
 # Event markers
 # ---------------------------------------------------------------------------
 

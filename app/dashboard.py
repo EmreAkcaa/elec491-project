@@ -248,15 +248,21 @@ _overview_label = (
     else "Network Overview"
 )
 
-# Nav: hide Pair Analysis when the active universe has no pair-trading concept.
-# Hide Cross-Market when the active universe isn't a financial market (the page
-# only compares BIST vs S&P; showing a "Cross-Market" tab while the user is
-# viewing EEG leaks finance terminology into the neuroscience view).
-_nav_options = [_overview_label]
+# Nav order (Phase 2 mutable-candy): foreground the project's strongest
+# existing content — the cross-market BIST↔S&P comparison — as the FIRST
+# nav option for finance universes. Demo and grading first-60-seconds land
+# on this page rather than a coverage chart.
+# EEG keeps its single-page Network Overview (no Cross-Market, no pair trading).
+_eligible_for_cross_market = _cap(_active_universe, 'eligible_for_cross_market', True)
+_nav_options: list[str] = []
+if _eligible_for_cross_market:
+    _nav_options.append("Cross-Market")
+_nav_options.append(_overview_label)
 if _cap(_active_universe, 'has_pair_trading', True):
     _nav_options.append("Pair Analysis")
-if _cap(_active_universe, 'eligible_for_cross_market', True):
-    _nav_options.append("Cross-Market")
+
+# Default landing: Cross-Market for finance, the overview otherwise.
+_default_nav = "Cross-Market" if _eligible_for_cross_market else _overview_label
 
 # Clamp stored nav_page to options the current universe supports (otherwise
 # Streamlit would render the segmented_control with an out-of-set default and
@@ -265,13 +271,13 @@ if _cap(_active_universe, 'eligible_for_cross_market', True):
 # under BIST) won't be in the new universe's options ("Network Overview"
 # under EEG), so it resets to the domain-appropriate default.
 if st.session_state.get("nav_page") not in _nav_options:
-    st.session_state["nav_page"] = _overview_label
+    st.session_state["nav_page"] = _default_nav
 
 _nav = st.segmented_control(
     "Navigate",
     _nav_options,
     key="nav_page",
-    default=_overview_label,
+    default=_default_nav,
     label_visibility="collapsed",
 )
 

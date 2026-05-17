@@ -1,0 +1,106 @@
+{
+  "n_tickers": 485,
+  "n_observations": 1546,
+  "d_eff": 6.556486219446382,
+  "log_det_term": 307.3045126168419,
+  "joint_gaussian_entropy_nats": 380.88067598742435,
+  "mean_sign_entropy_rate_bits": 0.9969486164202788,
+  "mi_bits_units": true,
+  "n_bins": 4,
+  "rolling_window": 60,
+  "rolling_step": 5,
+  "top_nonlinear_pairs": [
+    {
+      "ticker_a": "GL",
+      "ticker_b": "HIG",
+      "nonlinear_excess": 0.20327917358650058
+    },
+    {
+      "ticker_a": "AFL",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.19156222819583266
+    },
+    {
+      "ticker_a": "MET",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.176915629639869
+    },
+    {
+      "ticker_a": "L",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.16438458670598513
+    },
+    {
+      "ticker_a": "PRU",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.1616786583151934
+    },
+    {
+      "ticker_a": "ORCL",
+      "ticker_b": "SNPS",
+      "nonlinear_excess": 0.14236097939777903
+    },
+    {
+      "ticker_a": "PFG",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.1328699296824542
+    },
+    {
+      "ticker_a": "CINF",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.12306385914881462
+    },
+    {
+      "ticker_a": "TRV",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.1178838248836197
+    },
+    {
+      "ticker_a": "AIG",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.11672966992658804
+    },
+    {
+      "ticker_a": "GL",
+      "ticker_b": "HBAN",
+      "nonlinear_excess": 0.11009971141530106
+    },
+    {
+      "ticker_a": "XYL",
+      "ticker_b": "CARR",
+      "nonlinear_excess": 0.1088672969854429
+    },
+    {
+      "ticker_a": "GRMN",
+      "ticker_b": "CARR",
+      "nonlinear_excess": 0.10833414448470409
+    },
+    {
+      "ticker_a": "RF",
+      "ticker_b": "GL",
+      "nonlinear_excess": 0.10726276964979961
+    }
+  ],
+  "regime_kl_nats": [
+    {
+      "label": "Ukraine invasion",
+      "date": "2022-02-24T00:00:00",
+      "calm_start": "2021-06-29T00:00:00",
+      "calm_end": "2021-12-26T00:00:00",
+      "crisis_start": "2022-02-24T00:00:00",
+      "crisis_end": "2022-04-25T00:00:00",
+      "kl": 22861.771549909325,
+      "n_tickers": 485
+    },
+    {
+      "label": "T\u00fcrkiye earthquake",
+      "date": "2023-02-06T00:00:00",
+      "calm_start": "2022-06-11T00:00:00",
+      "calm_end": "2022-12-08T00:00:00",
+      "crisis_start": "2023-02-06T00:00:00",
+      "crisis_end": "2023-04-07T00:00:00",
+      "kl": 41663.88026945371,
+      "n_tickers": 485
+    }
+  ]
+}
