@@ -55,6 +55,17 @@ dislocation:
   lookback_window: 800
   min_correlation: 0.5
 
+clustering:
+  # EEG: 64 electrodes mapping anatomically onto ~7-8 macro regions
+  # (frontal, central, parietal, occipital, temporal × L/R/midline).
+  # Ward+8 puts each electrode in a recognisable anatomical group;
+  # single linkage previously chained the entire scalp into a single
+  # cluster + handful of singletons.
+  linkage_method: "ward"
+  n_clusters: 8
+  criterion: "maxclust"
+  distance_threshold: 1.0
+
 transfer_entropy:
   lag: 5                      # ~31 ms at 160 Hz; equivalent to lag=1 day for stocks
   n_bins: 3
@@ -64,6 +75,10 @@ transfer_entropy:
                               # Re-enable with shuffles > 0 after downsampling EEG to 32 Hz.
   significance_level: 0.05
   seed: 42
+  # significance_shuffles=0 above, so these have no runtime effect on EEG.
+  # Kept for schema parity with the finance YAMLs.
+  surrogate_block_length: 5
+  multiple_testing: "fdr_bh"
 
 eeg:
   task_type: "left_right"           # left_right | feet_fists | baseline

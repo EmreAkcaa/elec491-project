@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None):
     from src.partial_correlation import run_partial_correlation
     from src.wavelet_analysis import run_wavelet_analysis
     from src.transfer_entropy import run_transfer_entropy
+    from src.info_theory import run_info_theory
 
     parser = argparse.ArgumentParser(description="StoNeCoAl pipeline.")
     parser.add_argument(
@@ -63,6 +64,7 @@ def main(argv: list[str] | None = None):
     run_partial_correlation(config)
     run_wavelet_analysis(config)
     run_transfer_entropy(config)
+    run_info_theory(config)
 
     # --- Spiking Neural Network (pair-signal classifier) ---
     # Optional: requires torch + snntorch (install with `uv sync --extra snn`).

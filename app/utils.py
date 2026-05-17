@@ -734,12 +734,21 @@ def load_wavelet_corr(scale: int) -> pd.DataFrame:
     return _load_wavelet_corr(current_universe(), scale)
 
 
+_TE_EDGE_COLUMNS = [
+    "source", "target", "te_forward", "te_backward", "net_te", "dominant_direction",
+]
+
+
 @st.cache_data
 def _load_te_edges(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "te_network_edges.csv"
-    if path.exists():
+    if not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame(columns=_TE_EDGE_COLUMNS)
+    try:
         return pd.read_csv(path)
-    return pd.DataFrame()
+    except pd.errors.EmptyDataError:
+        # Post-fix BH-FDR can leave zero significant edges → empty CSV.
+        return pd.DataFrame(columns=_TE_EDGE_COLUMNS)
 
 
 def load_te_edges() -> pd.DataFrame:
@@ -768,6 +777,23 @@ def _load_te_matrix(universe: str) -> pd.DataFrame:
 
 def load_te_matrix() -> pd.DataFrame:
     return _load_te_matrix(current_universe())
+
+
+@st.cache_data
+def _load_te_matrix_raw(universe: str) -> pd.DataFrame:
+    """Pre-FDR TE values — useful for ranking edges by magnitude even when
+    the FDR-corrected mask is sparse (the common case at 100-shuffle
+    resolution on N>50 ticker grids)."""
+    path = data_results(universe) / "transfer_entropy_raw.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    # Fall back to the legacy filtered matrix when the raw file doesn't exist
+    # (pre-Phase-1.3 pipeline runs).
+    return _load_te_matrix(universe)
+
+
+def load_te_matrix_raw() -> pd.DataFrame:
+    return _load_te_matrix_raw(current_universe())
 
 
 @st.cache_data
@@ -931,6 +957,113 @@ def _load_snn_membrane_sample(universe: str) -> pd.DataFrame:
 
 def load_snn_membrane_sample() -> pd.DataFrame:
     return _load_snn_membrane_sample(current_universe())
+
+
+# ---------------------------------------------------------------------------
+# Information-theory layer (Phase 3 mutable-candy)
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def _load_mi_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_mi_matrix() -> pd.DataFrame:
+    return _load_mi_matrix(current_universe())
+
+
+@st.cache_data
+def _load_mi_gaussian_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_gaussian_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_mi_gaussian_matrix() -> pd.DataFrame:
+    return _load_mi_gaussian_matrix(current_universe())
+
+
+@st.cache_data
+def _load_mi_nonlinear_excess(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_nonlinear_excess.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_mi_nonlinear_excess() -> pd.DataFrame:
+    return _load_mi_nonlinear_excess(current_universe())
+
+
+@st.cache_data
+def _load_mi_nonlinear_excess_top(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_nonlinear_excess_top.csv"
+    if path.exists() and path.stat().st_size > 0:
+        try:
+            return pd.read_csv(path)
+        except pd.errors.EmptyDataError:
+            return pd.DataFrame(columns=["ticker_a", "ticker_b", "nonlinear_excess"])
+    return pd.DataFrame(columns=["ticker_a", "ticker_b", "nonlinear_excess"])
+
+
+def load_mi_nonlinear_excess_top() -> pd.DataFrame:
+    return _load_mi_nonlinear_excess_top(current_universe())
+
+
+@st.cache_data
+def _load_rolling_info_theory(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "rolling_info_theory.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_rolling_info_theory() -> pd.DataFrame:
+    return _load_rolling_info_theory(current_universe())
+
+
+@st.cache_data
+def _load_regime_kl(universe: str) -> list:
+    import json
+    path = data_results(universe) / "regime_kl.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return []
+
+
+def load_regime_kl() -> list:
+    return _load_regime_kl(current_universe())
+
+
+@st.cache_data
+def _load_it_summary(universe: str) -> dict:
+    import json
+    path = data_results(universe) / "it_summary.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def load_it_summary() -> dict:
+    return _load_it_summary(current_universe())
+
+
+@st.cache_data
+def _load_entropy_rate_signs(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "entropy_rate_signs.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_entropy_rate_signs() -> pd.DataFrame:
+    return _load_entropy_rate_signs(current_universe())
 
 
 # ---------------------------------------------------------------------------

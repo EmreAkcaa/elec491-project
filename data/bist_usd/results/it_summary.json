@@ -1,0 +1,106 @@
+{
+  "n_tickers": 73,
+  "n_observations": 1540,
+  "d_eff": 4.770078723271269,
+  "log_det_term": 25.848721381234167,
+  "joint_gaussian_entropy_nats": 77.73379154270694,
+  "mean_sign_entropy_rate_bits": 0.9982397065426438,
+  "mi_bits_units": true,
+  "n_bins": 4,
+  "rolling_window": 60,
+  "rolling_step": 5,
+  "top_nonlinear_pairs": [
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "AGHOL",
+      "nonlinear_excess": 0.11358128505636385
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "TTKOM",
+      "nonlinear_excess": 0.1028782450810974
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "ULKER",
+      "nonlinear_excess": 0.09943934611753215
+    },
+    {
+      "ticker_a": "AEFES",
+      "ticker_b": "CCOLA",
+      "nonlinear_excess": 0.09764137672204427
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "SAHOL",
+      "nonlinear_excess": 0.09341565977086838
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "MGROS",
+      "nonlinear_excess": 0.09084711666535622
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "ISCTR",
+      "nonlinear_excess": 0.08775140094738472
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "KCHOL",
+      "nonlinear_excess": 0.08638320140291328
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "TAVHL",
+      "nonlinear_excess": 0.08604411311584367
+    },
+    {
+      "ticker_a": "MAVI",
+      "ticker_b": "CCOLA",
+      "nonlinear_excess": 0.08403299976143944
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "DOHOL",
+      "nonlinear_excess": 0.08370779829250163
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "ZOREN",
+      "nonlinear_excess": 0.08337466212335336
+    },
+    {
+      "ticker_a": "CCOLA",
+      "ticker_b": "SISE",
+      "nonlinear_excess": 0.0824903390580726
+    },
+    {
+      "ticker_a": "FROTO",
+      "ticker_b": "CCOLA",
+      "nonlinear_excess": 0.08157635883846198
+    }
+  ],
+  "regime_kl_nats": [
+    {
+      "label": "Ukraine invasion",
+      "date": "2022-02-24T00:00:00",
+      "calm_start": "2021-06-29T00:00:00",
+      "calm_end": "2021-12-26T00:00:00",
+      "crisis_start": "2022-02-24T00:00:00",
+      "crisis_end": "2022-04-25T00:00:00",
+      "kl": 311.57393479285315,
+      "n_tickers": 73
+    },
+    {
+      "label": "T\u00fcrkiye earthquake",
+      "date": "2023-02-06T00:00:00",
+      "calm_start": "2022-06-11T00:00:00",
+      "calm_end": "2022-12-08T00:00:00",
+      "crisis_start": "2023-02-06T00:00:00",
+      "crisis_end": "2023-04-07T00:00:00",
+      "kl": 559.9708536352427,
+      "n_tickers": 73
+    }
+  ]
+}

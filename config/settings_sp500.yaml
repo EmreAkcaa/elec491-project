@@ -54,9 +54,20 @@ dislocation:
   lookback_window: 252
   min_correlation: 0.5
 
+clustering:
+  # See settings.yaml for context. S&P uses n_clusters=25 (485 surviving
+  # tickers / 25 ≈ 19 per cluster average) — same Ward linkage, but more
+  # clusters to keep the avg cluster size in the same band as BIST.
+  linkage_method: "ward"
+  n_clusters: 25
+  criterion: "maxclust"
+  distance_threshold: 1.0
+
 transfer_entropy:
   lag: 1
   n_bins: 3
   significance_shuffles: 100
   significance_level: 0.05
   seed: 42
+  surrogate_block_length: 5  # see settings.yaml for context
+  multiple_testing: "fdr_bh"

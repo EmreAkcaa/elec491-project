@@ -31,6 +31,7 @@ from utils import (
     PROJECT_ROOT,
     SECTOR_PALETTE,
     apply_chart_style,
+    data_results,
     get_colors,
     inject_custom_css,
     page_header,
@@ -262,6 +263,164 @@ def _kpi_row(comp_df: pd.DataFrame, label: str, key: str, kind: str = "raw") -> 
 # Page render
 # ---------------------------------------------------------------------------
 
+def _render_bist_numeraire_section() -> None:
+    """BIST in TRY / USD / Gold side-by-side numéraire sensitivity probe.
+
+    Phase 4 mutable-candy. Loads the precomputed `bist`, `bist_usd`,
+    `bist_gold` results trees and renders three short panels:
+    eigenvalue spectra, KPI strip (D_eff, ΔH, avg-corr, top eig share),
+    and sector purity bars. One paragraph honest interpretation at the
+    bottom.
+    """
+    import json
+
+    bist_dir = data_results("bist")
+    usd_dir = data_results("bist_usd")
+    gold_dir = data_results("bist_gold")
+    if not (usd_dir / "eigenvalue_spectrum.csv").exists() or not (gold_dir / "eigenvalue_spectrum.csv").exists():
+        return  # variants not generated yet — silently skip section
+
+    with st.container(border=True):
+        section_header(
+            "BIST Numéraire Sensitivity",
+            "Same BIST universe re-expressed in three numéraires (TRY, USD, "
+            "gold). The hypothesis was that removing the currency leg should "
+            "strip out a common factor and reduce the dominant eigenvalue's "
+            "share. The experiment refutes this: the share goes UP, not down.",
+        )
+
+        def _load_market(market_dir, key):
+            eig = pd.read_csv(market_dir / "eigenvalue_spectrum.csv")
+            with open(market_dir / "it_summary.json") as f:
+                summary = json.load(f)
+            with open(market_dir / "pipeline_metadata.json") as f:
+                meta = json.load(f).get("market_summary", {})
+            cluster_df = pd.read_csv(market_dir / "cluster_assignments.csv")
+            return {
+                "key": key,
+                "eig": eig,
+                "summary": summary,
+                "meta": meta,
+                "clusters": cluster_df,
+            }
+
+        bist_data = _load_market(bist_dir, "TRY")
+        usd_data = _load_market(usd_dir, "USD")
+        gold_data = _load_market(gold_dir, "Gold")
+
+        # KPI strip
+        st.markdown("**Headline numbers** — same universe, three base assets")
+        kpi_cols = st.columns(4)
+        for col_idx, (label, key) in enumerate([
+            ("D_eff", "d_eff"),
+            ("ΔH (nats)", "log_det_term"),
+            ("Avg pairwise ρ", None),  # from market_summary
+            ("Top eig share", None),    # computed
+        ]):
+            with kpi_cols[col_idx]:
+                rows = []
+                for d in (bist_data, usd_data, gold_data):
+                    if key:
+                        rows.append((d["key"], d["summary"].get(key, float("nan"))))
+                    elif label == "Avg pairwise ρ":
+                        rows.append((d["key"], d["meta"].get("avg_pairwise_corr", float("nan"))))
+                    else:  # Top eig share
+                        eigs = d["eig"]["eigenvalue"].values
+                        rows.append((d["key"], float(eigs.max() / eigs.sum())))
+                st.markdown(f"**{label}**")
+                for k, v in rows:
+                    if "share" in label.lower():
+                        st.markdown(f"- {k}: **{v*100:.2f}%**")
+                    elif "ρ" in label:
+                        st.markdown(f"- {k}: **{v:.3f}**")
+                    else:
+                        st.markdown(f"- {k}: **{v:.2f}**")
+
+        # Eigenvalue-spectrum overlay
+        st.markdown("**Eigenvalue spectrum** (log scale; first 15 eigenvalues)")
+        fig = go.Figure()
+        palette = {"TRY": "#1F77B4", "USD": "#2CA02C", "Gold": "#FFC400"}
+        for d in (bist_data, usd_data, gold_data):
+            eig = d["eig"].sort_values("eigenvalue", ascending=False).head(15)
+            fig.add_trace(go.Bar(
+                x=list(range(1, len(eig) + 1)),
+                y=eig["eigenvalue"].values,
+                name=d["key"],
+                marker_color=palette[d["key"]],
+                opacity=0.85,
+            ))
+        fig.update_layout(
+            barmode="group",
+            xaxis_title="Eigenvalue rank",
+            yaxis_title="Eigenvalue",
+            yaxis_type="log",
+            height=380,
+            margin=dict(l=40, r=20, t=30, b=40),
+        )
+        render_chart(
+            fig, chart_id="num_eigvals",
+            filename_base="numeraire_eigenvalue_spectrum",
+            title_key="num_eigvals",
+            default_title="BIST eigenvalue spectrum: TRY vs USD vs Gold",
+        )
+
+        # Sector purity bars
+        st.markdown(
+            "**Sector purity** — share of each cluster occupied by its modal sector. "
+            "Higher = cleaner sector recovery."
+        )
+        sector_purity_rows = []
+        for d in (bist_data, usd_data, gold_data):
+            clusters = d["clusters"].dropna(subset=["sector", "cluster_id"])
+            purity = (
+                clusters.groupby("cluster_id")["sector"]
+                .agg(lambda s: s.value_counts().iloc[0] / len(s))
+                .mean()
+            )
+            sector_purity_rows.append({"Numéraire": d["key"], "Mean cluster purity": purity})
+        purity_df = pd.DataFrame(sector_purity_rows)
+        fig_pur = go.Figure(go.Bar(
+            x=purity_df["Numéraire"],
+            y=purity_df["Mean cluster purity"],
+            marker_color=[palette[k] for k in purity_df["Numéraire"]],
+            text=[f"{v:.2%}" for v in purity_df["Mean cluster purity"]],
+            textposition="outside",
+        ))
+        fig_pur.update_layout(
+            xaxis_title="",
+            yaxis_title="Mean cluster purity",
+            yaxis_tickformat=".0%",
+            height=320,
+            margin=dict(l=40, r=20, t=20, b=40),
+            yaxis_range=[0, 1.0],
+        )
+        render_chart(
+            fig_pur, chart_id="num_sector_purity",
+            filename_base="numeraire_sector_purity",
+            title_key="num_sector_purity",
+            default_title="Mean cluster sector-purity across BIST numéraires",
+        )
+
+        # Honest interpretation paragraph
+        st.markdown(
+            "**Reading.** The naïve hypothesis was that stripping the TRY leg "
+            "(re-expressing returns in USD or gold) should remove a market-wide "
+            "common factor and reduce the top eigenvalue's variance share. The "
+            "experiment shows the **opposite** direction: the share rises from "
+            f"**{bist_data['eig']['eigenvalue'].max() / bist_data['eig']['eigenvalue'].sum() * 100:.1f}%** (TRY) "
+            f"→ **{usd_data['eig']['eigenvalue'].max() / usd_data['eig']['eigenvalue'].sum() * 100:.1f}%** (USD) "
+            f"→ **{gold_data['eig']['eigenvalue'].max() / gold_data['eig']['eigenvalue'].sum() * 100:.1f}%** (gold), "
+            "and effective dimensionality drops from "
+            f"**{bist_data['summary']['d_eff']:.2f}** to **{gold_data['summary']['d_eff']:.2f}**. "
+            "Interpretation: TRY volatility is a *dispersion source* for BIST "
+            "equities — exporters and importers respond oppositely to TRY moves, "
+            "so removing the currency leg amplifies the residual global-equity-risk "
+            "common factor. Numéraire choice is a substantive modelling decision, "
+            "not a noise-removal step. The numéraire panel is presented as an "
+            "honest empirical finding rather than a thesis."
+        )
+
+
 def render() -> None:
     # Defensive import — force fresh load so a stale module in sys.modules
     # (Streamlit Cloud caches across deploys) can't strip the Phase I fields.
@@ -276,6 +435,19 @@ def render() -> None:
         "to BIST 100 and the S&P 500 over the same 2020-01 → 2026-03 window. "
         "Universes selected because they sit at opposite ends of the emerging vs "
         "developed-market dimension while sharing the same sampling and pipeline.",
+    )
+
+    # Plain-English finance question — the demo first-60-seconds anchor.
+    st.info(
+        ":material/help: **Central question:** How does the structure of BIST-100 "
+        "co-movement compare to a developed-market reference (S&P 500)? Both panels "
+        "run through the identical 12-stage signal-processing pipeline, so any "
+        "difference in the resulting correlation network, sector recovery, or "
+        "crisis response is a property of the underlying market — not the method. "
+        "The clearest single finding: the 2023 Türkiye earthquake spike (mean "
+        "|correlation| 0.44 → 0.66 → 0.58 over the event window) is isolated to "
+        "BIST; the S&P signal stays flat (0.44 → 0.35 → 0.31), validating that "
+        "the toolkit catches market-specific stress events."
     )
 
     # Defence-in-depth filter: only universes flagged eligible_for_cross_market
@@ -477,6 +649,9 @@ def render() -> None:
                     f"- half-life ≈ {float(r.get('half_life', np.nan)):.0f}d\n"
                     f"- current Z = {float(r.get('current_zscore', np.nan)):.2f}"
                 )
+
+    # ── Section 6b: Numéraire sensitivity (Phase 4 mutable-candy) ─────────
+    _render_bist_numeraire_section()
 
     # ── Section 7: Limitations / methodology footnote
     with st.container(border=True):

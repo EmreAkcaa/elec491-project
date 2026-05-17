@@ -18,7 +18,7 @@ uv sync                                  # install deps (torch + snntorch not in
 uv sync --extra snn                      # add the optional SNN extra
 uv run python run_pipeline.py            # run the whole pipeline (~10–30 min; +~12 min if [snn])
 uv run streamlit run app/dashboard.py    # launch the dashboard
-uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
+uv run python -m pytest -q               # 149 passed, 3 skipped (152 total)
 ```
 
 ## Where to look first
@@ -47,8 +47,8 @@ uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
   module-level defaults or `dataclass` defaults, not the YAML. See the per-module
   hardcoded-params lists in `docs/PIPELINE_REFERENCE.md`. When adding a new param,
   hoist to YAML if it's user-facing; otherwise leave it as a default.
-- **Tests live in `tests/`** (9 files, 120 tests after Phase I).
-  Stages without tests are listed in `docs/FUTURE_WORK.md` (F-4).
+- **Tests live in `tests/`** (10 files, 152 tests after the mutable-candy
+  clustering fix). Stages without tests are listed in `docs/FUTURE_WORK.md` (F-4).
 - **Chart rendering** goes through `app/utils.py:render_chart` for consistent
   theming and PNG export. Don't call `st.plotly_chart` directly.
 - **Caching**: every loader in `app/utils.py` is `@st.cache_data` and keyed by
@@ -88,18 +88,21 @@ uv run python -m pytest -q               # 96 passed, 3 skipped (99 total)
 - **Transfer entropy is now seeded** (`config/settings.yaml:transfer_entropy.seed`).
   The shuffle null distribution uses `np.random.default_rng(seed)`. Don't
   switch back to global `np.random.permutation`.
-- **SNN underperforms the simple `|Z|>2` rule** (mean Δ-Sharpe ≈ −1.11; wins
-  on 5 of 20 pairs). This is reported honestly in `docs/SNN_Report.md` §1 and
-  in the dashboard's Neuromorphic Signals sub-tab caption. Don't reframe it
-  as a win.
+- **SNN underperforms the simple `|Z|>2` rule** on both markets, but by less
+  than `docs/SNN_Report.md` originally claimed. Per `snn_metrics.json` (verified
+  2026-05-17): BIST mean Δ-Sharpe = **−0.27**, wins **10 of 20** pairs;
+  S&P mean Δ-Sharpe = **−0.84**, wins **7 of 20** pairs. The earlier −1.11
+  figure was from an older BIST pair set that's no longer the active selection.
+  This is reported honestly in `docs/SNN_Report.md` §1 and in the dashboard's
+  Neuromorphic Signals sub-tab caption. Don't reframe it as a win.
 
 ## What's been confirmed about the codebase
 
 - Total lines: ~10,500+ across `src/` (12 modules incl. `snn_signals.py`),
   `app/` (8 files incl. `universe_registry.py` + `cross_market.py`), `tests/`
-  (9 files, 120 tests after Phase I).
-- All tests pass under `uv run python -m pytest -q` (120 passed). When `[snn]`
-  extra is missing, torch-dependent SNN tests skip cleanly.
+  (10 files, 152 tests after the mutable-candy clustering fix).
+- All tests pass under `uv run python -m pytest -q` (149 passed, 3 skipped).
+  When `[snn]` extra is missing, torch-dependent SNN tests skip cleanly.
 - Pipeline is reproducible end-to-end given the same
   `data/<market>/raw/prices_raw.parquet` and the seeded TE / SNN configs.
 - The dashboard runs against BIST, S&P-500, and EEG universes simultaneously

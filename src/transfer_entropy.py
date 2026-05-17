@@ -106,6 +106,27 @@ def transfer_entropy(
     return max(0.0, te)  # TE is theoretically non-negative
 
 
+def _circular_block_bootstrap(
+    x: np.ndarray, block_length: int, rng: np.random.Generator
+) -> np.ndarray:
+    """Single circular-block-bootstrap resample of `x`.
+
+    Preserves within-block autocorrelation (Politis & Romano 1992) by
+    sampling contiguous blocks of length `block_length` from a circularly
+    extended copy of x and concatenating them. With `block_length=1` this
+    degenerates to a plain i.i.d. permutation, which is exactly the broken
+    surrogate the BH-FDR fix replaced.
+    """
+    n = len(x)
+    if block_length <= 1:
+        return rng.permutation(x)
+    n_blocks = int(np.ceil(n / block_length))
+    starts = rng.integers(0, n, size=n_blocks)
+    x_ext = np.concatenate([x, x[:block_length]])
+    blocks = [x_ext[s:s + block_length] for s in starts]
+    return np.concatenate(blocks)[:n]
+
+
 def _te_one_pair(
     i: int,
     j: int,
@@ -114,21 +135,128 @@ def _te_one_pair(
     lag: int,
     n_bins: int,
     n_shuffles: int,
-    sig_level: float,
+    block_length: int,
     pair_seed: int,
-) -> tuple[int, int, float, bool]:
-    """Compute TE(i -> j) plus its shuffle-null significance. Returns (i, j, te, is_significant)."""
+) -> tuple[int, int, float, float]:
+    """Compute TE(i -> j) plus its surrogate-null p-value.
+
+    Returns (i, j, te, p_value). p_value = 1.0 when no shuffles are
+    requested (caller can treat that as "no significance test run").
+    """
     te_val = transfer_entropy(x, y, lag=lag, n_bins=n_bins)
     if n_shuffles <= 0:
-        return i, j, te_val, True
+        return i, j, te_val, 1.0
     rng = np.random.default_rng(pair_seed)
     null = np.empty(n_shuffles)
     for s in range(n_shuffles):
-        x_shuffled = rng.permutation(x)
-        null[s] = transfer_entropy(x_shuffled, y, lag=lag, n_bins=n_bins)
-    p_value = (null >= te_val).mean()
-    is_sig = bool(p_value < sig_level)
-    return i, j, te_val, is_sig
+        x_surrogate = _circular_block_bootstrap(x, block_length, rng)
+        null[s] = transfer_entropy(x_surrogate, y, lag=lag, n_bins=n_bins)
+    # +1 smoothing keeps p-values bounded away from 0, which BH-FDR needs.
+    p_value = (1 + (null >= te_val).sum()) / (1 + n_shuffles)
+    return i, j, te_val, float(p_value)
+
+
+def compute_transfer_entropy_matrix_full(
+    returns: pd.DataFrame,
+    lag: int = 1,
+    n_bins: int = 3,
+    significance_shuffles: int = 100,
+    significance_level: float = 0.05,
+    seed: int | None = None,
+    n_jobs: int = -1,
+    surrogate_block_length: int = 5,
+    multiple_testing: str = "fdr_bh",
+) -> dict[str, pd.DataFrame | int]:
+    """Compute pairwise transfer entropy for all directed pairs (parallelised).
+
+    Returns a dict with:
+    - ``raw`` (DataFrame): TE values pre-significance, useful for ranking by
+      magnitude when the FDR-corrected mask is sparse / empty.
+    - ``pvals`` (DataFrame): per-pair surrogate-null p-values.
+    - ``significant`` (DataFrame): boolean mask after `multiple_testing`.
+    - ``filtered`` (DataFrame): ``raw * significant`` — the legacy contract.
+    - ``net_filtered`` (DataFrame): ``filtered - filtered.T`` (positive =
+      net info flow from row to column).
+    - ``n_significant_fdr`` (int), ``n_significant_uncorrected`` (int),
+      ``total_pairs`` (int): scalar summaries.
+
+    Notes on the configuration knobs:
+    - ``surrogate_block_length`` controls the circular-block-bootstrap null.
+      The previous i.i.d. permutation (block_length=1) destroyed source
+      autocorrelation and inflated significance.
+    - ``multiple_testing`` defaults to Benjamini–Hochberg FDR control over
+      the N*(N-1) directed pairs. Without it, ~5% of pairs always appear
+      significant at alpha=0.05 by construction.
+
+    For consumers that only need the legacy ``(filtered, net_filtered)``
+    pair, see :func:`compute_transfer_entropy_matrix`.
+    """
+    from joblib import Parallel, delayed
+
+    tickers = returns.columns.tolist()
+    N = len(tickers)
+    te = np.zeros((N, N))
+    pvals = np.ones((N, N))
+
+    cols = [returns.iloc[:, i].values for i in range(N)]
+    base_seed = int(seed) if seed is not None else 0
+    tasks = [(i, j) for i in range(N) for j in range(N) if i != j]
+    total_pairs = len(tasks)
+
+    logger.info(
+        "TE: dispatching %d directed pairs across n_jobs=%s "
+        "(N=%d tickers, shuffles=%d, block=%d, mt=%s)",
+        total_pairs, n_jobs, N,
+        significance_shuffles, surrogate_block_length, multiple_testing,
+    )
+
+    results = Parallel(n_jobs=n_jobs, verbose=10, backend="loky")(
+        delayed(_te_one_pair)(
+            i, j,
+            cols[i], cols[j],
+            lag, n_bins,
+            significance_shuffles, surrogate_block_length,
+            base_seed * N * N + i * N + j,
+        )
+        for i, j in tasks
+    )
+
+    for i, j, te_val, p_value in results:
+        te[i, j] = te_val
+        pvals[i, j] = p_value
+
+    significant = _apply_multiple_testing(
+        pvals, tasks, multiple_testing, significance_level
+    )
+
+    te_filtered = te * significant
+    n_sig = int(significant.sum()) - N
+    n_sig_raw = int((pvals[~np.eye(N, dtype=bool)] < significance_level).sum())
+    logger.info(
+        "Transfer entropy: %d significant directed edges (of %d) at FDR≤%.2f "
+        "via %s (vs %d uncorrected at p<%.2f)",
+        n_sig, total_pairs, significance_level, multiple_testing,
+        n_sig_raw, significance_level,
+    )
+
+    raw_df = pd.DataFrame(te, index=tickers, columns=tickers)
+    pvals_df = pd.DataFrame(pvals, index=tickers, columns=tickers)
+    sig_df = pd.DataFrame(significant, index=tickers, columns=tickers)
+    filtered_df = pd.DataFrame(te_filtered, index=tickers, columns=tickers)
+    net_filtered = pd.DataFrame(
+        te_filtered - te_filtered.T, index=tickers, columns=tickers
+    )
+
+    return {
+        "raw": raw_df,
+        "pvals": pvals_df,
+        "significant": sig_df,
+        "filtered": filtered_df,
+        "net_filtered": net_filtered,
+        "n_significant_fdr": n_sig,
+        "n_significant_uncorrected": n_sig_raw,
+        "total_pairs": total_pairs,
+    }
 
 
 def compute_transfer_entropy_matrix(
@@ -139,88 +267,100 @@ def compute_transfer_entropy_matrix(
     significance_level: float = 0.05,
     seed: int | None = None,
     n_jobs: int = -1,
+    surrogate_block_length: int = 5,
+    multiple_testing: str = "fdr_bh",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compute pairwise transfer entropy for all stock pairs (parallelised).
+    """Backwards-compatible wrapper around :func:`compute_transfer_entropy_matrix_full`.
 
-    Parameters
-    ----------
-    returns : pd.DataFrame
-        Log returns (dates x tickers).
-    lag : int
-        Time lag.
-    n_bins : int
-        Discretization bins.
-    significance_shuffles : int
-        Number of shuffle permutations for significance testing.
-    significance_level : float
-        p-value threshold.
-    seed : int or None
-        Seed for the shuffle RNG. Per-pair seeds are derived as
-        `seed_base * N * N + i * N + j` so results are reproducible
-        across parallel runs. If None, falls back to 0.
-    n_jobs : int
-        joblib worker count; -1 = all available cores. Set to 1 for the
-        legacy single-threaded path (useful for debugging).
-
-    Returns
-    -------
-    te_matrix : pd.DataFrame
-        Asymmetric matrix where entry [i,j] = TE(i -> j).
-    net_te_matrix : pd.DataFrame
-        Net transfer entropy: net[i,j] = TE(i->j) - TE(j->i).
-        Positive = i leads j.
+    Returns just ``(filtered, net_filtered)`` for callers that don't need
+    raw values / p-values / the significance mask.
     """
-    from joblib import Parallel, delayed
-
-    tickers = returns.columns.tolist()
-    N = len(tickers)
-    te = np.zeros((N, N))
-    significant = np.ones((N, N), dtype=bool)
-
-    # Materialise series once so workers don't re-copy the entire DataFrame.
-    cols = [returns.iloc[:, i].values for i in range(N)]
-    base_seed = int(seed) if seed is not None else 0
-
-    # Build the (i, j) task list (excluding diagonal).
-    tasks = [(i, j) for i in range(N) for j in range(N) if i != j]
-    total_pairs = len(tasks)
-    logger.info(
-        "TE: dispatching %d directed pairs across n_jobs=%s "
-        "(N=%d tickers, shuffles=%d)",
-        total_pairs, n_jobs, N, significance_shuffles,
+    out = compute_transfer_entropy_matrix_full(
+        returns,
+        lag=lag,
+        n_bins=n_bins,
+        significance_shuffles=significance_shuffles,
+        significance_level=significance_level,
+        seed=seed,
+        n_jobs=n_jobs,
+        surrogate_block_length=surrogate_block_length,
+        multiple_testing=multiple_testing,
     )
+    return out["filtered"], out["net_filtered"]
 
-    # joblib batches across processes (loky). verbose=10 emits log lines
-    # every ~10% so the operator sees progress without us instrumenting it.
-    results = Parallel(n_jobs=n_jobs, verbose=10, backend="loky")(
-        delayed(_te_one_pair)(
-            i, j,
-            cols[i], cols[j],
-            lag, n_bins,
-            significance_shuffles, significance_level,
-            base_seed * N * N + i * N + j,
+
+def _apply_multiple_testing(
+    pvals: np.ndarray,
+    tasks: list[tuple[int, int]],
+    method: str,
+    alpha: float,
+) -> np.ndarray:
+    """Convert the raw N*N p-value matrix into a boolean significance mask
+    with the requested family-wise / FDR correction applied across the
+    off-diagonal pairs.
+
+    The diagonal stays True (a node has no self-edge to test); insignificant
+    off-diagonal entries become False and their TE values get zeroed by the
+    caller.
+    """
+    N = pvals.shape[0]
+    significant = np.zeros_like(pvals, dtype=bool)
+    np.fill_diagonal(significant, True)
+
+    if not tasks:
+        return significant
+
+    off_pvals = np.array([pvals[i, j] for i, j in tasks])
+
+    if method == "none":
+        reject = off_pvals < alpha
+    elif method == "bonferroni":
+        reject = off_pvals < (alpha / len(off_pvals))
+    elif method == "fdr_bh":
+        reject = _benjamini_hochberg(off_pvals, alpha)
+    else:
+        raise ValueError(
+            f"Unknown multiple_testing method: {method!r}. "
+            "Use 'fdr_bh', 'bonferroni', or 'none'."
         )
-        for i, j in tasks
-    )
 
-    for i, j, te_val, is_sig in results:
-        te[i, j] = te_val
-        significant[i, j] = is_sig
+    for (i, j), keep in zip(tasks, reject):
+        significant[i, j] = bool(keep)
 
-    # Zero out insignificant entries
-    te_filtered = te * significant
+    return significant
 
-    te_matrix = pd.DataFrame(te_filtered, index=tickers, columns=tickers)
-    net_te = te_filtered - te_filtered.T
-    net_te_matrix = pd.DataFrame(net_te, index=tickers, columns=tickers)
 
-    n_sig = int(significant.sum()) - N  # exclude diagonal
-    logger.info(
-        "Transfer entropy: %d significant directed edges (of %d), p<%.2f",
-        n_sig, total_pairs, significance_level,
-    )
+def _benjamini_hochberg(pvals: np.ndarray, alpha: float) -> np.ndarray:
+    """Benjamini–Hochberg FDR control (Benjamini & Hochberg 1995).
 
-    return te_matrix, net_te_matrix
+    Returns a boolean reject array of the same shape as `pvals`. Controls
+    the expected proportion of false discoveries among rejected hypotheses
+    at level `alpha` under independence or positive dependence.
+
+    Implementation is the textbook step-up procedure: sort, find the
+    largest k where p_(k) ≤ (k / m) * alpha, reject ranks 1..k.
+    """
+    m = len(pvals)
+    order = np.argsort(pvals)
+    ranked = pvals[order]
+    thresholds = np.arange(1, m + 1) * (alpha / m)
+    below = ranked <= thresholds
+    if not below.any():
+        return np.zeros_like(pvals, dtype=bool)
+    k = np.where(below)[0].max() + 1  # number of rejections (1-indexed)
+    reject = np.zeros_like(pvals, dtype=bool)
+    reject[order[:k]] = True
+    return reject
+
+
+TE_EDGE_COLUMNS = [
+    "source",
+    "target",
+    "te_forward",
+    "te_backward",
+    "net_te",
+    "dominant_direction",
+]
 
 
 def extract_te_edges(
@@ -233,7 +373,10 @@ def extract_te_edges(
     Returns
     -------
     pd.DataFrame
-        Columns: source, target, te_forward, te_backward, net_te, direction.
+        Columns: source, target, te_forward, te_backward, net_te,
+        dominant_direction. Returns an empty DataFrame with the correct
+        columns (rather than a column-less one) when no pair clears
+        `min_te`, so the persisted CSV stays valid for downstream loaders.
     """
     tickers = te_matrix.columns.tolist()
     rows = []
@@ -252,10 +395,11 @@ def extract_te_edges(
                     "dominant_direction": f"{tickers[i]}->{tickers[j]}" if net > 0 else f"{tickers[j]}->{tickers[i]}",
                 })
 
-    df = pd.DataFrame(rows)
-    if not df.empty:
-        df = df.sort_values("net_te", key=abs, ascending=False).reset_index(drop=True)
-    return df
+    if not rows:
+        return pd.DataFrame(columns=TE_EDGE_COLUMNS)
+
+    df = pd.DataFrame(rows, columns=TE_EDGE_COLUMNS)
+    return df.sort_values("net_te", key=abs, ascending=False).reset_index(drop=True)
 
 
 def compute_node_roles(
@@ -309,18 +453,58 @@ def run_transfer_entropy(config: PipelineConfig) -> None:
 
     te_cfg = config.transfer_entropy
 
-    # Compute TE matrix
-    te_matrix, net_te_matrix = compute_transfer_entropy_matrix(
+    # Compute TE matrix (full output: raw, pvals, mask, FDR-filtered, net).
+    results = compute_transfer_entropy_matrix_full(
         returns,
         lag=te_cfg.lag,
         n_bins=te_cfg.n_bins,
         significance_shuffles=te_cfg.significance_shuffles,
         significance_level=te_cfg.significance_level,
         seed=te_cfg.seed,
+        surrogate_block_length=te_cfg.surrogate_block_length,
+        multiple_testing=te_cfg.multiple_testing,
     )
+
+    te_matrix = results["filtered"]
+    net_te_matrix = results["net_filtered"]
+
+    # Legacy filenames keep downstream consumers working unchanged.
     te_matrix.to_parquet(config.data_results / "transfer_entropy_matrix.parquet")
-    net_te_matrix.to_parquet(config.data_results / "net_transfer_entropy_matrix.parquet")
-    logger.info("Saved transfer entropy matrices")
+    net_te_matrix.to_parquet(
+        config.data_results / "net_transfer_entropy_matrix.parquet"
+    )
+
+    # New artifacts: raw TE magnitudes + per-pair p-values + significance mask.
+    # The dashboard uses these to rank pairs by magnitude even when no pair
+    # survives BH-FDR at the configured shuffle resolution, and to surface
+    # the "uncorrected vs FDR" comparison as an honest methodological finding.
+    results["raw"].to_parquet(
+        config.data_results / "transfer_entropy_raw.parquet"
+    )
+    results["pvals"].to_parquet(
+        config.data_results / "transfer_entropy_pvalues.parquet"
+    )
+    results["significant"].to_parquet(
+        config.data_results / "transfer_entropy_significance.parquet"
+    )
+
+    import json
+    with open(config.data_results / "transfer_entropy_summary.json", "w") as f:
+        json.dump(
+            {
+                "n_significant_fdr": results["n_significant_fdr"],
+                "n_significant_uncorrected": results["n_significant_uncorrected"],
+                "total_pairs": results["total_pairs"],
+                "significance_level": te_cfg.significance_level,
+                "multiple_testing": te_cfg.multiple_testing,
+                "surrogate_block_length": te_cfg.surrogate_block_length,
+                "significance_shuffles": te_cfg.significance_shuffles,
+            },
+            f,
+            indent=2,
+        )
+
+    logger.info("Saved transfer entropy matrices (legacy filtered + raw + pvals + mask + summary)")
 
     # Extract edges
     edges = extract_te_edges(te_matrix, net_te_matrix)

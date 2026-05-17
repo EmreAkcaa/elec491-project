@@ -1,0 +1,85 @@
+{
+  "n_tickers": 64,
+  "n_observations": 593280,
+  "d_eff": 4.688077432758431,
+  "log_det_term": NaN,
+  "joint_gaussian_entropy_nats": NaN,
+  "mean_sign_entropy_rate_bits": 0.7429353798027036,
+  "mi_bits_units": true,
+  "n_bins": 4,
+  "rolling_window": 60,
+  "rolling_step": 5,
+  "top_nonlinear_pairs": [
+    {
+      "ticker_a": "F4",
+      "ticker_b": "F6",
+      "nonlinear_excess": 0.19783781241431025
+    },
+    {
+      "ticker_a": "AF4",
+      "ticker_b": "F4",
+      "nonlinear_excess": 0.16122144023568316
+    },
+    {
+      "ticker_a": "FC6",
+      "ticker_b": "F6",
+      "nonlinear_excess": 0.09493633643175285
+    },
+    {
+      "ticker_a": "FC6",
+      "ticker_b": "FT8",
+      "nonlinear_excess": 0.08803400101569472
+    },
+    {
+      "ticker_a": "C6",
+      "ticker_b": "FT8",
+      "nonlinear_excess": 0.08427149790891349
+    },
+    {
+      "ticker_a": "FC5",
+      "ticker_b": "F5",
+      "nonlinear_excess": 0.08099495371303785
+    },
+    {
+      "ticker_a": "AF8",
+      "ticker_b": "F4",
+      "nonlinear_excess": 0.0785903461121626
+    },
+    {
+      "ticker_a": "FT8",
+      "ticker_b": "T8",
+      "nonlinear_excess": 0.07858682680438754
+    },
+    {
+      "ticker_a": "F2",
+      "ticker_b": "F6",
+      "nonlinear_excess": 0.07732004809796406
+    },
+    {
+      "ticker_a": "FC5",
+      "ticker_b": "FT7",
+      "nonlinear_excess": 0.07354029162288324
+    },
+    {
+      "ticker_a": "FT8",
+      "ticker_b": "T10",
+      "nonlinear_excess": 0.07195336753979013
+    },
+    {
+      "ticker_a": "AF8",
+      "ticker_b": "F6",
+      "nonlinear_excess": 0.06934430550881075
+    },
+    {
+      "ticker_a": "FC5",
+      "ticker_b": "F7",
+      "nonlinear_excess": 0.06893902008970099
+    },
+    {
+      "ticker_a": "AF4",
+      "ticker_b": "F2",
+      "nonlinear_excess": 0.06863953125465871
+    }
+  ],
+  "regime_kl_nats": []
+}

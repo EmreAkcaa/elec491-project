@@ -1,0 +1,74 @@
+ticker,degree,betweenness_centrality,sector
+SISE,35,0.8509389671361502,Industrials
+VESBE,24,0.539906103286385,Consumer Durables
+KCHOL,8,0.3423317683881064,Conglomerates
+AKBNK,5,0.10876369327073553,Banking
+SAHOL,3,0.18035993740219092,Conglomerates
+ISCTR,2,0.1310641627543036,Banking
+AEFES,1,0.0,Beverages
+BUCIM,1,0.0,Building Materials
+BRYAT,1,0.0,Conglomerates
+BRSAN,1,0.0,Steel
+BRISA,1,0.0,Automotive
+CIMSA,1,0.0,Building Materials
+BERA,1,0.0,Conglomerates
+AYGAZ,1,0.0,Energy
+ARCLK,1,0.0,Consumer Durables
+EGEEN,1,0.0,Automotive
+ISGYO,1,0.0,REIT
+MGROS,1,0.0,Retail
+KRDMD,1,0.0,Steel
+CEMTS,1,0.0,Steel
+ANHYT,1,0.0,Insurance
+DOAS,1,0.0,Automotive
+HALKB,1,0.0,Banking
+ASELS,1,0.0,Defense
+ENKAI,1,0.0,Construction
+ALARK,1,0.0,Conglomerates
+GARAN,1,0.0,Banking
+GUBRF,1,0.0,Chemicals
+ENJSA,1,0.0,Energy
+HEKTS,1,0.0,Chemicals
+TTRAK,1,0.0,Industrials
+AKFGY,1,0.0,REIT
+AKSEN,1,0.0,Energy
+EKGYO,1,0.0,REIT
+ECILC,1,0.0,Pharmaceuticals
+ASUZU,1,0.0,Automotive
+DOHOL,1,0.0,Conglomerates
+TUPRS,1,0.0,Energy
+TKNSA,1,0.0,Retail
+TTKOM,1,0.0,Telecommunications
+BTCIM,1,0.0,Building Materials
+DGATE,1,0.0,Technology
+AKSA,1,0.0,Chemicals
+AGHOL,1,0.0,Conglomerates
+PAPIL,1,0.0,Defense
+TKFEN,1,0.0,Construction
+BIMAS,1,0.0,Retail
+CCOLA,1,0.0,Beverages
+TOASO,1,0.0,Automotive
+SASA,1,0.0,Chemicals
+PGSUS,1,0.0,Airlines
+EREGL,1,0.0,Steel
+OYAKC,1,0.0,Building Materials
+FROTO,1,0.0,Automotive
+MAVI,1,0.0,Retail
+LOGO,1,0.0,Technology
+AGESA,1,0.0,Insurance
+MPARK,1,0.0,Healthcare
+ODAS,1,0.0,Energy
+ZOREN,1,0.0,Energy
+YKBNK,1,0.0,Banking
+PETKM,1,0.0,Chemicals
+VESTL,1,0.0,Consumer Durables
+SKBNK,1,0.0,Banking
+INDES,1,0.0,Technology
+SOKM,1,0.0,Retail
+TAVHL,1,0.0,Transportation
+TCELL,1,0.0,Telecommunications
+THYAO,1,0.0,Airlines
+VAKBN,1,0.0,Banking
+ULKER,1,0.0,Food
+TURSG,1,0.0,Insurance
+OTKAR,1,0.0,Defense

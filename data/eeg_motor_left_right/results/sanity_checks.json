@@ -1,0 +1,98 @@
+{
+  "results": [
+    {
+      "name": "#1 inter-hemispheric homologous coherence",
+      "reference": "Thatcher 1986",
+      "status": "PASS",
+      "metric": {
+        "homologous_correlations": {
+          "Fp1~Fp2": 0.8583175490525259,
+          "C3~C4": 0.21422112686014677,
+          "P3~P4": 0.682396796081519,
+          "O1~O2": 0.8509156797526021
+        },
+        "ambient_mean": 0.030074101873536825,
+        "pairs_above_ambient_plus_0.10": 4,
+        "n_pairs": 4
+      },
+      "notes": "4 of 4 homologous pairs sit \u2265 0.10 above the ambient mean (0.030)."
+    },
+    {
+      "name": "#2 motor-imagery contralateral desynchronisation",
+      "reference": "Pfurtscheller & Lopes da Silva 1999",
+      "status": "SKIPPED",
+      "metric": {},
+      "notes": "Per-subject .fif files not present. Run `uv sync --extra eeg && uv run python run_pipeline_eeg.py` to download (~3.4 GB) before this check can execute."
+    },
+    {
+      "name": "#3 RMT signal mode",
+      "reference": "Plerou et al. 2002",
+      "status": "PARTIAL",
+      "metric": {
+        "lambda_1": 27.054399436599148,
+        "lambda_2": 9.248135412255714,
+        "mp_upper": 1.0208804399601483,
+        "ratio_l1_l2": 2.925389630513672
+      },
+      "notes": "\u03bb\u2081 = 27.05 > MP upper 1.02; \u03bb\u2081/\u03bb\u2082 = 2.93 \u2264 5.0 target."
+    },
+    {
+      "name": "#4 resting-state posterior MST hubs",
+      "reference": "Stam 2014",
+      "status": "PASS",
+      "metric": {
+        "top_5_hubs": [
+          [
+            "CPz",
+            4
+          ],
+          [
+            "Cz",
+            4
+          ],
+          [
+            "Fpz",
+            4
+          ],
+          [
+            "Pz",
+            4
+          ],
+          [
+            "Oz",
+            3
+          ]
+        ],
+        "posterior_channels": [
+          "O1",
+          "O2",
+          "Oz",
+          "P3",
+          "P4",
+          "Pz"
+        ],
+        "n_posterior_in_top_5": 2
+      },
+      "notes": "Top-5 hubs: CPz, Cz, Fpz, Pz, Oz. 2 of 5 are posterior (target \u2265 2)."
+    },
+    {
+      "name": "#5 TE(F\u2192C) > TE(C\u2192F)",
+      "reference": "Bressler & Seth 2011",
+      "status": "PASS",
+      "metric": {
+        "mean_te_frontal_to_central": 0.008038999127495528,
+        "mean_te_central_to_frontal": 0.007455883008949588,
+        "n_frontal": 26,
+        "n_central": 7
+      },
+      "notes": "TE(F\u2192C) mean = 0.0080 vs TE(C\u2192F) = 0.0075 over 26 frontal \u00d7 7 central pairs."
+    }
+  ],
+  "summary": {
+    "PASS": 3,
+    "PARTIAL": 1,
+    "FAIL": 0,
+    "SKIPPED": 1,
+    "total": 5
+  }
+}

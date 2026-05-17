@@ -79,12 +79,31 @@ class DislocationConfig:
 
 
 @dataclass
+class ClusteringConfig:
+    linkage_method: str = "ward"
+    n_clusters: int = 20
+    criterion: str = "maxclust"
+    distance_threshold: float = 1.0
+
+
+@dataclass
 class TransferEntropyConfig:
     lag: int = 1
     n_bins: int = 3
     significance_shuffles: int = 100
     significance_level: float = 0.05
     seed: int = 42
+    # Circular block-bootstrap block length for the surrogate null
+    # (preserves source autocorrelation). 5 ≈ ~1 trading week for daily
+    # returns. Set to 1 to recover the plain i.i.d. permutation null
+    # (not recommended — autocorrelated sources produce inflated
+    # significance under permutation).
+    surrogate_block_length: int = 5
+    # Multiple-testing correction across the N*(N-1) directed pairs.
+    # "fdr_bh" = Benjamini–Hochberg (default), "bonferroni" = Holm-Bonferroni,
+    # "none" = uncorrected (legacy). The "fdr_bh" default keeps FDR ≤
+    # `significance_level` across the full pair matrix.
+    multiple_testing: str = "fdr_bh"
 
 
 @dataclass
@@ -112,6 +131,7 @@ class PipelineConfig:
     universe_metadata: dict = field(default_factory=dict)
     rolling: RollingConfig = field(default_factory=RollingConfig)
     dislocation: DislocationConfig = field(default_factory=DislocationConfig)
+    clustering: ClusteringConfig = field(default_factory=ClusteringConfig)
     transfer_entropy: TransferEntropyConfig = field(default_factory=TransferEntropyConfig)
     eeg: EEGConfig = field(default_factory=EEGConfig)
 
@@ -199,6 +219,7 @@ def load_config(
 
     rolling_raw = raw.get("rolling", {})
     dislocation_raw = raw.get("dislocation", {})
+    clustering_raw = raw.get("clustering", {})
     transfer_entropy_raw = raw.get("transfer_entropy", {})
     eeg_raw = raw.get("eeg", {})
 
@@ -212,6 +233,7 @@ def load_config(
         universe_metadata=universe_meta,
         rolling=RollingConfig(**rolling_raw),
         dislocation=DislocationConfig(**dislocation_raw),
+        clustering=ClusteringConfig(**clustering_raw),
         transfer_entropy=TransferEntropyConfig(**transfer_entropy_raw),
         eeg=EEGConfig(**eeg_raw),
     )
