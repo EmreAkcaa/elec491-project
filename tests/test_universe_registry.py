@@ -108,17 +108,16 @@ def test_eeg_sanity_check_groups_use_real_electrode_names(registry):
 
 
 def test_lfs_pointer_detection_recognises_real_parquet(registry, tmp_path):
-    """A real parquet file (PAR1 magic + multi-MB size) must NOT be flagged
-    as an LFS pointer stub."""
+    """A real parquet-shaped file (PAR1 magic + multi-KB size) must NOT be
+    flagged as an LFS pointer stub."""
     fake_parquet = tmp_path / "real.parquet"
-    # Make a >1 KB file with random bytes preceded by PAR1 magic
     fake_parquet.write_bytes(b"PAR1" + (b"\x00" * 5000))
     assert registry._is_lfs_pointer_stub(fake_parquet) is False
 
 
 def test_lfs_pointer_detection_recognises_pointer_stub(registry, tmp_path):
-    """A Git LFS pointer file (small + 'version https://git-lfs...' prefix)
-    must be flagged so available_universes() can skip the universe."""
+    """An actual Git LFS pointer file must be flagged so available_universes()
+    can skip the universe instead of letting pd.read_parquet() crash."""
     fake_pointer = tmp_path / "pointer.parquet"
     fake_pointer.write_bytes(
         b"version https://git-lfs.github.com/spec/v1\n"
@@ -129,21 +128,20 @@ def test_lfs_pointer_detection_recognises_pointer_stub(registry, tmp_path):
 
 
 def test_lfs_pointer_detection_missing_file(registry, tmp_path):
-    """A missing file should be treated as broken (returns True so the
-    universe is skipped)."""
+    """Missing file → treated as broken (returns True → universe skipped)."""
     missing = tmp_path / "does_not_exist.parquet"
     assert registry._is_lfs_pointer_stub(missing) is True
 
 
-def test_bulk_data_materialised_for_real_universes(registry):
-    """All currently-registered universes on disk must have real parquets
-    (not LFS stubs). Regression for the Streamlit-Cloud LFS-skip case."""
+def test_bulk_data_materialised_for_locally_present_universes(registry):
+    """Whatever universes are on this clone with a pipeline_metadata.json must
+    also have real parquets — otherwise local development would be broken."""
     for u in registry.UNIVERSES.values():
         meta = registry.PROJECT_ROOT / "data" / u.key / "results" / "pipeline_metadata.json"
         if not meta.exists():
-            continue  # universe simply not on this clone
+            continue
         assert registry._bulk_data_materialised(u), (
-            f"{u.key}: bulk parquets are still LFS pointer stubs — "
+            f"{u.key}: bulk parquets are LFS pointer stubs locally — "
             "run `git lfs pull` to materialise them"
         )
 
