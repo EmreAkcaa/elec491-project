@@ -238,24 +238,40 @@ if st.session_state.pop("_goto_pair_analysis", False):
 if st.session_state.pop("_goto_cross_market", False):
     st.session_state["nav_page"] = "Cross-Market"
 
+# Nav label for the overview page is domain-aware: "Market Overview" reads
+# wrong when the active universe is EEG (no market), so non-finance domains
+# get "Network Overview". Used for both the segmented-control label AND the
+# session_state value, so the two stay in sync across universe switches.
+_overview_label = (
+    "Market Overview"
+    if _cap(_active_universe, 'domain', 'finance') == "finance"
+    else "Network Overview"
+)
+
 # Nav: hide Pair Analysis when the active universe has no pair-trading concept.
-# Cross-Market always visible (universe-independent page).
-_nav_options = ["Market Overview"]
+# Hide Cross-Market when the active universe isn't a financial market (the page
+# only compares BIST vs S&P; showing a "Cross-Market" tab while the user is
+# viewing EEG leaks finance terminology into the neuroscience view).
+_nav_options = [_overview_label]
 if _cap(_active_universe, 'has_pair_trading', True):
     _nav_options.append("Pair Analysis")
-_nav_options.append("Cross-Market")
+if _cap(_active_universe, 'eligible_for_cross_market', True):
+    _nav_options.append("Cross-Market")
 
 # Clamp stored nav_page to options the current universe supports (otherwise
 # Streamlit would render the segmented_control with an out-of-set default and
-# raise StreamlitValueAssignmentNotAllowedError).
+# raise StreamlitValueAssignmentNotAllowedError). Also catches the case where
+# the user switches universe — their old nav_page (e.g. "Market Overview"
+# under BIST) won't be in the new universe's options ("Network Overview"
+# under EEG), so it resets to the domain-appropriate default.
 if st.session_state.get("nav_page") not in _nav_options:
-    st.session_state["nav_page"] = "Market Overview"
+    st.session_state["nav_page"] = _overview_label
 
 _nav = st.segmented_control(
     "Navigate",
     _nav_options,
     key="nav_page",
-    default="Market Overview",
+    default=_overview_label,
     label_visibility="collapsed",
 )
 
@@ -311,7 +327,7 @@ with _settings_col:
             if fetch_meta:
                 st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
                 st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
-                st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
+                st.write(f"**{_cap(_active_universe, 'items_label', 'Tickers')}:** {fetch_meta.get('ticker_count', 'N/A')}")
                 if fetch_meta.get("failures"):
                     st.write(f"**Failures:** {len(fetch_meta['failures'])}")
             if _cap(_active_universe, 'has_validation_report', True):
@@ -403,7 +419,8 @@ with tab_data:
                               margin=dict(l=60, r=10, t=10, b=30),
                               yaxis=dict(dtick=1, tickfont=dict(size=7)))
             render_chart(fig_cov, chart_id="mo_coverage", filename_base="data_coverage",
-                         title_key="mo_coverage", default_title="Data Coverage by Ticker")
+                         title_key="mo_coverage",
+                         default_title=f"Data Coverage by {_cap(_active_universe, 'item_label', 'Ticker')}")
 
         with col_right:
             if _cap(_active_universe, 'has_index_series', True):
@@ -855,11 +872,19 @@ with tab_cluster:
                 st.metric("Clusters Found", n_clusters)
 
                 display_clusters = cluster_df.sort_values(["cluster_id", "ticker"]).reset_index(drop=True)
-                st.dataframe(display_clusters, use_container_width=True, height=350, hide_index=True)
+                st.dataframe(
+                    display_clusters, use_container_width=True, height=350, hide_index=True,
+                    column_config={
+                        "cluster_id": st.column_config.NumberColumn("Cluster"),
+                        "ticker":     st.column_config.TextColumn(_item_cl),
+                        "sector":     st.column_config.TextColumn(_sector_cl),
+                    },
+                )
 
                 if "sector" in cluster_df.columns:
                     st.markdown(f"**Cluster vs {_sector_cl}**")
                     crosstab = pd.crosstab(cluster_df["cluster_id"], cluster_df["sector"])
+                    crosstab.index.name = "Cluster"
                     st.dataframe(crosstab, use_container_width=True)
 
                     try:
@@ -1041,11 +1066,20 @@ with tab_cluster:
 
             with col_mst_table:
                 st.markdown(f"**Hub {_items_mst} (by degree)**")
+                _item_mst = _cap(_active_universe, 'item_label', 'Ticker')
                 display_metrics = mst_metrics.copy()
                 display_metrics["betweenness_centrality"] = display_metrics[
                     "betweenness_centrality"
                 ].map(lambda x: f"{x:.4f}")
-                st.dataframe(display_metrics, use_container_width=True, height=500, hide_index=True)
+                st.dataframe(
+                    display_metrics, use_container_width=True, height=500, hide_index=True,
+                    column_config={
+                        "ticker":                 st.column_config.TextColumn(_item_mst),
+                        "sector":                 st.column_config.TextColumn(_sector_mst),
+                        "degree":                 st.column_config.NumberColumn("Degree"),
+                        "betweenness_centrality": st.column_config.TextColumn("Betweenness"),
+                    },
+                )
 
                 # Quick-jump to Pair Analysis is finance-only — the EEG
                 # universe doesn't have a pair-trading concept (no spread,
@@ -1088,16 +1122,27 @@ with tab_cluster:
 
 with tab_rolling:
 
+    _is_finance_rc = _cap(_active_universe, 'domain', 'finance') == "finance"
+    _item_rc       = _cap(_active_universe, 'item_label', 'Ticker')
+    _items_rc      = _cap(_active_universe, 'items_label', 'Tickers')
+    _sector_rc     = _cap(_active_universe, 'sector_label', 'Sector')
+
     with st.container(border=True):
         section_header(
             "Rolling Correlation Analysis",
-            "Track how pairwise correlations evolve over time. Spikes during crises "
-            "indicate correlation regime shifts.",
+            "Track how pairwise correlations evolve over time. " + (
+                "Spikes during crises indicate correlation regime shifts."
+                if _is_finance_rc
+                else "Spikes can mark regime shifts or transient synchronization events."
+            ),
         )
 
         rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
         with rc_col1:
-            rc_window = st.selectbox("Window (days)", [60, 120, 252, 504], index=2, key="rc_win")
+            rc_window = st.selectbox(
+                "Window (days)" if _is_finance_rc else "Window (samples)",
+                [60, 120, 252, 504], index=2, key="rc_win",
+            )
         with rc_col2:
             rc_step = st.selectbox("Step", [1, 5, 21], index=1, key="rc_step",
                                    format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(x, str(x)))
@@ -1109,12 +1154,7 @@ with tab_rolling:
         rc_expanding = rc_window_type == "expanding"
         show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
 
-        _sector_rc = _cap(_active_universe, 'sector_label', 'Sector')
-        _ra_market_label = (
-            "Market Overview"
-            if _cap(_active_universe, 'domain', 'finance') == "finance"
-            else "Network Overview"
-        )
+        _ra_market_label = "Market Overview" if _is_finance_rc else "Network Overview"
         tab_market, tab_pair, tab_sector = st.tabs(
             [_ra_market_label, "Pair Correlation", f"{_sector_rc} Breakdown"]
         )
@@ -1140,17 +1180,17 @@ with tab_rolling:
                         "(window/step/method match the pipeline; `step=5`, `pearson`)."
                     )
                 else:
-                    with st.status("Computing rolling market stats...", expanded=False) as _ms_st:
+                    with st.status("Computing rolling stats...", expanded=False) as _ms_st:
                         market_stats = _compute_market_stats(
                             _returns_json, rc_window, rc_step, rc_method, rc_expanding,
                         )
-                        _ms_st.update(label="Market stats ready", state="complete")
+                        _ms_st.update(label="Rolling stats ready", state="complete")
             else:
-                with st.status("Computing rolling market stats (custom params)...", expanded=False) as _ms_st:
+                with st.status("Computing rolling stats (custom params)...", expanded=False) as _ms_st:
                     market_stats = _compute_market_stats(
                         _returns_json, rc_window, rc_step, rc_method, rc_expanding,
                     )
-                    _ms_st.update(label="Market stats ready", state="complete")
+                    _ms_st.update(label="Rolling stats ready", state="complete")
                 st.caption(
                     "Computed on-the-fly — parameters fall outside the precomputed "
                     "grid (`window∈{60,120,252}`, `step=5`, `pearson`, `rolling`)."
@@ -1227,9 +1267,9 @@ with tab_rolling:
                 )
             pc1, pc2 = st.columns(2)
             with pc1:
-                pair_a = st.selectbox("Ticker A", ticker_list, key="pair_a")
+                pair_a = st.selectbox(f"{_item_rc} A", ticker_list, key="pair_a")
             with pc2:
-                pair_b = st.selectbox("Ticker B", ticker_list, key="pair_b")
+                pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pair_b")
 
             if pair_a and pair_b and pair_a != pair_b:
                 with st.status("Computing pair correlation...", expanded=False) as _pc_st:
@@ -1288,7 +1328,7 @@ with tab_rolling:
                     render_chart(fig_spread, chart_id="mo_pair_spread", filename_base="pair_spread",
                                  title_key="mo_pair_spread", default_title="Pair Price Spread")
             elif pair_a == pair_b:
-                st.info("Select two different tickers.")
+                st.info(f"Select two different {_items_rc.lower()}.")
 
         # ── Sub-Tab 3: Sector breakdown ─────────────────────────────────────
         with tab_sector:
@@ -1311,19 +1351,19 @@ with tab_rolling:
                             "(`window=252`, `step=5`, `pearson`)."
                         )
                     else:
-                        with st.status("Computing sector stats...", expanded=False) as _ss_st:
+                        with st.status(f"Computing {_sector_rc.lower()} stats...", expanded=False) as _ss_st:
                             sector_stats = _compute_sector(
                                 _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
                             )
-                            _ss_st.update(label="Sector stats ready", state="complete")
+                            _ss_st.update(label=f"{_sector_rc} stats ready", state="complete")
                 else:
-                    with st.status("Computing sector stats (custom params)...", expanded=False) as _ss_st:
+                    with st.status(f"Computing {_sector_rc.lower()} stats (custom params)...", expanded=False) as _ss_st:
                         sector_stats = _compute_sector(
                             _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
                         )
-                        _ss_st.update(label="Sector stats ready", state="complete")
+                        _ss_st.update(label=f"{_sector_rc} stats ready", state="complete")
                     st.caption(
-                        "Computed on-the-fly — sector precompute exists only for "
+                        f"Computed on-the-fly — {_sector_rc.lower()} precompute exists only for "
                         "`window=252`, `step=5`, `pearson`."
                     )
 
@@ -1349,7 +1389,7 @@ with tab_rolling:
                     intra_cols = [c for c in sector_stats.columns
                                   if c.startswith("intra_") and c != "intra_sector_avg"]
                     if intra_cols:
-                        if st.toggle("Show per-sector breakdown", key="mo_per_sector_toggle"):
+                        if st.toggle(f"Show per-{_sector_rc.lower()} breakdown", key="mo_per_sector_toggle"):
                             fig_per = go.Figure()
                             for i, col in enumerate(intra_cols):
                                 sector_name = col.replace("intra_", "")

@@ -356,11 +356,17 @@ def render_glasso(sector_map: dict, *, u=None):
             display_edges = edges.head(30).copy()
             display_edges["sector_1"] = display_edges["source"].map(sector_map)
             display_edges["sector_2"] = display_edges["target"].map(sector_map)
+            _sec = _sector_label(u)
+            _item = getattr(u, "item_label", "Ticker") if u is not None else "Ticker"
             st.dataframe(
                 display_edges[["source", "target", "partial_correlation", "sector_1", "sector_2"]],
                 use_container_width=True, height=500,
                 column_config={
-                    "partial_correlation": st.column_config.NumberColumn(format="%.4f"),
+                    "source": st.column_config.TextColumn(f"Source {_item}"),
+                    "target": st.column_config.TextColumn(f"Target {_item}"),
+                    "partial_correlation": st.column_config.NumberColumn("Partial Corr.", format="%.4f"),
+                    "sector_1": st.column_config.TextColumn(f"{_sec} (Source)"),
+                    "sector_2": st.column_config.TextColumn(f"{_sec} (Target)"),
                 },
             )
 
@@ -639,16 +645,22 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
                                  default_title="Information Flow Network (arrows = direction)")
 
         with col_table:
+            _sec = _sector_label(u)
+            _item = getattr(u, "item_label", "Ticker") if u is not None else "Ticker"
+            _te_cols = {
+                "ticker":      st.column_config.TextColumn(_item),
+                "sector":      st.column_config.TextColumn(_sec),
+                "net_te_flow": st.column_config.NumberColumn("Net TE Flow", format="%.4f"),
+                "te_out":      st.column_config.NumberColumn("TE Out", format="%.4f"),
+                "te_in":       st.column_config.NumberColumn("TE In", format="%.4f"),
+            }
+
             st.markdown("**Top Information Sources (Leaders)**")
             sources = roles[roles["role"] == "source"].head(15)
             st.dataframe(
                 sources[["ticker", "sector", "net_te_flow", "te_out", "te_in"]],
                 use_container_width=True, hide_index=True,
-                column_config={
-                    "net_te_flow": st.column_config.NumberColumn("Net TE Flow", format="%.4f"),
-                    "te_out": st.column_config.NumberColumn("TE Out", format="%.4f"),
-                    "te_in": st.column_config.NumberColumn("TE In", format="%.4f"),
-                },
+                column_config=_te_cols,
             )
 
             st.markdown("**Top Information Sinks (Followers)**")
@@ -656,11 +668,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
             st.dataframe(
                 sinks[["ticker", "sector", "net_te_flow", "te_out", "te_in"]],
                 use_container_width=True, hide_index=True,
-                column_config={
-                    "net_te_flow": st.column_config.NumberColumn("Net TE Flow", format="%.4f"),
-                    "te_out": st.column_config.NumberColumn("TE Out", format="%.4f"),
-                    "te_in": st.column_config.NumberColumn("TE In", format="%.4f"),
-                },
+                column_config=_te_cols,
             )
 
         # Net-TE flow heatmap (full width)
