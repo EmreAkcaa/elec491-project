@@ -33,7 +33,7 @@ from src.rolling_correlation import (  # noqa: E402
 )
 
 from utils import (  # noqa: E402
-    PROJECT_ROOT, DATA_PROCESSED, DATA_RESULTS, DATA_RAW,
+    PROJECT_ROOT, data_processed, current_universe,
     load_adj_close, load_log_returns, load_summary_stats, load_batch_corr,
     load_coverage, load_top_bottom, load_metadata, load_fetch_metadata,
     load_xu100, load_linkage, load_dendrogram_order, load_cluster_assignments,
@@ -177,7 +177,7 @@ with _settings_col:
                 st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
                 if fetch_meta.get("failures"):
                     st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-            val_path = DATA_PROCESSED / "validation_report.csv"
+            val_path = data_processed() / "validation_report.csv"
             if val_path.exists():
                 val_df = pd.read_csv(val_path)
                 n_pass = (val_df["status"] == "PASS").sum()
