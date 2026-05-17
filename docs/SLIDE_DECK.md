@@ -154,61 +154,101 @@ noise — exactly what cross-market dependence analysis should do."
 
 ---
 
-## 7. Numéraire decomposition — *which sectors move* (75 s) ⭐ NEW
+## 7. Numéraire decomposition — *what factor structure shifts* (75 s) ⭐
 
-**Figure:** the per-sector eigenvalue-share-shift bar chart from
-`docs/figures/numeraire_sector_shift.png` (Phase 4 follow-up).
+**Figure:** `docs/figures/numeraire_sector_shift.svg` (two-panel:
+variance share per mode + banking-sector mass per mode, all three
+numéraires colour-coded).
 
-**Numbers:** Top three sectors whose share of the dominant eigenvalue
-*increases* most under USD numéraire (numbers regenerated live from
+**Numbers** (regenerated live from
 `scripts/numeraire_sector_decomposition.py`):
 
-| Sector | TRY → USD eigenvector contribution |
-|---|---:|
-| Conglomerates | +X% (driven by KCHOL, SAHOL) |
-| Banking | +X% |
-| Industrials | +X% |
+| Mode | TRY | USD | Gold | Identity (consistent across all three) |
+|---|---:|---:|---:|---|
+| #1 (market) | **38.87%** | **45.11%** | **51.47%** | Conglomerate-led; top tickers KCHOL · SAHOL · SISE · THYAO |
+| #2 (banking) | 4.16% | 3.60% | 3.23% | **62% / 60% / 61% of mode-mass is BIST banks** (GARAN · AKBNK · ISCTR · YKBNK · VAKBN) |
+| #3 (old industrials) | 2.51% | 2.17% | 1.92% | BRYAT · BRSAN · TUPRS · FROTO |
 
-Plus the sector-purity bars (TRY 33%, USD 40%, Gold 41%): clusters
-become *cleaner* sector partitions under USD/Gold numéraires.
+**Two findings, one slide:**
 
-**Speaker note:** "Under TRY, the dominant eigenvalue is a noisy
-broadcast across all 73 tickers — every stock carries some TRY-currency
-exposure. Decomposing the leading eigenvector by sector reveals what
-takes its place under USD: the conglomerates and banks dominate
-disproportionately. This is consistent with how Turkish blue-chip
-indices actually trade — when you remove the FX noise, what's left is
-a one-factor model where the largest market-cap names dominate. Cluster
-purity also rises (sector recovery is *easier* in USD-denominated
-returns), confirming the same story from the network angle."
+1. **Mode #1 (the market factor) absorbs *more* variance under USD/Gold**
+   — the "everything-moves-together" mode strengthens 12.6 percentage
+   points when the currency leg is stripped.
+
+2. **Mode #2 is a genuine banking factor under *every* numéraire** —
+   5 of 73 BIST tickers (6.8% population baseline) carry ~60% of mode 2's
+   variance: a **9× over-representation** that exists in TRY, USD and Gold
+   alike. The mode itself *weakens* 22% in variance share (4.16% → 3.23%)
+   under USD/Gold, supporting the read that the bank-vs-market spread is
+   largely TRY-rate-driven: take the rate channel out and banks merge
+   slightly into the broad market mode.
+
+**Speaker note:** "The headline numéraire result (slide 5) shows the top
+eigenvalue's share rises when we strip the currency leg. Decomposing
+the spectrum into its top-3 modes shows *how the variance moves around*.
+Mode 1 — the everything-together mode dominated by Koç Holding and
+Sabancı Holding — gains 12 percentage points. Mode 2 is a pure banking
+factor that survives all three numéraires: 5 of 73 tickers carry 60% of
+its variance, 9× their population weight. Under USD or Gold, this
+banking-orthogonal factor *weakens* in variance share, which is
+consistent with banks' rate sensitivity being predominantly a TRY-side
+phenomenon — once you strip the currency, the bank-vs-market spread
+shrinks toward the market mode."
 
 ---
 
-## 8. Information Theory layer — multivariate summary (60 s)
+## 8. Information Theory layer — cross-universe view (60 s)
 
 **Figure:** 4-panel composite from the new IT sub-tab —
 KPI strip (D_eff / ΔH / sign-entropy) · MI vs Pearson scatter ·
 rolling D_eff(t) · regime KL table.
 
-**Numbers (BIST):**
-- D_eff = 6.30, ΔH = 21.97 nats — joint structure summary
-- Mean sign-entropy rate = **0.996 bits/day** ≈ 1 bit/day across all 73
-  tickers (the canonical weak-form-EMH fingerprint: tomorrow's direction
-  is informationally independent of today's)
-- 14 non-linear-excess pairs identified — pairs whose mutual
-  information exceeds the Gaussian baseline
-- Regime KL (Türkiye-quake 531 nats vs Ukraine 287 nats, ratio 1.85×)
-  quantifies the magnitude of the joint-distribution shift during
-  market stress
+**Lead with cross-universe D_eff invariance:**
 
-**Speaker note:** "Same 12 stages produce four complementary
-*multivariate summaries* in information-theoretic units. Mutual
-information catches non-linear coupling Pearson misses; effective
-dimensionality compresses the eigenvalue spectrum into one number;
-joint entropy ΔH measures Gaussian structure; KL divergence between
-calm and crisis covariances puts a single number on regime change.
-Used together, these recast the network we just saw as a *distribution*,
-quantified in bits and nats."
+| Universe | N | D_eff | ΔH (nats) | Mean sign-entropy |
+|---|---:|---:|---:|---:|
+| BIST 100 | 73 | **6.30** | 21.97 | 0.996 bits/day |
+| S&P 500 | 485 | **6.56** | 307.30 | 0.997 bits/day |
+| EEG (motor) | 64 | **4.69** | (singular) | 0.743 bits/day |
+
+Two financial markets land within 5% of each other on D_eff despite a
+**6.6× difference in N** — a non-trivial cross-market regularity. EEG
+sits substantially below at 4.69, consistent with brain dynamics being
+more concentrated (a few dominant rhythms vs the equity-market
+diversification across sectors).
+
+**Mean sign-entropy ≈ 1 bit/day on both equity markets** — the
+canonical weak-form-EMH fingerprint: tomorrow's direction is
+informationally independent of today's, simultaneously for *every*
+ticker, *every* universe. EEG comes in lower at 0.74 bits/day because
+brain activity *is* more deterministic than equity returns — there are
+rhythms.
+
+**Regime KL** quantifies joint-distribution shift during crises:
+
+| Crisis | BIST KL (nats) | S&P KL (nats) | Ratio Türkiye/Ukraine |
+|---|---:|---:|---:|
+| Ukraine invasion | 287 | 22 862 | — |
+| Türkiye earthquake | 531 | 41 663 | **1.85× (BIST), 1.82× (S&P)** |
+
+The Türkiye/Ukraine ratio is **the same on both markets**, even though
+the earthquake physically only hit Türkiye. The KL is picking up the
+2023 global macro regime shift, not just the local event.
+
+Plus: pairwise MI catches **14 non-linear-excess pairs** on BIST that
+the linear Pearson method misses (top pair BRSAN-HEKTS at 0.044 bits
+above the Gaussian baseline).
+
+**Speaker note:** "Same 12 stages produce a multivariate summary of
+the joint distribution in nats and bits, across all three universes.
+The headline cross-universe finding: effective dimensionality is ≈ 6 on
+both equity markets and ≈ 4.7 on EEG — three independent datasets, two
+domains, a single quantitative anchor. Sign-entropy ≈ 1 bit/day across
+all tickers is the canonical EMH fingerprint. Regime KL during the
+Türkiye earthquake is 1.85× the Ukraine invasion on BIST — but the
+*same* 1.82× ratio shows up on S&P even though the quake didn't
+physically affect the US, telling us the KL is picking up the 2023
+global macro regime shift, not just the local event."
 
 ---
 
@@ -353,13 +393,26 @@ physical Loihi-2 deployment of the spike-coded inference layer.
   encoders, LIF dynamics, recurrent topology with surrogate-gradient
   training. The readout layer would need rate-to-spike conversion
   before physical deployment.)
-- A6: Why the regime KL ratio Türkiye-quake / Ukraine = 1.85? (The
-  Türkiye earthquake was a domestic shock that disproportionately hit
-  rate-sensitive financials, construction, and insurance — sectors
-  with high BIST weight. Ukraine was an external shock transmitted via
-  commodity channels, which hit fewer BIST sectors directly. KL
-  quantifies the joint-distribution shift, not just the average
-  correlation move.)
+- A6: Why the regime KL ratio Türkiye-quake / Ukraine = 1.85? (Both
+  markets show the same ~1.83× ratio, so the KL is picking up the 2023
+  global macro regime shift rather than the local earthquake — Türkiye
+  Q1-2023 coincided with a banking-stress wave, oil-price re-rating,
+  and Fed-pivot pricing that hit equity covariances globally. Honest
+  read: KL is a sensitive *aggregate* measure of joint-distribution
+  shift, and 2023's first quarter was a real regime change for global
+  equities regardless of which event triggered it.)
+- A7: Isn't BIST mostly financials? (No — the top eigenvector mass under
+  TRY breaks down as Conglomerates 11.0%, Banking 10.2%, Energy 8.9%,
+  Automotive 8.0%, Retail 6.4%. The market factor is a balanced
+  diversified large-cap mode, not a banking-dominated one. The
+  banking-orthogonal factor lives in mode #2 at ~60% bank mass — that's
+  the mode where banks behave as one block separate from the broad
+  market.)
+- A8: How does cluster purity change across numéraires? (TRY: 33% mean
+  cluster purity; USD: 40%; Gold: 41%. Removing the currency leg gives
+  *cleaner* sector recovery — another angle on the same story as the
+  rising top-eigenvalue share. Both metrics point at "the broad-market
+  / sector factor structure is clearer once FX noise is gone".)
 
 ---
 
