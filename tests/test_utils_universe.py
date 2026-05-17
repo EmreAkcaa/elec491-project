@@ -73,6 +73,44 @@ def test_ensure_datetime_index_converts_float_index(utils_mod):
     assert list(out.columns) == ["FC5", "C3"]
 
 
+def test_downsample_if_oversize_passes_through_small(utils_mod):
+    """Datasets at-or-below max_rows must pass through unchanged."""
+    import pandas as pd
+    df = pd.DataFrame({"a": range(500)})
+    out = utils_mod._downsample_if_oversize(df, max_rows=8_000)
+    assert len(out) == 500
+    assert out is df  # identity preserved when no downsampling needed
+
+
+def test_downsample_if_oversize_decimates_large(utils_mod):
+    """Oversized datasets (EEG-like) must be uniformly decimated."""
+    import pandas as pd
+    df = pd.DataFrame(
+        {"a": range(100_000), "b": range(100_000, 200_000)},
+        index=pd.date_range("2020-01-01", periods=100_000, freq="1s"),
+    )
+    out = utils_mod._downsample_if_oversize(df, max_rows=10_000)
+    assert len(out) <= 10_000 * 2, "should be reasonably close to target"
+    # First row preserved (uniform-stride keeps the first sample)
+    assert out.iloc[0]["a"] == 0
+    # Columns preserved
+    assert list(out.columns) == ["a", "b"]
+    # Index still DatetimeIndex
+    assert isinstance(out.index, pd.DatetimeIndex)
+
+
+def test_downsample_bist_unaffected(utils_mod):
+    """The 1544-row BIST dataset must not be touched by downsampling."""
+    import pandas as pd
+    df = pd.DataFrame(
+        {"AKBNK": range(1544)},
+        index=pd.date_range("2020-01-01", periods=1544, freq="D"),
+    )
+    out = utils_mod._downsample_if_oversize(df)
+    assert len(out) == 1544
+    assert out is df  # full pass-through
+
+
 def test_ensure_datetime_index_converts_rangeindex(utils_mod):
     """A pd.RangeIndex (the most common non-datetime case) should also be
     coerced cleanly."""

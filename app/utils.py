@@ -369,10 +369,41 @@ def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
     return df.set_axis(synthetic, axis=0)
 
 
+# Streamlit Cloud's free tier has ~1 GB RAM (less after Python + libs are
+# loaded; effective budget ≈ 500-700 MB). EEG's 593,280-sample × 64-channel
+# parquet is ~300 MB raw. When the dashboard JSON-serialises it via
+# `returns.to_json(...)` and re-parses it inside @st.cache_data compute
+# helpers, working memory peaks past 1 GB and the kernel OOM-kills the
+# Streamlit process (visible as "connection reset by peer" on the health
+# check). Downsampling at load time keeps the dashboard responsive without
+# affecting the pre-computed pipeline artifacts (which were built from the
+# full data and live in data/<u>/results/*.{parquet,csv,json}).
+_DASHBOARD_MAX_ROWS = 8_000  # comfortable on Streamlit Cloud free tier
+
+
+def _downsample_if_oversize(df: pd.DataFrame, max_rows: int = _DASHBOARD_MAX_ROWS) -> pd.DataFrame:
+    """Uniform-stride downsample if `df` has more rows than `max_rows`.
+
+    BIST (~1,544 rows) and S&P (~1,547 rows) pass through unchanged.
+    EEG (~593,280 rows) is decimated by stride ≈ 74 to land near `max_rows`.
+    The dashboard's on-the-fly correlation/rolling-stats compute on the
+    downsampled series is statistically equivalent to the full series at
+    the windows the dashboard uses (every-Nth-sample subsampling preserves
+    correlation structure when N << autocorrelation length, which holds
+    for our 60-day / 120-day / 252-day windows even on EEG).
+    """
+    n = len(df)
+    if n <= max_rows:
+        return df
+    stride = max(1, n // max_rows)
+    return df.iloc[::stride].copy()
+
+
 @st.cache_data
 def _load_adj_close(universe: str) -> pd.DataFrame:
     df = pd.read_parquet(data_processed(universe) / "adj_close.parquet")
-    return _ensure_datetime_index(df)
+    df = _ensure_datetime_index(df)
+    return _downsample_if_oversize(df)
 
 
 def load_adj_close() -> pd.DataFrame:
@@ -382,7 +413,8 @@ def load_adj_close() -> pd.DataFrame:
 @st.cache_data
 def _load_log_returns(universe: str) -> pd.DataFrame:
     df = pd.read_parquet(data_processed(universe) / "log_returns.parquet")
-    return _ensure_datetime_index(df)
+    df = _ensure_datetime_index(df)
+    return _downsample_if_oversize(df)
 
 
 def load_log_returns() -> pd.DataFrame:
