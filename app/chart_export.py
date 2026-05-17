@@ -12,6 +12,21 @@ from chart_themes import get_active_theme
 
 
 # ---------------------------------------------------------------------------
+# Popover-input dimension bounds
+# ---------------------------------------------------------------------------
+# Streamlit's number_input raises StreamlitValueBelowMinError if the supplied
+# value is below min_value. The defaults flow in from each chart's own height
+# (via apply_chart_style(..., height=N)), so we need a lower bound that
+# accommodates every chart in the app — currently the smallest is the SNN
+# spike-raster + membrane traces at 240 px. Setting the bound here once and
+# clamping the default keeps any future small chart safe.
+_EXPORT_W_MIN = 200
+_EXPORT_W_MAX = 4000
+_EXPORT_H_MIN = 200
+_EXPORT_H_MAX = 3000
+
+
+# ---------------------------------------------------------------------------
 # Core export function
 # ---------------------------------------------------------------------------
 
@@ -80,15 +95,20 @@ def render_export_popover(
             default_w = fig_w if fig_w and math.isfinite(fig_w) else theme.export_width
             default_h = fig_h if fig_h and math.isfinite(fig_h) else theme.export_height
 
+            # Clamp the defaults so a chart whose own height is below the
+            # popover's min_value (e.g. the SNN raster at 240 px) still opens.
+            default_w_clamped = max(_EXPORT_W_MIN, min(_EXPORT_W_MAX, int(default_w)))
+            default_h_clamped = max(_EXPORT_H_MIN, min(_EXPORT_H_MAX, int(default_h)))
+
             c1, c2 = st.columns(2)
             with c1:
                 w = st.number_input(
-                    "Width", 400, 4000, int(default_w), 100,
+                    "Width", _EXPORT_W_MIN, _EXPORT_W_MAX, default_w_clamped, 100,
                     key=f"_exp_w_{chart_id}",
                 )
             with c2:
                 h = st.number_input(
-                    "Height", 300, 3000, int(default_h), 100,
+                    "Height", _EXPORT_H_MIN, _EXPORT_H_MAX, default_h_clamped, 100,
                     key=f"_exp_h_{chart_id}",
                 )
 
