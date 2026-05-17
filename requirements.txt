@@ -13,10 +13,13 @@ pyarrow>=16.0
 pyyaml>=6.0
 
 # Streamlit + Plotly stack
+#   streamlit >= 1.41 because dashboard.py uses st.segmented_control which
+#   was added in Streamlit 1.41 (Nov 2024). HF Spaces' sdk_version in
+#   README.md frontmatter must also be >= 1.41.0 — keep these two in sync.
 #   plotly pinned <6 because plotly 6 + kaleido 1.x require a system Chrome
 #   install for static-image export. Streamlit Cloud / HF Spaces don't have
 #   Chrome → static export crashes. 5.x has every feature this project uses.
-streamlit>=1.35,<2
+streamlit>=1.41,<2
 plotly>=5.22,<6
 #   kaleido 0.2.1 bundles its own Chromium; kaleido 1.0+ delegates to system
 #   Chrome via plotly_get_chrome which we can't trigger on hosted envs. Pin.
