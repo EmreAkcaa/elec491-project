@@ -41,12 +41,17 @@ for _p in (str(_PROJECT_ROOT), str(_APP_DIR)):
 # Fallback:   if the download fails, EEG silently drops from the sidebar
 #             selector (available_universes() detects the absence and filters).
 def _materialise_eeg_data_if_needed() -> None:
+    import os as _os
+    # CI / smoke tests opt-out: setting STONECOAL_SKIP_EEG_DOWNLOAD=1 avoids
+    # a slow / failing network call when EEG isn't part of the test surface.
+    if _os.environ.get("STONECOAL_SKIP_EEG_DOWNLOAD", "").lower() in ("1", "true", "yes"):
+        return
+
     eeg_dir = _PROJECT_ROOT / "data" / "eeg_motor_left_right" / "processed"
     sentinel = eeg_dir / "log_returns.parquet"
     if sentinel.exists() and sentinel.stat().st_size > 1_000_000:
         return  # local dev, or already-cached HF Spaces rebuild
 
-    import os as _os
     repo_id = _os.environ.get("EEG_DATASET_REPO", "FlyingSubmarine33/stonecoal-eeg")
     print(f"[EEG] Bulk parquets not on disk; fetching from dataset repo {repo_id} …")
     try:
