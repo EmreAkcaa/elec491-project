@@ -107,6 +107,47 @@ def test_eeg_sanity_check_groups_use_real_electrode_names(registry):
         )
 
 
+def test_lfs_pointer_detection_recognises_real_parquet(registry, tmp_path):
+    """A real parquet file (PAR1 magic + multi-MB size) must NOT be flagged
+    as an LFS pointer stub."""
+    fake_parquet = tmp_path / "real.parquet"
+    # Make a >1 KB file with random bytes preceded by PAR1 magic
+    fake_parquet.write_bytes(b"PAR1" + (b"\x00" * 5000))
+    assert registry._is_lfs_pointer_stub(fake_parquet) is False
+
+
+def test_lfs_pointer_detection_recognises_pointer_stub(registry, tmp_path):
+    """A Git LFS pointer file (small + 'version https://git-lfs...' prefix)
+    must be flagged so available_universes() can skip the universe."""
+    fake_pointer = tmp_path / "pointer.parquet"
+    fake_pointer.write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\n"
+        b"oid sha256:55da3079b351132bab6277095219b42e9e7fd752\n"
+        b"size 322712970\n"
+    )
+    assert registry._is_lfs_pointer_stub(fake_pointer) is True
+
+
+def test_lfs_pointer_detection_missing_file(registry, tmp_path):
+    """A missing file should be treated as broken (returns True so the
+    universe is skipped)."""
+    missing = tmp_path / "does_not_exist.parquet"
+    assert registry._is_lfs_pointer_stub(missing) is True
+
+
+def test_bulk_data_materialised_for_real_universes(registry):
+    """All currently-registered universes on disk must have real parquets
+    (not LFS stubs). Regression for the Streamlit-Cloud LFS-skip case."""
+    for u in registry.UNIVERSES.values():
+        meta = registry.PROJECT_ROOT / "data" / u.key / "results" / "pipeline_metadata.json"
+        if not meta.exists():
+            continue  # universe simply not on this clone
+        assert registry._bulk_data_materialised(u), (
+            f"{u.key}: bulk parquets are still LFS pointer stubs — "
+            "run `git lfs pull` to materialise them"
+        )
+
+
 def test_financial_defaults_unchanged_for_bist_and_sp500(registry):
     """BIST and S&P must keep all financial capabilities ON by default —
     the Phase I refactor must not have silently disabled any financial
