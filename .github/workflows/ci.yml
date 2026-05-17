@@ -1,0 +1,78 @@
+name: CI smoke tests
+
+# Runs on every pull request + every push to main.
+# Catches the class of "this will crash on HF Spaces" bugs locally — nested
+# popovers, missing Streamlit widgets, broken capability flags, missing data
+# fallback paths — before they ship to production.
+#
+# Mark the "Smoke tests" job as a Required status check in Settings →
+# Branches → branch protection for `main` so broken code can't be merged.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true   # newer push supersedes older one on the same branch
+
+jobs:
+  smoke:
+    name: Smoke tests (pytest + dashboard render)
+    runs-on: ubuntu-latest
+
+    env:
+      # Don't try to download EEG bulk data from the companion HF Dataset in CI;
+      # we can't expect HF Hub network reachability + the dashboard's preload
+      # already degrades gracefully when EEG isn't on disk.
+      STONECOAL_SKIP_EEG_DOWNLOAD: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # No LFS needed for smoke tests (we skip EEG). Saves the 600 MB
+          # LFS pull and keeps CI under 1 minute.
+          lfs: false
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install project + dev + snn extras
+        # --all-extras pulls in [snn] (torch + snntorch) which the dashboard
+        # imports at module level via src.snn_signals → torch must be present.
+        # [eeg] (mne) isn't needed for the dashboard at runtime.
+        run: uv sync --all-extras
+
+      - name: Run pytest (all tests, including smoke suite)
+        run: uv run python -m pytest -v --tb=short
+
+      - name: Summary
+        if: success()
+        run: echo "::notice::All tests passed — safe to merge / deploy."
+
+      - name: Failure hint
+        if: failure()
+        run: |
+          echo "::error::Tests failed. Common causes:"
+          echo "  1. AppTest smoke test caught a Streamlit API incompatibility"
+          echo "     (e.g. used a widget that doesn't exist in the pinned version)."
+          echo "  2. Static AST check caught a nested popover (Streamlit 1.41+ rejects)."
+          echo "  3. Capability-flag bug — dashboard crashes on first render for some universe."
+          echo "  4. Missing test data on the CI runner (LFS / Dataset configuration)."
+          echo ""
+          echo "Reproduce locally: uv sync --all-extras && uv run python -m pytest -v"
