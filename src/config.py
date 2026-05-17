@@ -93,6 +93,17 @@ class TransferEntropyConfig:
     significance_shuffles: int = 100
     significance_level: float = 0.05
     seed: int = 42
+    # Circular block-bootstrap block length for the surrogate null
+    # (preserves source autocorrelation). 5 ≈ ~1 trading week for daily
+    # returns. Set to 1 to recover the plain i.i.d. permutation null
+    # (not recommended — autocorrelated sources produce inflated
+    # significance under permutation).
+    surrogate_block_length: int = 5
+    # Multiple-testing correction across the N*(N-1) directed pairs.
+    # "fdr_bh" = Benjamini–Hochberg (default), "bonferroni" = Holm-Bonferroni,
+    # "none" = uncorrected (legacy). The "fdr_bh" default keeps FDR ≤
+    # `significance_level` across the full pair matrix.
+    multiple_testing: str = "fdr_bh"
 
 
 @dataclass

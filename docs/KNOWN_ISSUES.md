@@ -58,14 +58,15 @@ session are at the top with status `FIXED`.
 
 ## MED severity (open)
 
-### M-1 — TE shuffle null is too easy
+### M-1 — TE shuffle null is too easy — FIXED (mutable-candy, 2026-05-17)
 
 | | |
 |---|---|
-| File:line | `src/transfer_entropy.py:158-164` |
-| Issue | The shuffle null permutes the entire source series, breaking both cross-dependence and source autocorrelation. A correct null tests `X ⊥ Y | Y_lag` while preserving `X`'s temporal structure (e.g. IAAFT or block bootstrap). |
-| Impact | Significance test is too liberal — many "significant" edges may be artefacts of source autocorrelation. |
-| Recommendation | Replace with a temporal surrogate (FUTURE_WORK F-3 details). |
+| File:line | `src/transfer_entropy.py:_circular_block_bootstrap`, `_apply_multiple_testing`, `_benjamini_hochberg` |
+| Original issue | The shuffle null `rng.permutation(x)` destroyed source autocorrelation, inflating significance; on top of that, no multiple-testing correction was applied across the N*(N-1) directed pairs, so ~5% appeared significant at α=0.05 by construction. On BIST (N=73), the pre-fix pipeline declared 647 of 5,256 directed edges significant. |
+| Fix | (1) Replaced `rng.permutation(x)` with a circular block-bootstrap surrogate (Politis & Romano 1992) that preserves within-block autocorrelation; default block length 5 (~1 trading week for daily returns). (2) Added Benjamini–Hochberg FDR correction across the off-diagonal pair grid, controlling FDR ≤ `significance_level` instead of a per-pair p-value cutoff. (3) Saved raw TE values + p-values + significance mask separately (`transfer_entropy_raw.parquet`, `transfer_entropy_pvalues.parquet`, `transfer_entropy_significance.parquet`, `transfer_entropy_summary.json`) so consumers can rank by magnitude even when no pair survives FDR. Both knobs are config-driven via `transfer_entropy.surrogate_block_length` and `transfer_entropy.multiple_testing` in the YAMLs. |
+| Verification | Post-fix on BIST: 0 directed edges survive BH-FDR at α=0.05 with 100 surrogate shuffles (resolution-limited: min p-value = 1/101 = 0.0099; BH threshold at rank k=647 is 0.006). Uncorrected count = 647 for reference. This is the honest outcome — the previous 647 "significant" edges were a multiple-testing artifact. Increasing `significance_shuffles` to 1000+ would give finer p-value resolution and likely surface a handful of genuinely-significant edges; this is a tunable knob not a re-implementation. |
+| Tests | `tests/test_transfer_entropy_null.py` (14 tests): block-bootstrap preserves autocorrelation while permutation destroys it; BH-FDR matches Benjamini & Hochberg's 1995 worked example; full pipeline recovers a constructed causal X→Y edge; 6 independent Gaussian streams produce ≤1 spurious FDR-significant edge. |
 
 ### M-3 — `store_raw_close` flag is half-honoured
 
@@ -92,13 +93,14 @@ session are at the top with status `FIXED`.
 | Issue | `st.session_state.pop("_goto_pair_analysis", False)` followed by setting `nav_page` works most of the time, but if a tab body sets the flag *after* this dispatch line has run in the same script execution, the jump is delayed by one rerun. |
 | Recommendation | Move the dispatch logic into a callback fired by the jump button, or use `st.rerun()` immediately after setting the flag. |
 
-### M-6 — `distance_threshold=1.0` not in YAML
+### M-6 — `distance_threshold=1.0` not in YAML — FIXED (mutable-candy, 2026-05-17)
 
 | | |
 |---|---|
-| File:line | `src/clustering.py:84, 186` |
-| Issue | Default for `fcluster` cut. Users tuning the analysis can't change cluster count without code edits. |
-| Recommendation | Add `clustering.distance_threshold` (or `n_clusters`) to YAML; mirror as `ClusteringConfig` (FUTURE_WORK F-2). |
+| File:line | `src/clustering.py:run_clustering`, `src/config.py:ClusteringConfig` |
+| Original issue | Default for `fcluster` cut was hardcoded. Compounded with `method="single"`, the pipeline produced single-linkage chaining (45 of 73 BIST tickers in one cluster spanning 17 sectors; ARI vs sector = 0.034). |
+| Fix | Added `ClusteringConfig(linkage_method="ward", n_clusters=20, criterion="maxclust", distance_threshold=1.0)` to `src/config.py`. Hoisted into all three settings YAMLs (BIST n_clusters=20, S&P n_clusters=25, EEG n_clusters=8). `run_clustering` now respects `config.clustering`. |
+| Verification | BIST: max cluster 12, ARI=0.27, NMI=0.72 (was 0.034 / 0.something low); 6/7 banks share cluster 1. S&P: max cluster 36 (was 446), ARI=0.31. EEG: 64 electrodes across 8 anatomical macro-clusters. Tests in `tests/test_clustering.py::TestBistClusteringPostFix` and `::TestSP500ClusteringPostFix` pin these post-fix numbers. |
 
 ---
 

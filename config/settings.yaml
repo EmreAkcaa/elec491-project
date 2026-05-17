@@ -68,3 +68,13 @@ transfer_entropy:
   significance_shuffles: 100
   significance_level: 0.05
   seed: 42
+  # Block length for the circular-block-bootstrap surrogate (preserves source
+  # autocorrelation). 5 ≈ one trading week for daily returns. The previous
+  # i.i.d. permutation null (block_length=1) destroyed autocorrelation and
+  # inflated significance — see KNOWN_ISSUES.md M-1.
+  surrogate_block_length: 5
+  # Multiple-testing correction across the N*(N-1) directed pairs. Without
+  # this, ~5% of pairs appear significant at alpha=0.05 by construction
+  # (e.g. ~263 false positives on the 73-ticker BIST grid). "fdr_bh" =
+  # Benjamini–Hochberg (default); "bonferroni"/"none" also supported.
+  multiple_testing: "fdr_bh"

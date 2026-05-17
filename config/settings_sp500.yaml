@@ -69,3 +69,5 @@ transfer_entropy:
   significance_shuffles: 100
   significance_level: 0.05
   seed: 42
+  surrogate_block_length: 5  # see settings.yaml for context
+  multiple_testing: "fdr_bh"

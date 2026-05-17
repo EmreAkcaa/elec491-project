@@ -734,12 +734,21 @@ def load_wavelet_corr(scale: int) -> pd.DataFrame:
     return _load_wavelet_corr(current_universe(), scale)
 
 
+_TE_EDGE_COLUMNS = [
+    "source", "target", "te_forward", "te_backward", "net_te", "dominant_direction",
+]
+
+
 @st.cache_data
 def _load_te_edges(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "te_network_edges.csv"
-    if path.exists():
+    if not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame(columns=_TE_EDGE_COLUMNS)
+    try:
         return pd.read_csv(path)
-    return pd.DataFrame()
+    except pd.errors.EmptyDataError:
+        # Post-fix BH-FDR can leave zero significant edges → empty CSV.
+        return pd.DataFrame(columns=_TE_EDGE_COLUMNS)
 
 
 def load_te_edges() -> pd.DataFrame:

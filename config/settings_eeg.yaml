@@ -75,6 +75,10 @@ transfer_entropy:
                               # Re-enable with shuffles > 0 after downsampling EEG to 32 Hz.
   significance_level: 0.05
   seed: 42
+  # significance_shuffles=0 above, so these have no runtime effect on EEG.
+  # Kept for schema parity with the finance YAMLs.
+  surrogate_block_length: 5
+  multiple_testing: "fdr_bh"
 
 eeg:
   task_type: "left_right"           # left_right | feet_fists | baseline
