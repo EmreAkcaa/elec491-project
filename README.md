@@ -1,8 +1,25 @@
+---
+title: StoNeCoAl
+emoji: 📊
+colorFrom: blue
+colorTo: red
+sdk: streamlit
+sdk_version: 1.39.0
+app_file: app/dashboard.py
+pinned: false
+license: mit
+short_description: BIST-100 / S&P-500 / EEG correlation-network dashboard
+---
+
 # StoNeCoAl
 
 **Stock Network Correlation Analysis** — a 12-stage pipeline and Streamlit
 dashboard for analysing the correlation network of the BIST-100 (Borsa
-Istanbul 100) equity universe.
+Istanbul 100) equity universe, the S&P-500, and PhysioNet EEG.
+
+> The YAML block above is read by [Hugging Face Spaces](https://huggingface.co/docs/hub/spaces-config-reference)
+> when this repo is pushed as a Spaces remote. GitHub renders the body below as
+> normal. See `docs/HUGGINGFACE_DEPLOY.md` for the full deploy runbook.
 
 The pipeline downloads daily prices via yfinance, validates a sample against
 isyatirimhisse, computes log returns, builds correlation/distance matrices,

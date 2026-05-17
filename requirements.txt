@@ -1,13 +1,36 @@
-yfinance>=0.2.40
+# Runtime dependencies for the Streamlit dashboard (mirrors pyproject.toml
+# dependencies = [...] for deploy targets that read requirements.txt:
+# Hugging Face Spaces, Streamlit Cloud, Render, Fly.io, etc.).
+#
+# Pinned versions where Streamlit Cloud / HF Spaces compatibility matters;
+# loose >= for everything else.
+
+# Core data stack
 pandas>=2.2
 numpy>=1.26
 scipy>=1.13
-plotly>=5.22
-streamlit>=1.35
 pyarrow>=16.0
 pyyaml>=6.0
-isyatirimhisse>=2.1
-networkx>=2.6
-kaleido>=0.2.1
-PyWavelets>=1.6
+
+# Streamlit + Plotly stack
+#   plotly pinned <6 because plotly 6 + kaleido 1.x require a system Chrome
+#   install for static-image export. Streamlit Cloud / HF Spaces don't have
+#   Chrome → static export crashes. 5.x has every feature this project uses.
+streamlit>=1.35,<2
+plotly>=5.22,<6
+#   kaleido 0.2.1 bundles its own Chromium; kaleido 1.0+ delegates to system
+#   Chrome via plotly_get_chrome which we can't trigger on hosted envs. Pin.
+kaleido==0.2.1
+
+# Network + clustering
+networkx>=3.2
 scikit-learn>=1.5
+
+# Domain analysis
+PyWavelets>=1.6
+
+# Acquisition (pipeline-side; not strictly needed for dashboard at runtime,
+# but kept here so a "pipeline-run-on-deploy" path stays available without
+# a second requirements file).
+yfinance>=0.2.40
+isyatirimhisse>=2.1
