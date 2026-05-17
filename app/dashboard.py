@@ -287,7 +287,10 @@ with _settings_col:
             min_value=min_date,
             max_value=max_date,
         )
-        with st.popover("Data Freshness", icon=":material/info:"):
+        # Streamlit 1.41+ rejects popovers nested inside other popovers
+        # (StreamlitAPIException). Use st.expander here — visually similar,
+        # nestable inside popovers.
+        with st.expander("Data Freshness", icon=":material/info:"):
             fetch_meta = load_fetch_metadata()
             if fetch_meta:
                 st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
