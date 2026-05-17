@@ -208,6 +208,26 @@ def _is_popover_call(node) -> bool:
     )
 
 
+def _is_call_to(node, attr_names: set[str]) -> bool:
+    """True iff `node` is a Call to something.<attr>(...) where <attr> ∈ attr_names."""
+    import ast
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in attr_names
+    )
+
+
+def _walk_app_files():
+    """Yield (path, ast_tree) for every app/*.py — convenience for static checks."""
+    import ast
+    for py_path in sorted(_APP_DIR.glob("*.py")):
+        try:
+            yield py_path, ast.parse(py_path.read_text(), filename=str(py_path))
+        except SyntaxError as e:
+            raise AssertionError(f"{py_path}: cannot parse — {e}") from e
+
+
 def test_no_nested_popovers_anywhere_in_app():
     """Streamlit 1.41+ rejects popovers nested inside other popovers with
     StreamlitAPIException. The error fires when the outer popover is opened
@@ -217,22 +237,16 @@ def test_no_nested_popovers_anywhere_in_app():
     """
     import ast
     violations: list[str] = []
-    for py_path in sorted(_APP_DIR.glob("*.py")):
-        try:
-            tree = ast.parse(py_path.read_text(), filename=str(py_path))
-        except SyntaxError as e:
-            raise AssertionError(f"{py_path}: cannot parse — {e}") from e
-
+    for py_path, tree in _walk_app_files():
         for outer in ast.walk(tree):
             if not isinstance(outer, ast.With):
                 continue
-            if not any(_is_popover_call(item.context_expr) for item in outer.items):
+            if not any(_is_call_to(item.context_expr, {"popover"}) for item in outer.items):
                 continue
-            # Found an outer popover — walk its descendants for inner popovers
             for inner in ast.walk(outer):
                 if inner is outer or not isinstance(inner, ast.With):
                     continue
-                if any(_is_popover_call(item.context_expr) for item in inner.items):
+                if any(_is_call_to(item.context_expr, {"popover"}) for item in inner.items):
                     rel = py_path.relative_to(_REPO_ROOT)
                     violations.append(
                         f"  {rel}:{inner.lineno}  — nested popover inside outer popover at line {outer.lineno}"
@@ -241,6 +255,92 @@ def test_no_nested_popovers_anywhere_in_app():
         raise AssertionError(
             "Streamlit 1.41+ rejects popovers nested inside other popovers. "
             "Use st.expander or st.container instead. Violations:\n"
+            + "\n".join(violations)
+        )
+
+
+def test_no_columns_inside_popover_anywhere_in_app():
+    """Streamlit 1.41+ rejects st.columns nested 2+ levels deep. Every popover
+    in this app is rendered from inside a dashboard column (render_chart →
+    export popover, event_marker_manager_ui → event-marker popover inside
+    a Rolling Analysis tab column, etc.), so columns INSIDE a popover are
+    always 2 levels deep → reject.
+
+    Use vertical stacking (st.write / st.markdown) or st.container for
+    layout inside popovers — never st.columns. AppTest renders popover
+    bodies but doesn't always trigger the strict check; we catch it
+    statically here.
+    """
+    import ast
+    violations: list[str] = []
+    for py_path, tree in _walk_app_files():
+        for popover_block in ast.walk(tree):
+            if not isinstance(popover_block, ast.With):
+                continue
+            if not any(_is_call_to(it.context_expr, {"popover"}) for it in popover_block.items):
+                continue
+            # Walk every descendant looking for st.columns or `with st.columns(...)`
+            for descendant in ast.walk(popover_block):
+                if descendant is popover_block:
+                    continue
+                # `c1, c2 = st.columns(2)` (Assign with columns Call as value)
+                if isinstance(descendant, ast.Assign) and _is_call_to(descendant.value, {"columns"}):
+                    rel = py_path.relative_to(_REPO_ROOT)
+                    violations.append(
+                        f"  {rel}:{descendant.lineno}  — st.columns inside popover at line {popover_block.lineno}"
+                    )
+                # `with st.columns(...): ...` (rare but possible)
+                if isinstance(descendant, ast.With):
+                    if any(_is_call_to(it.context_expr, {"columns"}) for it in descendant.items):
+                        rel = py_path.relative_to(_REPO_ROOT)
+                        violations.append(
+                            f"  {rel}:{descendant.lineno}  — with-st.columns inside popover at line {popover_block.lineno}"
+                        )
+    if violations:
+        raise AssertionError(
+            "Streamlit 1.41+ rejects st.columns more than 1 level deep. "
+            "Popovers in this app live inside dashboard columns, so columns "
+            "inside a popover are always 2 levels → use vertical stacking. "
+            "Violations:\n" + "\n".join(violations)
+        )
+
+
+def test_no_expanders_inside_popovers():
+    """Streamlit 1.41+ also rejects expanders nested inside popovers and
+    vice-versa (treated as similar disclosure widgets). Catch statically.
+    """
+    import ast
+    violations: list[str] = []
+    for py_path, tree in _walk_app_files():
+        for outer in ast.walk(tree):
+            if not isinstance(outer, ast.With):
+                continue
+            outer_kinds = {
+                "popover" if _is_call_to(it.context_expr, {"popover"}) else
+                "expander" if _is_call_to(it.context_expr, {"expander"}) else
+                None
+                for it in outer.items
+            }
+            outer_kinds.discard(None)
+            if not outer_kinds:
+                continue
+            for inner in ast.walk(outer):
+                if inner is outer or not isinstance(inner, ast.With):
+                    continue
+                for it in inner.items:
+                    if _is_call_to(it.context_expr, {"popover"}) and "popover" in outer_kinds:
+                        violations.append(
+                            f"  {py_path.relative_to(_REPO_ROOT)}:{inner.lineno}  — popover inside popover"
+                        )
+                    # Expander-in-expander: Streamlit warns but doesn't always reject;
+                    # still flag it as a smell.
+                    if _is_call_to(it.context_expr, {"expander"}) and "expander" in outer_kinds:
+                        violations.append(
+                            f"  {py_path.relative_to(_REPO_ROOT)}:{inner.lineno}  — expander inside expander"
+                        )
+    if violations:
+        raise AssertionError(
+            "Disclosure widget nesting violations (Streamlit 1.41+ strict mode):\n"
             + "\n".join(violations)
         )
 
