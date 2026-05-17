@@ -111,12 +111,18 @@ def render_chart(
     if use_container_width is not None:
         width = "stretch" if use_container_width else "content"
 
-    # Per-chart title input — only updates the title, does NOT re-apply full theme
+    # Per-chart title input — only updates the title, does NOT re-apply full theme.
+    # Scope title_key by the active universe so a custom title set under one
+    # universe doesn't leak into another (e.g. a "Sector Correlation" title
+    # cached under BIST must NOT show up when the user switches to EEG, where
+    # the same chart_id renders an "Anatomical region Correlation" default).
     if title_key:
+        _u = st.session_state.get("universe", "")
+        _scoped = f"_title_{title_key}__{_u}" if _u else f"_title_{title_key}"
         user_title = st.text_input(
             "Chart title",
-            value=st.session_state.get(f"_title_{title_key}", default_title),
-            key=f"_title_{title_key}",
+            value=st.session_state.get(_scoped, default_title),
+            key=_scoped,
             label_visibility="collapsed",
             placeholder="Add chart title...",
         )

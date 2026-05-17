@@ -238,24 +238,40 @@ if st.session_state.pop("_goto_pair_analysis", False):
 if st.session_state.pop("_goto_cross_market", False):
     st.session_state["nav_page"] = "Cross-Market"
 
+# Nav label for the overview page is domain-aware: "Market Overview" reads
+# wrong when the active universe is EEG (no market), so non-finance domains
+# get "Network Overview". Used for both the segmented-control label AND the
+# session_state value, so the two stay in sync across universe switches.
+_overview_label = (
+    "Market Overview"
+    if _cap(_active_universe, 'domain', 'finance') == "finance"
+    else "Network Overview"
+)
+
 # Nav: hide Pair Analysis when the active universe has no pair-trading concept.
-# Cross-Market always visible (universe-independent page).
-_nav_options = ["Market Overview"]
+# Hide Cross-Market when the active universe isn't a financial market (the page
+# only compares BIST vs S&P; showing a "Cross-Market" tab while the user is
+# viewing EEG leaks finance terminology into the neuroscience view).
+_nav_options = [_overview_label]
 if _cap(_active_universe, 'has_pair_trading', True):
     _nav_options.append("Pair Analysis")
-_nav_options.append("Cross-Market")
+if _cap(_active_universe, 'eligible_for_cross_market', True):
+    _nav_options.append("Cross-Market")
 
 # Clamp stored nav_page to options the current universe supports (otherwise
 # Streamlit would render the segmented_control with an out-of-set default and
-# raise StreamlitValueAssignmentNotAllowedError).
+# raise StreamlitValueAssignmentNotAllowedError). Also catches the case where
+# the user switches universe — their old nav_page (e.g. "Market Overview"
+# under BIST) won't be in the new universe's options ("Network Overview"
+# under EEG), so it resets to the domain-appropriate default.
 if st.session_state.get("nav_page") not in _nav_options:
-    st.session_state["nav_page"] = "Market Overview"
+    st.session_state["nav_page"] = _overview_label
 
 _nav = st.segmented_control(
     "Navigate",
     _nav_options,
     key="nav_page",
-    default="Market Overview",
+    default=_overview_label,
     label_visibility="collapsed",
 )
 
@@ -1137,17 +1153,17 @@ with tab_rolling:
                         "(window/step/method match the pipeline; `step=5`, `pearson`)."
                     )
                 else:
-                    with st.status("Computing rolling market stats...", expanded=False) as _ms_st:
+                    with st.status("Computing rolling stats...", expanded=False) as _ms_st:
                         market_stats = _compute_market_stats(
                             _returns_json, rc_window, rc_step, rc_method, rc_expanding,
                         )
-                        _ms_st.update(label="Market stats ready", state="complete")
+                        _ms_st.update(label="Rolling stats ready", state="complete")
             else:
-                with st.status("Computing rolling market stats (custom params)...", expanded=False) as _ms_st:
+                with st.status("Computing rolling stats (custom params)...", expanded=False) as _ms_st:
                     market_stats = _compute_market_stats(
                         _returns_json, rc_window, rc_step, rc_method, rc_expanding,
                     )
-                    _ms_st.update(label="Market stats ready", state="complete")
+                    _ms_st.update(label="Rolling stats ready", state="complete")
                 st.caption(
                     "Computed on-the-fly — parameters fall outside the precomputed "
                     "grid (`window∈{60,120,252}`, `step=5`, `pearson`, `rolling`)."
@@ -1308,17 +1324,17 @@ with tab_rolling:
                             "(`window=252`, `step=5`, `pearson`)."
                         )
                     else:
-                        with st.status("Computing sector stats...", expanded=False) as _ss_st:
+                        with st.status(f"Computing {_sector_rc.lower()} stats...", expanded=False) as _ss_st:
                             sector_stats = _compute_sector(
                                 _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
                             )
-                            _ss_st.update(label="Sector stats ready", state="complete")
+                            _ss_st.update(label=f"{_sector_rc} stats ready", state="complete")
                 else:
-                    with st.status("Computing sector stats (custom params)...", expanded=False) as _ss_st:
+                    with st.status(f"Computing {_sector_rc.lower()} stats (custom params)...", expanded=False) as _ss_st:
                         sector_stats = _compute_sector(
                             _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
                         )
-                        _ss_st.update(label="Sector stats ready", state="complete")
+                        _ss_st.update(label=f"{_sector_rc} stats ready", state="complete")
                     st.caption(
                         "Computed on-the-fly — sector precompute exists only for "
                         "`window=252`, `step=5`, `pearson`."
@@ -1346,7 +1362,7 @@ with tab_rolling:
                     intra_cols = [c for c in sector_stats.columns
                                   if c.startswith("intra_") and c != "intra_sector_avg"]
                     if intra_cols:
-                        if st.toggle("Show per-sector breakdown", key="mo_per_sector_toggle"):
+                        if st.toggle(f"Show per-{_sector_rc.lower()} breakdown", key="mo_per_sector_toggle"):
                             fig_per = go.Figure()
                             for i, col in enumerate(intra_cols):
                                 sector_name = col.replace("intra_", "")
