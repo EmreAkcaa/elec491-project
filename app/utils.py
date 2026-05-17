@@ -347,9 +347,32 @@ DATA_RESULTS   = data_results(DASHBOARD_UNIVERSE)
 # stay parameter-free.
 # ---------------------------------------------------------------------------
 
+def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Guarantee `df.index` is a DatetimeIndex.
+
+    Financial universes (BIST, S&P) ship parquet files with a DatetimeIndex
+    (the trading day). EEG ships a float64 index of seconds-since-recording-
+    start, which breaks every downstream date widget / chart that calls
+    ``adj_close.index.min().date()``.
+
+    To keep the rest of the dashboard universe-agnostic, we synthesise a
+    DatetimeIndex anchored at 2020-01-01 with 1-second steps when the
+    underlying index isn't datetime-typed. The displayed "dates" carry no
+    physical meaning for EEG — the chart's x-axis just labels samples by
+    a synthetic clock so the existing widgets render cleanly.
+    """
+    if isinstance(df.index, pd.DatetimeIndex):
+        return df
+    synthetic = pd.date_range(
+        start="2020-01-01", periods=len(df.index), freq="1s",
+    )
+    return df.set_axis(synthetic, axis=0)
+
+
 @st.cache_data
 def _load_adj_close(universe: str) -> pd.DataFrame:
-    return pd.read_parquet(data_processed(universe) / "adj_close.parquet")
+    df = pd.read_parquet(data_processed(universe) / "adj_close.parquet")
+    return _ensure_datetime_index(df)
 
 
 def load_adj_close() -> pd.DataFrame:
@@ -358,7 +381,8 @@ def load_adj_close() -> pd.DataFrame:
 
 @st.cache_data
 def _load_log_returns(universe: str) -> pd.DataFrame:
-    return pd.read_parquet(data_processed(universe) / "log_returns.parquet")
+    df = pd.read_parquet(data_processed(universe) / "log_returns.parquet")
+    return _ensure_datetime_index(df)
 
 
 def load_log_returns() -> pd.DataFrame:

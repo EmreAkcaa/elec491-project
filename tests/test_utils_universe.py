@@ -43,6 +43,47 @@ def test_data_paths_sp500_explicit(utils_mod):
     assert utils_mod.data_results("sp500").parent == expected_root
 
 
+def test_ensure_datetime_index_passes_through_real_datetime(utils_mod):
+    """A DataFrame whose index is already a DatetimeIndex must be returned
+    unchanged (BIST/S&P loaders shouldn't pay any cost)."""
+    import pandas as pd
+    real_dates = pd.date_range("2020-01-01", periods=10, freq="D")
+    df = pd.DataFrame({"a": range(10), "b": range(10)}, index=real_dates)
+    out = utils_mod._ensure_datetime_index(df)
+    assert isinstance(out.index, pd.DatetimeIndex)
+    assert (out.index == real_dates).all()
+    # Identity preserved when no conversion needed
+    assert out is df
+
+
+def test_ensure_datetime_index_converts_float_index(utils_mod):
+    """A DataFrame with a float64 index (EEG sample seconds) must be coerced
+    to a synthetic DatetimeIndex anchored at 2020-01-01, so downstream code
+    like `df.index.min().date()` doesn't crash."""
+    import pandas as pd
+    # Mimic EEG: 100 samples of float seconds
+    df = pd.DataFrame({"FC5": range(100), "C3": range(100)}, index=[i * 0.00625 for i in range(100)])
+    assert not isinstance(df.index, pd.DatetimeIndex)
+    out = utils_mod._ensure_datetime_index(df)
+    assert isinstance(out.index, pd.DatetimeIndex), "index must become DatetimeIndex"
+    assert out.index.min().date().isoformat() == "2020-01-01"
+    # Length preserved
+    assert len(out) == 100
+    # Columns preserved
+    assert list(out.columns) == ["FC5", "C3"]
+
+
+def test_ensure_datetime_index_converts_rangeindex(utils_mod):
+    """A pd.RangeIndex (the most common non-datetime case) should also be
+    coerced cleanly."""
+    import pandas as pd
+    df = pd.DataFrame({"x": range(50)})  # default RangeIndex
+    out = utils_mod._ensure_datetime_index(df)
+    assert isinstance(out.index, pd.DatetimeIndex)
+    # The dashboard's date_input widget needs min < max
+    assert out.index.min() < out.index.max()
+
+
 def test_current_universe_falls_back_outside_streamlit(utils_mod, monkeypatch):
     """When called outside a Streamlit script context (no ScriptRunContext),
     current_universe() must NOT raise — it must fall back to the env-var
