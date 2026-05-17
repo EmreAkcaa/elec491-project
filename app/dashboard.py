@@ -135,7 +135,42 @@ def _mst_layout(edges_json):
     _G = nx.Graph()
     for _, r in pd.read_json(io.StringIO(edges_json), orient="split").iterrows():
         _G.add_edge(r["source"], r["target"], weight=r["distance"])
+    # Kamada-Kawai is O(N^3) and stalls for ~minute on the 485-node S&P MST.
+    # spring_layout (Fruchterman-Reingold) with a fixed iteration count
+    # gives a comparable-quality layout on the same MST in ~1 second; we
+    # only fall back to it for large graphs so small graphs (BIST/EEG/<200
+    # nodes) keep the cleaner Kamada-Kawai layout.
+    if _G.number_of_nodes() > 200:
+        return nx.spring_layout(_G, weight="weight", iterations=80, seed=42)
     return nx.kamada_kawai_layout(_G, weight="weight")
+
+
+def _heatmap_axis_tickfont(n: int) -> int:
+    """Tickfont size scaled to ticker count. Returns 0 to flag "hide the
+    labels entirely" — callers translate that into `showticklabels=False`
+    plus a sentinel font size (plotly rejects size=0)."""
+    if n <= 80:
+        return 7
+    if n <= 200:
+        return 5
+    return 0
+
+
+def _heatmap_axis_dtick(n: int) -> int:
+    """Show every label up to ~80 tickers, then thin out so plotly
+    doesn't try to render hundreds of axis annotations per heatmap."""
+    if n <= 80:
+        return 1
+    if n <= 200:
+        return 5
+    return max(1, n // 30)  # ~30 visible labels max
+
+
+def _heatmap_height(n: int, max_px: int = 1100) -> int:
+    """Bound the heatmap pixel height so the browser doesn't have to
+    paint a 5000px-tall canvas. ~12 px/cell up to the cap, then a
+    flat plateau that lets plotly downsample-render."""
+    return min(max_px, max(700, n * 12))
 
 
 @st.cache_data
@@ -773,21 +808,48 @@ with tab_corr:
                 "Toggle method and clustering reorder above.",
             )
 
-            n_tickers = len(corr_display)
+            from utils import downsample_matrix_for_display
+            corr_for_plot, _block = downsample_matrix_for_display(corr_display, max_dim=200)
+            n_tickers = len(corr_for_plot)
+            _hover_lbl = (
+                f"block ({_block}×{_block}) mean of {corr_display.shape[0]} {_cap(_active_universe, 'items_label', 'tickers').lower()}"
+                if _block > 1 else "pair correlation"
+            )
             fig_heat = go.Figure(data=go.Heatmap(
-                z=corr_display.values,
-                x=corr_display.columns.tolist(),
-                y=corr_display.index.tolist(),
+                z=corr_for_plot.values,
+                x=corr_for_plot.columns.tolist(),
+                y=corr_for_plot.index.tolist(),
                 colorscale=get_colors().get("heatmap_cs", "RdBu_r"), zmid=0, zmin=-1, zmax=1,
-                hovertemplate="(%{x}, %{y}): %{z:.3f}<extra></extra>",
+                hovertemplate=f"{_hover_lbl}<br>(%{{x}}, %{{y}}): %{{z:.3f}}<extra></extra>",
                 colorbar=dict(title="Corr", thickness=15, len=0.6),
             ))
+            _tf = _heatmap_axis_tickfont(n_tickers)
+            _dt = _heatmap_axis_dtick(n_tickers)
+            _font_size = max(1, _tf)
+            _show_labels = _tf > 0
             apply_chart_style(fig_heat,
-                height=max(700, n_tickers * 12),
+                height=_heatmap_height(n_tickers),
                 margin=dict(l=0, r=0, t=0, b=0),
-                xaxis=dict(tickfont=dict(size=7), dtick=1),
-                yaxis=dict(tickfont=dict(size=7), dtick=1, autorange="reversed"),
+                xaxis=dict(tickfont=dict(size=_font_size), dtick=_dt, showticklabels=_show_labels),
+                yaxis=dict(tickfont=dict(size=_font_size), dtick=_dt, showticklabels=_show_labels, autorange="reversed"),
             )
+            if _block > 1:
+                st.caption(
+                    f":material/info: {corr_display.shape[0]}×{corr_display.shape[0]} "
+                    f"matrix displayed at {n_tickers}×{n_tickers} via "
+                    f"{_block}×{_block} block-averaging (keeps the wire payload "
+                    "under the websocket cap; hover any cell for the block mean)."
+                )
+                with st.expander(
+                    "Download full-resolution matrix as CSV "
+                    f"({corr_display.shape[0]}×{corr_display.shape[0]})"
+                ):
+                    st.download_button(
+                        "Download CSV",
+                        data=corr_display.to_csv().encode("utf-8"),
+                        file_name=f"correlation_{_active_universe.key}.csv",
+                        mime="text/csv",
+                    )
             render_chart(fig_heat, chart_id="mo_heatmap", filename_base="correlation_heatmap",
                          title_key="mo_heatmap", default_title="Correlation Matrix")
 
@@ -848,21 +910,37 @@ with tab_corr:
                     pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
                     pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
 
-                    n_pit = len(pit_display)
+                    from utils import downsample_matrix_for_display
+                    pit_for_plot, _pit_block = downsample_matrix_for_display(pit_display, max_dim=200)
+                    n_pit = len(pit_for_plot)
+                    _pit_hover = (
+                        f"block ({_pit_block}×{_pit_block}) mean"
+                        if _pit_block > 1 else "pair correlation"
+                    )
                     fig_pit = go.Figure(data=go.Heatmap(
-                        z=pit_display.values,
-                        x=pit_display.columns.tolist(),
-                        y=pit_display.index.tolist(),
+                        z=pit_for_plot.values,
+                        x=pit_for_plot.columns.tolist(),
+                        y=pit_for_plot.index.tolist(),
                         colorscale=get_colors().get("heatmap_cs", "RdBu_r"), zmid=0, zmin=-1, zmax=1,
-                        hovertemplate="(%{x}, %{y}): %{z:.3f}<extra></extra>",
+                        hovertemplate=f"{_pit_hover}<br>(%{{x}}, %{{y}}): %{{z:.3f}}<extra></extra>",
                         colorbar=dict(title="Corr", thickness=15, len=0.6),
                     ))
+                    _tf_p = _heatmap_axis_tickfont(n_pit)
+                    _dt_p = _heatmap_axis_dtick(n_pit)
+                    _font_size_p = max(1, _tf_p)
+                    _show_labels_p = _tf_p > 0
                     apply_chart_style(fig_pit,
-                        height=max(700, n_pit * 12),
+                        height=_heatmap_height(n_pit),
                         margin=dict(l=0, r=0, t=0, b=0),
-                        xaxis=dict(tickfont=dict(size=7), dtick=1),
-                        yaxis=dict(tickfont=dict(size=7), dtick=1, autorange="reversed"),
+                        xaxis=dict(tickfont=dict(size=_font_size_p), dtick=_dt_p, showticklabels=_show_labels_p),
+                        yaxis=dict(tickfont=dict(size=_font_size_p), dtick=_dt_p, showticklabels=_show_labels_p, autorange="reversed"),
                     )
+                    if _pit_block > 1:
+                        st.caption(
+                            f":material/info: PIT matrix displayed at "
+                            f"{n_pit}×{n_pit} via {_pit_block}×{_pit_block} "
+                            "block-averaging for performance."
+                        )
                     render_chart(fig_pit, chart_id="mo_pit_heatmap", filename_base="pit_correlation",
                                  title_key="mo_pit_heatmap", default_title="Point-in-Time Correlation")
                 else:
@@ -893,20 +971,35 @@ with tab_cluster:
         with col_dendro:
             Z_loaded, labels_loaded = load_linkage()
             if Z_loaded is not None:
+                n_leaves = len(labels_loaded)
                 fig_dendro = ff.create_dendrogram(
-                    np.eye(len(labels_loaded)),
+                    np.eye(n_leaves),
                     orientation="bottom",
                     labels=labels_loaded,
                     linkagefun=lambda x: Z_loaded,
                 )
                 for trace in fig_dendro.data:
                     trace.update(line=dict(color=get_colors()["primary"], width=1.2))
+                # Hide per-leaf labels when there are too many to read; the
+                # rendering speed jump is dramatic on the 485-leaf S&P tree.
+                _show_leaf_labels = n_leaves <= 100
+                _leaf_tickfont = 7 if n_leaves <= 100 else 1  # plotly requires size>=1
                 apply_chart_style(fig_dendro,
                     height=500,
-                    margin=dict(l=10, r=10, t=10, b=100),
-                    xaxis=dict(tickfont=dict(size=7), tickangle=-90),
+                    margin=dict(l=10, r=10, t=10, b=100 if _show_leaf_labels else 30),
+                    xaxis=dict(
+                        tickfont=dict(size=_leaf_tickfont),
+                        tickangle=-90,
+                        showticklabels=_show_leaf_labels,
+                    ),
                     yaxis_title="Distance",
                 )
+                if not _show_leaf_labels:
+                    st.caption(
+                        f":material/info: Per-leaf labels hidden on this "
+                        f"{n_leaves}-leaf dendrogram for legibility; cluster "
+                        "membership is in the table on the right."
+                    )
                 render_chart(fig_dendro, chart_id="mo_dendrogram", filename_base="dendrogram",
                              title_key="mo_dendrogram", default_title="Hierarchical Clustering")
             else:
