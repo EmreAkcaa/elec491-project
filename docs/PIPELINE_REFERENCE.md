@@ -342,28 +342,31 @@ Currently the slowest stage at ~5–10 minutes for the BIST universe.
 
 **Entry point:** `run_snn_signals(config, retrain=False, snn_cfg=None) -> dict` (`snn_signals.py:891`).
 
-**Reads:**
-- `data/processed/adj_close.parquet`
-- `data/processed/log_returns.parquet`
-- `data/results/dislocation_candidates.csv` (top-20 pairs)
+**Reads** (paths derived from `config.data_processed` / `config.data_results`, so
+per-market directories like `data/bist/...` and `data/sp500/...`):
+- `<data_processed>/adj_close.parquet`
+- `<data_processed>/log_returns.parquet`
+- `<data_results>/dislocation_candidates.csv` (top-20 pairs)
 
-**Writes:**
-- `data/results/snn_metrics.json` — per-pair + aggregate metrics, full
+**Writes** (all under `config.data_results`, so `data/bist/results/...` or
+`data/sp500/results/...` depending on the active config):
+- `snn_metrics.json` — per-pair + aggregate metrics, full
   `SNNConfig` dump, `sample_pair`, `n_inputs`, `n_pairs`.
-- `data/results/snn_pair_list.csv` — `ticker_a, ticker_b, pair_id` for the
+- `snn_pair_list.csv` — `ticker_a, ticker_b, pair_id` for the
   20 trained pairs.
-- `data/results/snn_training_history.csv` — `epoch, train_loss, val_loss,
+- `snn_training_history.csv` — `epoch, train_loss, val_loss,
   val_acc, val_macro_f1, pair` (one row per epoch; ~11 rows with early
   stopping at patience=5).
-- `data/results/snn_signals/{pair_id}.parquet` (×20) — daily per-pair
+- `snn_signals/{pair_id}.parquet` (×20) — daily per-pair
   signal: `date, zscore, prob_hold, prob_buy, prob_sell, signal,
   classical_signal`.
-- `data/results/snn_model_weights/universal.pt` — trained PyTorch
+- `snn_model_weights/universal.pt` — trained PyTorch
   state-dict (single universal model; the per-pair `.pt` files from an
   earlier code path are deliberately not persisted).
-- `data/results/snn_spike_raster_sample.parquet` — output-neuron spike
-  raster for one sample window of the sample pair (`BRYAT_BRSAN`).
-- `data/results/snn_membrane_sample.parquet` — output-layer membrane
+- `snn_spike_raster_sample.parquet` — output-neuron spike
+  raster for one sample window of the sample pair (BIST: `BRSAN_BRYAT`,
+  S&P: `CMS_AEP`).
+- `snn_membrane_sample.parquet` — output-layer membrane
   V(t) trace for the same sample window.
 
 **Method:**

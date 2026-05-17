@@ -17,8 +17,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 
 def fit_graphical_lasso(
@@ -126,23 +124,23 @@ def extract_partial_corr_edges(
 def run_partial_correlation(config: PipelineConfig) -> None:
     """Pipeline step: Graphical LASSO partial correlation network."""
     logger.info("=== Graphical LASSO Partial Correlation ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
-    returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    returns = pd.read_parquet(config.data_processed / "log_returns.parquet")
     logger.info("Loaded log returns: %d days x %d tickers", *returns.shape)
 
     # Fit model with cross-validated alpha
     precision, partial_corr, alpha_used = fit_graphical_lasso(returns)
 
-    partial_corr.to_parquet(DATA_RESULTS / "partial_corr.parquet")
+    partial_corr.to_parquet(config.data_results / "partial_corr.parquet")
     logger.info("Saved partial correlation matrix (alpha=%.4f)", alpha_used)
 
-    precision.to_parquet(DATA_RESULTS / "precision_matrix.parquet")
+    precision.to_parquet(config.data_results / "precision_matrix.parquet")
     logger.info("Saved precision matrix")
 
     # Extract edge list
     edges = extract_partial_corr_edges(partial_corr)
-    edges.to_csv(DATA_RESULTS / "partial_corr_edges.csv", index=False)
+    edges.to_csv(config.data_results / "partial_corr_edges.csv", index=False)
 
     # Save metadata
     meta = {
@@ -154,7 +152,7 @@ def run_partial_correlation(config: PipelineConfig) -> None:
         ),
     }
     import json
-    with open(DATA_RESULTS / "glasso_metadata.json", "w") as f:
+    with open(config.data_results / "glasso_metadata.json", "w") as f:
         json.dump(meta, f, indent=2)
 
     logger.info(

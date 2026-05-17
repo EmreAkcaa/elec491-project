@@ -21,8 +21,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 # Notable BIST-100 events for overlay on time-series charts
 DEFAULT_EVENTS = [
@@ -326,9 +324,9 @@ def compute_window_correlation(
 def run_rolling_analysis(config: PipelineConfig) -> None:
     """Precompute rolling stats for configured window sizes."""
     logger.info("=== Rolling Correlation Analysis ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
-    returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    returns = pd.read_parquet(config.data_processed / "log_returns.parquet")
     logger.info("Loaded log returns: %d days x %d tickers", *returns.shape)
 
     rolling_cfg = config.rolling
@@ -342,7 +340,7 @@ def run_rolling_analysis(config: PipelineConfig) -> None:
         stats = compute_rolling_market_stats(
             returns, window=w, step=step, min_periods=min_p, method=method
         )
-        path = DATA_RESULTS / f"rolling_market_stats_w{w}.parquet"
+        path = config.data_results / f"rolling_market_stats_w{w}.parquet"
         stats.to_parquet(path)
         logger.info("Saved rolling market stats (window=%d): %s", w, path.name)
 
@@ -357,7 +355,7 @@ def run_rolling_analysis(config: PipelineConfig) -> None:
         min_periods=max(30, int(largest_window * rolling_cfg.min_periods_ratio)),
         method=method,
     )
-    sector_stats.to_parquet(DATA_RESULTS / "rolling_sector_stats.parquet")
+    sector_stats.to_parquet(config.data_results / "rolling_sector_stats.parquet")
     logger.info("Saved rolling sector stats")
 
     logger.info("Rolling analysis complete")

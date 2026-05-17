@@ -17,7 +17,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 
 def compute_linkage(
@@ -154,11 +153,11 @@ def mst_to_edge_df(mst: nx.Graph, corr: pd.DataFrame) -> pd.DataFrame:
 def run_clustering(config: PipelineConfig) -> None:
     """Full clustering and network pipeline step."""
     logger.info("=== Clustering & Network ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
     # Load precomputed artifacts
-    dist = pd.read_parquet(DATA_RESULTS / "distance_matrix.parquet")
-    corr = pd.read_parquet(DATA_RESULTS / "pearson_corr.parquet")
+    dist = pd.read_parquet(config.data_results / "distance_matrix.parquet")
+    corr = pd.read_parquet(config.data_results / "pearson_corr.parquet")
 
     # Drop tickers with all-NaN distances (if any)
     valid_mask = dist.notna().any(axis=1) & dist.notna().any(axis=0)
@@ -170,15 +169,15 @@ def run_clustering(config: PipelineConfig) -> None:
     Z, labels = compute_linkage(dist, method="single")
 
     # Save linkage matrix
-    np.save(DATA_RESULTS / "linkage_matrix.npy", Z)
+    np.save(config.data_results / "linkage_matrix.npy", Z)
     # Save labels order
-    with open(DATA_RESULTS / "linkage_labels.json", "w") as f:
+    with open(config.data_results / "linkage_labels.json", "w") as f:
         json.dump(labels, f)
     logger.info("Saved linkage matrix and labels")
 
     # Leaf order for heatmap reordering
     leaf_order = get_leaf_order(Z, labels)
-    with open(DATA_RESULTS / "dendrogram_order.json", "w") as f:
+    with open(config.data_results / "dendrogram_order.json", "w") as f:
         json.dump(leaf_order, f)
     logger.info("Saved dendrogram leaf order")
 
@@ -187,7 +186,7 @@ def run_clustering(config: PipelineConfig) -> None:
     # Add sector info from universe
     sector_map = dict(zip(config.universe["ticker"], config.universe["sector"]))
     clusters["sector"] = clusters["ticker"].map(sector_map)
-    clusters.to_csv(DATA_RESULTS / "cluster_assignments.csv", index=False)
+    clusters.to_csv(config.data_results / "cluster_assignments.csv", index=False)
     logger.info(
         "Saved cluster assignments: %d clusters",
         clusters["cluster_id"].nunique(),
@@ -198,13 +197,13 @@ def run_clustering(config: PipelineConfig) -> None:
 
     # MST edges
     edges = mst_to_edge_df(mst, corr)
-    edges.to_csv(DATA_RESULTS / "mst_edges.csv", index=False)
+    edges.to_csv(config.data_results / "mst_edges.csv", index=False)
     logger.info("Saved MST edges")
 
     # MST node metrics
     metrics = compute_mst_metrics(mst)
     metrics["sector"] = metrics["ticker"].map(sector_map)
-    metrics.to_csv(DATA_RESULTS / "mst_node_metrics.csv", index=False)
+    metrics.to_csv(config.data_results / "mst_node_metrics.csv", index=False)
     logger.info("Saved MST node metrics")
 
     logger.info("Clustering & network complete")

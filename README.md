@@ -11,19 +11,30 @@ RMT-denoised correlation, Graphical-LASSO partial correlation, wavelet
 multi-scale correlation, transfer-entropy directed flow, and a spiking
 neural network classifier on the top dislocation pairs.
 
-The dashboard renders 40+ charts across 2 pages: **Market Overview** and
-**Pair Analysis**, with an **EEE Analysis** sub-tab that surfaces the five
-advanced methods.
+The dashboard renders 40+ charts across 3 pages: **Market Overview**,
+**Pair Analysis**, and **Cross-Market Comparison** (BIST vs S&P-500), with
+an **EEE Analysis** sub-tab that surfaces the five advanced methods.
 
 ## Quick start
 
 ```bash
-uv sync                                  # install core deps (Python 3.11+)
-uv sync --extra snn                      # optional: add torch + snntorch for the SNN stage
-uv run python run_pipeline.py            # ~10–30 min end-to-end (+~12 min if [snn] installed)
-uv run streamlit run app/dashboard.py    # http://localhost:8501
-uv run python -m pytest -q               # 96 passed, 3 skipped (99 total; 3 skips need torch)
+uv sync                                                              # install (Python 3.11+)
+uv sync --extra snn                                                  # optional: pull torch + snntorch to enable the SNN stage
+uv run python run_pipeline.py                                        # BIST (default; ~10-30 min, +~12 min if [snn] installed)
+uv run python run_pipeline.py --config config/settings_sp500.yaml    # S&P-500 (~95 min including parallel TE on 12 cores)
+uv run streamlit run app/dashboard.py                                # http://localhost:8501; sidebar selector flips between BIST and S&P
+DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py       # alternative: boot directly into the S&P universe
+uv run python scripts/sp500_vs_bist.py                               # comparison table (after both pipelines run)
+uv run python -m pytest -q                                           # 100 tests (BIST + SNN combined)
 ```
+
+### Multi-universe data layout (Phase D)
+
+The pipeline reads `market.market_id` from the active YAML and writes per-market
+artifacts under `data/<market_id>/{raw,processed,results}/`. The default BIST
+artifacts live in `data/bist/`. Running with `--config config/settings_sp500.yaml`
+populates `data/sp500/`. The dashboard reads from `data/$DASHBOARD_UNIVERSE/`
+(default `bist`) — set the env var to switch universes.
 
 ## Pipeline at a glance
 
@@ -52,7 +63,7 @@ yfinance ─► raw prices ─► coverage filter ─► log returns ─► vali
 
 ```
 stonecal/
-├── src/                      # Pipeline (12 modules; orchestrator: run_pipeline.py)
+├── src/                      # Pipeline (11 modules; orchestrator: run_pipeline.py)
 │   ├── config.py             # YAML loader, dataclasses, PROJECT_ROOT
 │   ├── data_acquisition.py   # yfinance fetch
 │   ├── data_validation.py    # cross-check vs isyatirimhisse
@@ -67,20 +78,26 @@ stonecal/
 │   ├── transfer_entropy.py   # binned discrete TE with shuffle null
 │   └── snn_signals.py        # spike-coded LIF classifier (optional [snn] extra)
 ├── app/
-│   ├── dashboard.py          # Market Overview entry (~1189 lines, 6 tabs)
-│   ├── pair_analysis.py      # Pair Analysis page (5 tabs)
+│   ├── dashboard.py          # Market Overview entry (~1189 lines, 6 sub-tabs)
+│   ├── pair_analysis.py      # Pair Analysis page (5 sub-tabs)
 │   ├── eee_analysis.py       # EEE Analysis tab (5 sub-tabs incl. Neuromorphic Signals)
-│   ├── utils.py              # 40 cached loaders + section helpers
+│   ├── cross_market.py       # Cross-Market Comparison page (BIST vs S&P-500)
+│   ├── universe_registry.py  # Registry of dashboard-switchable universes
+│   ├── utils.py              # universe-aware cached loaders + section helpers
 │   ├── chart_themes.py       # palette, sidebar theme switcher
 │   └── chart_export.py       # PNG export hook
-├── tests/                    # 6 files, 99 tests (96 pass + 3 torch-skip)
+├── tests/                    # 100 tests (BIST + SNN combined)
 ├── config/
-│   ├── settings.yaml         # main config (incomplete by design)
-│   └── universes/bist100.csv # 102-ticker universe
+│   ├── settings.yaml             # BIST config (default)
+│   ├── settings_sp500.yaml       # S&P-500 config
+│   ├── settings_eeg.yaml         # EEG scaffold (Phase F)
+│   ├── universes/bist100.csv     # 102-ticker BIST universe
+│   ├── universes/sp500_full.csv  # 500-ticker S&P universe
+│   └── universes/eeg_motor_left_right.csv
 ├── data/
-│   ├── raw/                  # yfinance dump
-│   ├── processed/            # post-filter, log returns
-│   └── results/              # everything the dashboard reads (incl. snn_*)
+│   ├── bist/{raw,processed,results}/    # BIST artifacts
+│   ├── sp500/{raw,processed,results}/   # S&P artifacts
+│   └── comparison_bist_vs_sp500.csv     # cross-market headline table
 ├── docs/                     # this directory's index, see below
 ├── CLAUDE.md                 # auto-loaded by Claude Code sessions
 └── pyproject.toml            # uv / hatchling

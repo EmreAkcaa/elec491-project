@@ -1,5 +1,11 @@
-"""CLI entry point: fetch -> validate -> preprocess -> analyze."""
+"""CLI entry point: fetch -> validate -> preprocess -> analyze.
 
+Usage:
+    uv run python run_pipeline.py                                    # BIST (default)
+    uv run python run_pipeline.py --config config/settings_sp500.yaml  # S&P 500
+"""
+
+import argparse
 import logging
 import sys
 
@@ -11,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
+def main(argv: list[str] | None = None):
     from src.config import load_config
     from src.data_acquisition import run_acquisition
     from src.data_validation import validate_sample
@@ -25,10 +31,24 @@ def main():
     from src.wavelet_analysis import run_wavelet_analysis
     from src.transfer_entropy import run_transfer_entropy
 
+    parser = argparse.ArgumentParser(description="StoNeCoAl pipeline.")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to a settings YAML (default: config/settings.yaml).",
+    )
+    args = parser.parse_args(argv)
+
     logger.info("========== StoNeCoAl Pipeline ==========")
 
-    config = load_config()
-    logger.info("Config loaded: %s, %d tickers", config.market.market_id, len(config.tickers))
+    config = load_config(args.config)
+    logger.info(
+        "Config loaded: %s (market_dir=%s), %d tickers, results -> %s",
+        config.market.market_id,
+        config.market_dir,
+        len(config.tickers),
+        config.data_results,
+    )
 
     run_acquisition(config)
     validate_sample(config)

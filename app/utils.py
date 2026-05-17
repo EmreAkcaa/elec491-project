@@ -6,6 +6,7 @@ All pages import from here so caches and logic are never duplicated.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -289,7 +290,7 @@ def section_header(title: str, description: str = ""):
 
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths — universe-aware (BIST / S&P-500 / EEG)
 # ---------------------------------------------------------------------------
 APP_DIR      = Path(__file__).resolve().parent       # app/
 PROJECT_ROOT = APP_DIR.parent                        # repo root
@@ -298,66 +299,142 @@ for _p in (str(PROJECT_ROOT), str(APP_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS   = PROJECT_ROOT / "data" / "results"
-DATA_RAW       = PROJECT_ROOT / "data" / "raw"
+# Phase H: per-session universe selection.
+#
+# DASHBOARD_UNIVERSE is the boot-time default (env-var driven). At runtime,
+# the sidebar selector in app/dashboard.py writes the active universe key into
+# st.session_state["universe"], which current_universe() reads back. Every
+# cached loader in this file routes through a private _load_*(universe, ...)
+# function so Streamlit caches are naturally keyed by universe — BIST and
+# S&P caches coexist; switching is a one-line session-state change.
+DASHBOARD_UNIVERSE = os.environ.get("DASHBOARD_UNIVERSE", "bist")
+
+
+def current_universe() -> str:
+    """Return the active universe key (session_state, fall back to env var)."""
+    try:
+        return st.session_state.get("universe", DASHBOARD_UNIVERSE)
+    except Exception:
+        # st.session_state can raise if called outside a Streamlit script
+        # context (e.g., bare `python -c "import utils"` smoke imports).
+        return DASHBOARD_UNIVERSE
+
+
+def data_raw(universe: str | None = None) -> Path:
+    return PROJECT_ROOT / "data" / (universe or current_universe()) / "raw"
+
+
+def data_processed(universe: str | None = None) -> Path:
+    return PROJECT_ROOT / "data" / (universe or current_universe()) / "processed"
+
+
+def data_results(universe: str | None = None) -> Path:
+    return PROJECT_ROOT / "data" / (universe or current_universe()) / "results"
+
+
+# Backwards-compat module-level constants. These resolve at *import time* using
+# the boot-time DASHBOARD_UNIVERSE env var and do NOT track session state.
+# New code should call data_raw() / data_processed() / data_results() instead.
+DATA_RAW       = data_raw(DASHBOARD_UNIVERSE)
+DATA_PROCESSED = data_processed(DASHBOARD_UNIVERSE)
+DATA_RESULTS   = data_results(DASHBOARD_UNIVERSE)
 
 
 # ---------------------------------------------------------------------------
-# Cached data loaders
+# Cached data loaders — public wrappers thread session_state into a
+# universe-keyed underscored cache. The underscored functions are what
+# Streamlit actually caches; the public wrappers exist so call sites can
+# stay parameter-free.
 # ---------------------------------------------------------------------------
 
 @st.cache_data
+def _load_adj_close(universe: str) -> pd.DataFrame:
+    return pd.read_parquet(data_processed(universe) / "adj_close.parquet")
+
+
 def load_adj_close() -> pd.DataFrame:
-    return pd.read_parquet(DATA_PROCESSED / "adj_close.parquet")
+    return _load_adj_close(current_universe())
 
 
 @st.cache_data
+def _load_log_returns(universe: str) -> pd.DataFrame:
+    return pd.read_parquet(data_processed(universe) / "log_returns.parquet")
+
+
 def load_log_returns() -> pd.DataFrame:
-    return pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    return _load_log_returns(current_universe())
 
 
 @st.cache_data
+def _load_summary_stats(universe: str) -> pd.DataFrame:
+    return pd.read_parquet(data_results(universe) / "summary_stats.parquet")
+
+
 def load_summary_stats() -> pd.DataFrame:
-    return pd.read_parquet(DATA_RESULTS / "summary_stats.parquet")
+    return _load_summary_stats(current_universe())
 
 
 @st.cache_data
+def _load_batch_corr(universe: str) -> pd.DataFrame:
+    return pd.read_parquet(data_results(universe) / "pearson_corr.parquet")
+
+
 def load_batch_corr() -> pd.DataFrame:
-    return pd.read_parquet(DATA_RESULTS / "pearson_corr.parquet")
+    return _load_batch_corr(current_universe())
 
 
 @st.cache_data
+def _load_coverage(universe: str) -> pd.DataFrame:
+    return pd.read_csv(data_processed(universe) / "coverage_report.csv")
+
+
 def load_coverage() -> pd.DataFrame:
-    return pd.read_csv(DATA_PROCESSED / "coverage_report.csv")
+    return _load_coverage(current_universe())
 
 
 @st.cache_data
+def _load_top_bottom(universe: str) -> pd.DataFrame:
+    return pd.read_csv(data_results(universe) / "top_bottom_pairs.csv")
+
+
 def load_top_bottom() -> pd.DataFrame:
-    return pd.read_csv(DATA_RESULTS / "top_bottom_pairs.csv")
+    return _load_top_bottom(current_universe())
 
 
 @st.cache_data
+def _load_metadata(universe: str) -> dict:
+    path = data_results(universe) / "pipeline_metadata.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
 def load_metadata() -> dict:
-    path = DATA_RESULTS / "pipeline_metadata.json"
+    return _load_metadata(current_universe())
+
+
+@st.cache_data
+def _load_fetch_metadata(universe: str) -> dict:
+    path = data_raw(universe) / "fetch_metadata.json"
     if path.exists():
         with open(path) as f:
             return json.load(f)
     return {}
 
 
-@st.cache_data
 def load_fetch_metadata() -> dict:
-    path = DATA_RAW / "fetch_metadata.json"
-    if path.exists():
-        with open(path) as f:
-            return json.load(f)
-    return {}
+    return _load_fetch_metadata(current_universe())
 
 
 @st.cache_data
-def load_xu100() -> pd.Series:
-    path = DATA_RAW / "xu100.parquet"
+def _load_xu100(universe: str) -> pd.Series:
+    """Load the universe's market-index series.
+
+    The file is named ``xu100.parquet`` for historical reasons (the original
+    BIST universe) but for S&P-500 it contains the ``^GSPC`` series.
+    """
+    path = data_raw(universe) / "xu100.parquet"
     if path.exists():
         df = pd.read_parquet(path)
         if "Adj Close" in df.columns:
@@ -368,10 +445,14 @@ def load_xu100() -> pd.Series:
     return pd.Series(dtype=float)
 
 
+def load_xu100() -> pd.Series:
+    return _load_xu100(current_universe())
+
+
 @st.cache_data
-def load_linkage():
-    Z_path     = DATA_RESULTS / "linkage_matrix.npy"
-    labels_path = DATA_RESULTS / "linkage_labels.json"
+def _load_linkage(universe: str):
+    Z_path = data_results(universe) / "linkage_matrix.npy"
+    labels_path = data_results(universe) / "linkage_labels.json"
     if Z_path.exists() and labels_path.exists():
         Z = np.load(Z_path)
         with open(labels_path) as f:
@@ -380,45 +461,69 @@ def load_linkage():
     return None, None
 
 
+def load_linkage():
+    return _load_linkage(current_universe())
+
+
 @st.cache_data
-def load_dendrogram_order() -> Optional[list]:
-    path = DATA_RESULTS / "dendrogram_order.json"
+def _load_dendrogram_order(universe: str) -> Optional[list]:
+    path = data_results(universe) / "dendrogram_order.json"
     if path.exists():
         with open(path) as f:
             return json.load(f)
     return None
 
 
+def load_dendrogram_order() -> Optional[list]:
+    return _load_dendrogram_order(current_universe())
+
+
 @st.cache_data
+def _load_cluster_assignments(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "cluster_assignments.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_cluster_assignments() -> pd.DataFrame:
-    path = DATA_RESULTS / "cluster_assignments.csv"
+    return _load_cluster_assignments(current_universe())
+
+
+@st.cache_data
+def _load_mst_edges(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mst_edges.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
 
-@st.cache_data
 def load_mst_edges() -> pd.DataFrame:
-    path = DATA_RESULTS / "mst_edges.csv"
+    return _load_mst_edges(current_universe())
+
+
+@st.cache_data
+def _load_mst_metrics(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mst_node_metrics.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
 
-@st.cache_data
 def load_mst_metrics() -> pd.DataFrame:
-    path = DATA_RESULTS / "mst_node_metrics.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_mst_metrics(current_universe())
 
 
 @st.cache_data
-def load_dislocation_candidates() -> pd.DataFrame:
-    path = DATA_RESULTS / "dislocation_candidates.csv"
+def _load_dislocation_candidates(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "dislocation_candidates.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
+
+
+def load_dislocation_candidates() -> pd.DataFrame:
+    return _load_dislocation_candidates(current_universe())
 
 
 # ---------------------------------------------------------------------------
@@ -426,162 +531,238 @@ def load_dislocation_candidates() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 @st.cache_data
+def _load_eigenvalue_spectrum(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "eigenvalue_spectrum.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_eigenvalue_spectrum() -> pd.DataFrame:
-    path = DATA_RESULTS / "eigenvalue_spectrum.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_eigenvalue_spectrum(current_universe())
 
 
 @st.cache_data
+def _load_denoised_corr(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "denoised_corr.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
 def load_denoised_corr() -> pd.DataFrame:
-    path = DATA_RESULTS / "denoised_corr.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    return pd.DataFrame()
+    return _load_denoised_corr(current_universe())
 
 
 @st.cache_data
+def _load_denoised_mst_edges(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "denoised_mst_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_denoised_mst_edges() -> pd.DataFrame:
-    path = DATA_RESULTS / "denoised_mst_edges.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_denoised_mst_edges(current_universe())
 
 
 @st.cache_data
+def _load_partial_corr(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "partial_corr.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
 def load_partial_corr() -> pd.DataFrame:
-    path = DATA_RESULTS / "partial_corr.parquet"
+    return _load_partial_corr(current_universe())
+
+
+@st.cache_data
+def _load_precision_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "precision_matrix.parquet"
     if path.exists():
         return pd.read_parquet(path)
     return pd.DataFrame()
 
 
-@st.cache_data
 def load_precision_matrix() -> pd.DataFrame:
-    path = DATA_RESULTS / "precision_matrix.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    return pd.DataFrame()
+    return _load_precision_matrix(current_universe())
 
 
 @st.cache_data
+def _load_partial_corr_edges(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "partial_corr_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_partial_corr_edges() -> pd.DataFrame:
-    path = DATA_RESULTS / "partial_corr_edges.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_partial_corr_edges(current_universe())
 
 
 @st.cache_data
+def _load_glasso_metadata(universe: str) -> dict:
+    path = data_results(universe) / "glasso_metadata.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
 def load_glasso_metadata() -> dict:
-    path = DATA_RESULTS / "glasso_metadata.json"
+    return _load_glasso_metadata(current_universe())
+
+
+@st.cache_data
+def _load_wavelet_metadata(universe: str) -> dict:
+    path = data_results(universe) / "wavelet_metadata.json"
     if path.exists():
         with open(path) as f:
             return json.load(f)
     return {}
 
 
-@st.cache_data
 def load_wavelet_metadata() -> dict:
-    path = DATA_RESULTS / "wavelet_metadata.json"
-    if path.exists():
-        with open(path) as f:
-            return json.load(f)
-    return {}
+    return _load_wavelet_metadata(current_universe())
 
 
 @st.cache_data
+def _load_wavelet_mst_edges(universe: str, scale: int) -> pd.DataFrame:
+    path = data_results(universe) / f"wavelet_mst_edges_scale{scale}.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_wavelet_mst_edges(scale: int) -> pd.DataFrame:
-    path = DATA_RESULTS / f"wavelet_mst_edges_scale{scale}.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_wavelet_mst_edges(current_universe(), scale)
 
 
 @st.cache_data
+def _load_wavelet_corr(universe: str, scale: int) -> pd.DataFrame:
+    path = data_results(universe) / f"wavelet_corr_scale{scale}.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
 def load_wavelet_corr(scale: int) -> pd.DataFrame:
-    path = DATA_RESULTS / f"wavelet_corr_scale{scale}.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    return pd.DataFrame()
+    return _load_wavelet_corr(current_universe(), scale)
 
 
 @st.cache_data
+def _load_te_edges(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "te_network_edges.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_te_edges() -> pd.DataFrame:
-    path = DATA_RESULTS / "te_network_edges.csv"
+    return _load_te_edges(current_universe())
+
+
+@st.cache_data
+def _load_te_node_roles(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "te_node_roles.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
 
-@st.cache_data
 def load_te_node_roles() -> pd.DataFrame:
-    path = DATA_RESULTS / "te_node_roles.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_te_node_roles(current_universe())
 
 
 @st.cache_data
+def _load_te_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "transfer_entropy_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
 def load_te_matrix() -> pd.DataFrame:
-    path = DATA_RESULTS / "transfer_entropy_matrix.parquet"
+    return _load_te_matrix(current_universe())
+
+
+@st.cache_data
+def _load_net_te_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "net_transfer_entropy_matrix.parquet"
     if path.exists():
         return pd.read_parquet(path)
     return pd.DataFrame()
 
 
-@st.cache_data
 def load_net_te_matrix() -> pd.DataFrame:
-    path = DATA_RESULTS / "net_transfer_entropy_matrix.parquet"
-    if path.exists():
-        return pd.read_parquet(path)
-    return pd.DataFrame()
+    return _load_net_te_matrix(current_universe())
 
 
 @st.cache_data
+def _load_denoised_mst_metrics(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "denoised_mst_node_metrics.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
 def load_denoised_mst_metrics() -> pd.DataFrame:
-    path = DATA_RESULTS / "denoised_mst_node_metrics.csv"
+    return _load_denoised_mst_metrics(current_universe())
+
+
+@st.cache_data
+def _load_wavelet_mst_metrics(universe: str, scale: int) -> pd.DataFrame:
+    path = data_results(universe) / f"wavelet_mst_metrics_scale{scale}.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
 
-@st.cache_data
 def load_wavelet_mst_metrics(scale: int) -> pd.DataFrame:
-    path = DATA_RESULTS / f"wavelet_mst_metrics_scale{scale}.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return _load_wavelet_mst_metrics(current_universe(), scale)
 
 
 @st.cache_data
-def load_anomalies() -> pd.DataFrame:
-    path = DATA_PROCESSED / "anomalies.csv"
+def _load_anomalies(universe: str) -> pd.DataFrame:
+    path = data_processed(universe) / "anomalies.csv"
     if path.exists():
         df = pd.read_csv(path, parse_dates=["date"]) if path.stat().st_size > 0 else pd.DataFrame()
         return df
     return pd.DataFrame()
 
 
+def load_anomalies() -> pd.DataFrame:
+    return _load_anomalies(current_universe())
+
+
 @st.cache_data
+def _load_rolling_market_stats_precomputed(universe: str, window: int) -> pd.DataFrame:
+    path = data_results(universe) / f"rolling_market_stats_w{window}.parquet"
+    if path.exists():
+        df = pd.read_parquet(path)
+        df.index = pd.to_datetime(df.index)
+        return df
+    return pd.DataFrame()
+
+
 def load_rolling_market_stats_precomputed(window: int) -> pd.DataFrame:
-    path = DATA_RESULTS / f"rolling_market_stats_w{window}.parquet"
-    if path.exists():
-        df = pd.read_parquet(path)
-        df.index = pd.to_datetime(df.index)
-        return df
-    return pd.DataFrame()
+    return _load_rolling_market_stats_precomputed(current_universe(), window)
 
 
 @st.cache_data
-def load_rolling_sector_stats_precomputed() -> pd.DataFrame:
-    path = DATA_RESULTS / "rolling_sector_stats.parquet"
+def _load_rolling_sector_stats_precomputed(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "rolling_sector_stats.parquet"
     if path.exists():
         df = pd.read_parquet(path)
         df.index = pd.to_datetime(df.index)
         return df
     return pd.DataFrame()
+
+
+def load_rolling_sector_stats_precomputed() -> pd.DataFrame:
+    return _load_rolling_sector_stats_precomputed(current_universe())
 
 
 # ---------------------------------------------------------------------------
@@ -589,28 +770,36 @@ def load_rolling_sector_stats_precomputed() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 @st.cache_data
-def load_snn_metrics() -> dict:
+def _load_snn_metrics(universe: str) -> dict:
     """Per-pair + aggregate SNN metrics (macro-F1, Sharpe, fold-level)."""
-    path = DATA_RESULTS / "snn_metrics.json"
+    path = data_results(universe) / "snn_metrics.json"
     if path.exists():
         with open(path) as f:
             return json.load(f)
     return {}
 
 
+def load_snn_metrics() -> dict:
+    return _load_snn_metrics(current_universe())
+
+
 @st.cache_data
-def load_snn_pair_list() -> pd.DataFrame:
+def _load_snn_pair_list(universe: str) -> pd.DataFrame:
     """List of pairs the SNN was trained on (ticker_a, ticker_b, pair_id)."""
-    path = DATA_RESULTS / "snn_pair_list.csv"
+    path = data_results(universe) / "snn_pair_list.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
 
+def load_snn_pair_list() -> pd.DataFrame:
+    return _load_snn_pair_list(current_universe())
+
+
 @st.cache_data
-def load_snn_signals(pair_id: str) -> pd.DataFrame:
+def _load_snn_signals(universe: str, pair_id: str) -> pd.DataFrame:
     """Per-pair daily SNN signal: date, zscore, class probabilities, signal labels."""
-    path = DATA_RESULTS / "snn_signals" / f"{pair_id}.parquet"
+    path = data_results(universe) / "snn_signals" / f"{pair_id}.parquet"
     if path.exists():
         df = pd.read_parquet(path)
         if "date" in df.columns:
@@ -619,31 +808,47 @@ def load_snn_signals(pair_id: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def load_snn_signals(pair_id: str) -> pd.DataFrame:
+    return _load_snn_signals(current_universe(), pair_id)
+
+
 @st.cache_data
-def load_snn_training_history() -> pd.DataFrame:
+def _load_snn_training_history(universe: str) -> pd.DataFrame:
     """Epoch-by-epoch training history of the universal SNN model."""
-    path = DATA_RESULTS / "snn_training_history.csv"
+    path = data_results(universe) / "snn_training_history.csv"
     if path.exists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
 
+def load_snn_training_history() -> pd.DataFrame:
+    return _load_snn_training_history(current_universe())
+
+
 @st.cache_data
-def load_snn_raster_sample() -> pd.DataFrame:
+def _load_snn_raster_sample(universe: str) -> pd.DataFrame:
     """Spike raster from the sample pair (day, timestep, neuron, spike)."""
-    path = DATA_RESULTS / "snn_spike_raster_sample.parquet"
+    path = data_results(universe) / "snn_spike_raster_sample.parquet"
     if path.exists():
         return pd.read_parquet(path)
     return pd.DataFrame()
+
+
+def load_snn_raster_sample() -> pd.DataFrame:
+    return _load_snn_raster_sample(current_universe())
 
 
 @st.cache_data
-def load_snn_membrane_sample() -> pd.DataFrame:
+def _load_snn_membrane_sample(universe: str) -> pd.DataFrame:
     """Membrane-potential V(t) for the sample pair's output-layer neurons."""
-    path = DATA_RESULTS / "snn_membrane_sample.parquet"
+    path = data_results(universe) / "snn_membrane_sample.parquet"
     if path.exists():
         return pd.read_parquet(path)
     return pd.DataFrame()
+
+
+def load_snn_membrane_sample() -> pd.DataFrame:
+    return _load_snn_membrane_sample(current_universe())
 
 
 # ---------------------------------------------------------------------------

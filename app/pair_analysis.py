@@ -1,7 +1,10 @@
 """Pair Analysis view — rendered inline from dashboard.py via render().
 
-Full deep-dive into two BIST-100 stocks: correlation dynamics, price comparison,
-risk metrics, return distributions, volatility, drawdown, and MST position.
+Full deep-dive into two equities of the active universe (BIST or S&P): correlation
+dynamics, price comparison, risk metrics, return distributions, volatility,
+drawdown, and MST position. Data is loaded via the universe-aware loaders in
+``app/utils.py``, so this page works for any universe registered in
+``app/universe_registry.py``.
 """
 
 from __future__ import annotations

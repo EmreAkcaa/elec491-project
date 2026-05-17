@@ -1,6 +1,7 @@
-"""StoNeCoAl — BIST-100 Correlation Analysis dashboard."""
+"""StoNeCoAl — multi-universe correlation-network dashboard (BIST 100, S&P 500)."""
 
 import io
+import os
 import sys
 from pathlib import Path
 
@@ -33,7 +34,7 @@ from src.rolling_correlation import (  # noqa: E402
 )
 
 from utils import (  # noqa: E402
-    PROJECT_ROOT, DATA_PROCESSED, DATA_RESULTS, DATA_RAW,
+    PROJECT_ROOT, data_processed, current_universe,
     load_adj_close, load_log_returns, load_summary_stats, load_batch_corr,
     load_coverage, load_top_bottom, load_metadata, load_fetch_metadata,
     load_xu100, load_linkage, load_dendrogram_order, load_cluster_assignments,
@@ -44,6 +45,7 @@ from utils import (  # noqa: E402
     section_header, render_chart,
 )
 from chart_themes import render_theme_sidebar  # noqa: E402
+from universe_registry import available_universes, get_universe  # noqa: E402
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -100,15 +102,48 @@ def _compute_sector(ret_json, sec_map_items, window, step, method):
 # Page config & global styling
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── Universe initialisation MUST run before st.set_page_config so the
+# browser tab title reflects the active universe on first paint. We seed
+# session_state from the DASHBOARD_UNIVERSE env var (falling back to bist),
+# clamped to whichever universes have populated artifacts on disk.
+_AVAIL_UNIVERSES = available_universes()
+_AVAIL_KEYS      = [u.key for u in _AVAIL_UNIVERSES] or ["bist"]
+_BOOT_KEY        = os.environ.get("DASHBOARD_UNIVERSE", "bist")
+if _BOOT_KEY not in _AVAIL_KEYS:
+    _BOOT_KEY = _AVAIL_KEYS[0]
+if "universe" not in st.session_state or st.session_state["universe"] not in _AVAIL_KEYS:
+    st.session_state["universe"] = _BOOT_KEY
+
+_active_universe = get_universe(st.session_state["universe"])
+
 st.set_page_config(
-    page_title="StoNeCoAl — BIST-100",
+    page_title=f"StoNeCoAl — {_active_universe.short_label}",
     page_icon="<svg xmlns='http://www.w3.org/2000/svg'/>",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 inject_custom_css()
 
+# ── Sidebar: dataset selector (top) + theme controls (existing)
 with st.sidebar:
+    if len(_AVAIL_UNIVERSES) > 1:
+        st.markdown("**Dataset**")
+        st.selectbox(
+            "Universe",
+            _AVAIL_KEYS,
+            format_func=lambda k: get_universe(k).label,
+            key="universe",  # bound directly to session_state; Streamlit reruns on change
+            label_visibility="collapsed",
+        )
+        # Re-read after the selectbox in case the user just changed it.
+        _active_universe = get_universe(st.session_state["universe"])
+        st.caption(_active_universe.description)
+        st.markdown("---")
+    elif _AVAIL_UNIVERSES:
+        # Single universe present — show as a static caption, no selector clutter.
+        st.markdown(f"**Dataset:** {_AVAIL_UNIVERSES[0].short_label}")
+        st.caption(_AVAIL_UNIVERSES[0].description)
+        st.markdown("---")
     render_theme_sidebar()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -116,28 +151,38 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 
 st.markdown(
-    "<div style='display:flex; align-items:center; gap:12px; padding:0; margin:0;'>"
-    "<span style='font-size:1.3rem; font-weight:800; letter-spacing:-0.02em; "
-    "color:#2B2D42;'>StoNeCoAl</span>"
-    "<span style='font-size:0.72rem; color:#8D99AE; letter-spacing:0.06em;'>"
-    "BIST-100 NETWORK ANALYSIS</span></div>",
+    f"<div style='display:flex; align-items:center; gap:12px; padding:0; margin:0;'>"
+    f"<span style='font-size:1.3rem; font-weight:800; letter-spacing:-0.02em; "
+    f"color:#2B2D42;'>StoNeCoAl</span>"
+    f"<span style='font-size:0.72rem; color:#8D99AE; letter-spacing:0.06em;'>"
+    f"{_active_universe.short_label.upper()} NETWORK ANALYSIS</span></div>",
     unsafe_allow_html=True,
 )
 
 # Handle deferred navigation from cross-page jump buttons
 if st.session_state.pop("_goto_pair_analysis", False):
     st.session_state["nav_page"] = "Pair Analysis"
+if st.session_state.pop("_goto_cross_market", False):
+    st.session_state["nav_page"] = "Cross-Market"
 
 _nav = st.segmented_control(
     "Navigate",
-    ["Market Overview", "Pair Analysis"],
+    ["Market Overview", "Pair Analysis", "Cross-Market"],
     key="nav_page",
     default="Market Overview",
     label_visibility="collapsed",
 )
 
+# ── Cross-Market route ───────────────────────────────────────────────────────
+# This page reads from BOTH universes directly (not via current_universe()),
+# so route it BEFORE the per-universe data loads.
+if _nav == "Cross-Market":
+    from cross_market import render as _render_xmarket
+    _render_xmarket()
+    st.stop()
+
 # ══════════════════════════════════════════════════════════════════════════════
-# Shared Data Loading
+# Shared Data Loading  (per active universe)
 # ══════════════════════════════════════════════════════════════════════════════
 
 adj_close = load_adj_close()
@@ -177,7 +222,7 @@ with _settings_col:
                 st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
                 if fetch_meta.get("failures"):
                     st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-            val_path = DATA_PROCESSED / "validation_report.csv"
+            val_path = data_processed() / "validation_report.csv"
             if val_path.exists():
                 val_df = pd.read_csv(val_path)
                 n_pass = (val_df["status"] == "PASS").sum()
@@ -222,8 +267,9 @@ with tab_data:
     with st.container(border=True):
         section_header(
             "Data Coverage & Price Performance",
-            "Left: per-ticker data availability (90% threshold). "
-            "Right: all prices rebased to 100 — the bold black line is XU100.",
+            f"Left: per-ticker data availability (90% threshold). "
+            f"Right: all prices rebased to 100 — the bold black line is "
+            f"{_active_universe.index_ticker}.",
         )
 
         col_left, col_right = st.columns(2)
@@ -250,14 +296,15 @@ with tab_data:
         with col_right:
             norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
             xu100 = load_xu100()
+            _index_label = _active_universe.index_ticker  # "XU100" for BIST, "^GSPC" for S&P
             if not xu100.empty:
                 xu100_window = xu100.loc[start_dt:end_dt]
                 if not xu100_window.empty:
-                    norm_prices["XU100"] = xu100_window / xu100_window.iloc[0] * 100
+                    norm_prices[_index_label] = xu100_window / xu100_window.iloc[0] * 100
 
             fig_prices = go.Figure()
             for col in norm_prices.columns:
-                is_index = col == "XU100"
+                is_index = col == _index_label
                 fig_prices.add_trace(go.Scatter(
                     x=norm_prices.index, y=norm_prices[col], name=col,
                     mode="lines",
@@ -549,7 +596,7 @@ with tab_cluster:
             "Hierarchical Clustering & Sector Validation",
             "Dendrogram built from d = sqrt(2(1-rho)). Stocks merging at lower heights "
             "have more similar return dynamics. Sector validation metrics (ARI, NMI) measure "
-            "how well statistical clusters align with Borsa Istanbul's official sector classifications.",
+            "how well statistical clusters align with the universe's official sector classifications.",
         )
 
         col_dendro, col_clusters = st.columns([3, 2])
@@ -604,7 +651,7 @@ with tab_cluster:
 
                         st.markdown("**Sector Validation**")
                         st.caption(
-                            "How well do statistical clusters match Borsa Istanbul's official "
+                            "How well do statistical clusters match the universe's official "
                             "sector classifications? ARI and NMI range from 0 (random) to 1 (perfect match)."
                         )
                         sv1, sv2, sv3 = st.columns(3)
@@ -612,25 +659,39 @@ with tab_cluster:
                         sv2.metric("Normalized Mutual Info", f"{nmi:.3f}")
                         sv3.metric("Sectors Represented", f"{cluster_df['sector'].nunique()}")
 
-                        _bank_keywords = ["Bank", "Finans"]
-                        bank_tickers = cluster_df[
-                            cluster_df["sector"].str.contains("|".join(_bank_keywords), case=False, na=False)
-                        ]
-                        if not bank_tickers.empty:
-                            bank_clusters = bank_tickers["cluster_id"].unique()
-                            n_bank_clusters = len(bank_clusters)
-                            bank_names = ", ".join(bank_tickers["ticker"].tolist())
-                            if n_bank_clusters == 1:
-                                st.success(
-                                    f"**Bank sanity check passed.** All {len(bank_tickers)} financial tickers "
-                                    f"({bank_names}) are in Cluster {bank_clusters[0]}."
+                        # Universe-appropriate financial-sector sanity check.
+                        # BIST tags banks with "Bank"/"Finans"; S&P uses GICS "Financials".
+                        _BANK_KEYWORDS = {
+                            "bist":  ["Bank", "Finans"],
+                            "sp500": ["Financials"],
+                        }
+                        _bank_keywords = _BANK_KEYWORDS.get(current_universe(), [])
+                        if _bank_keywords:
+                            bank_tickers = cluster_df[
+                                cluster_df["sector"].str.contains(
+                                    "|".join(_bank_keywords), case=False, na=False
                                 )
-                            else:
-                                st.warning(
-                                    f"**Bank sanity check:** {len(bank_tickers)} financial tickers span "
-                                    f"{n_bank_clusters} clusters ({', '.join(str(c) for c in sorted(bank_clusters))}). "
-                                    f"Tickers: {bank_names}"
-                                )
+                            ]
+                            if not bank_tickers.empty:
+                                bank_clusters = bank_tickers["cluster_id"].unique()
+                                n_bank_clusters = len(bank_clusters)
+                                # Cap displayed tickers so the message stays readable on S&P (60+ financials).
+                                if len(bank_tickers) > 12:
+                                    bank_names = ", ".join(bank_tickers["ticker"].tolist()[:12]) + f", … (+{len(bank_tickers) - 12} more)"
+                                else:
+                                    bank_names = ", ".join(bank_tickers["ticker"].tolist())
+                                if n_bank_clusters == 1:
+                                    st.success(
+                                        f"**Financial-sector sanity check passed.** All {len(bank_tickers)} "
+                                        f"financial tickers ({bank_names}) are in Cluster {bank_clusters[0]}."
+                                    )
+                                else:
+                                    st.warning(
+                                        f"**Financial-sector sanity check:** {len(bank_tickers)} "
+                                        f"financial tickers span {n_bank_clusters} clusters "
+                                        f"({', '.join(str(c) for c in sorted(bank_clusters))}). "
+                                        f"Tickers: {bank_names}"
+                                    )
 
                         st.markdown("**Cluster Purity**")
                         st.caption(

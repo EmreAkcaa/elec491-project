@@ -24,8 +24,6 @@ from src.clustering import build_mst, mst_to_edge_df, compute_mst_metrics
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 # Approximate trading-day interpretation of wavelet scales
 SCALE_LABELS = {
@@ -120,9 +118,9 @@ def compute_wavelet_scale_mst(
 def run_wavelet_analysis(config: PipelineConfig) -> None:
     """Pipeline step: wavelet multi-scale correlation and MST analysis."""
     logger.info("=== Wavelet Multi-Scale Analysis ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
-    returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    returns = pd.read_parquet(config.data_processed / "log_returns.parquet")
     logger.info("Loaded log returns: %d days x %d tickers", *returns.shape)
 
     sector_map = dict(zip(config.universe["ticker"], config.universe["sector"]))
@@ -137,12 +135,12 @@ def run_wavelet_analysis(config: PipelineConfig) -> None:
 
         corr_matrix, mst_edges, mst_metrics = compute_wavelet_scale_mst(scale_returns)
 
-        corr_matrix.to_parquet(DATA_RESULTS / f"wavelet_corr_scale{level}.parquet")
-        mst_edges.to_csv(DATA_RESULTS / f"wavelet_mst_edges_scale{level}.csv", index=False)
+        corr_matrix.to_parquet(config.data_results / f"wavelet_corr_scale{level}.parquet")
+        mst_edges.to_csv(config.data_results / f"wavelet_mst_edges_scale{level}.csv", index=False)
 
         mst_metrics["sector"] = mst_metrics["ticker"].map(sector_map)
         mst_metrics.to_csv(
-            DATA_RESULTS / f"wavelet_mst_metrics_scale{level}.csv", index=False
+            config.data_results / f"wavelet_mst_metrics_scale{level}.csv", index=False
         )
 
     # Save scale metadata
@@ -155,7 +153,7 @@ def run_wavelet_analysis(config: PipelineConfig) -> None:
             for level in scale_data
         },
     }
-    with open(DATA_RESULTS / "wavelet_metadata.json", "w") as f:
+    with open(config.data_results / "wavelet_metadata.json", "w") as f:
         json.dump(meta, f, indent=2)
 
     logger.info("Wavelet analysis complete: %d scales", len(scale_data))

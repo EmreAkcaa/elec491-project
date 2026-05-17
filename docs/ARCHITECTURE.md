@@ -47,13 +47,19 @@
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ Application (Streamlit, no compute except light rolling/MST layout)         │
-│   app/utils.py            cached loaders, theming, render_chart, warnings   │
-│   app/dashboard.py        Market Overview (6 tabs) + nav to Pair Analysis   │
-│   app/pair_analysis.py    Pair Analysis page (5 tabs)                       │
-│   app/eee_analysis.py     EEE Analysis sub-tab (5 sub-tabs: RMT/Glasso/     │
-│                           Wavelet/TE/Neuromorphic Signals)                  │
-│   app/chart_themes.py     palette, sidebar theme switcher                   │
-│   app/chart_export.py     plotly→PNG hook used by render_chart              │
+│   app/utils.py             universe-aware cached loaders (40), theming,     │
+│                            render_chart, warnings                           │
+│   app/universe_registry.py registry of dashboard-switchable universes       │
+│                            (bist, sp500) + available_universes() filter     │
+│   app/dashboard.py         Market Overview (6 tabs) + nav to Pair Analysis  │
+│                            + Cross-Market; sidebar universe selector        │
+│   app/pair_analysis.py     Pair Analysis page (5 tabs); universe-aware      │
+│   app/eee_analysis.py      EEE Analysis sub-tab (5 sub-tabs: RMT/Glasso/    │
+│                            Wavelet/TE/Neuromorphic Signals)                 │
+│   app/cross_market.py      Cross-Market Comparison page (BIST vs S&P 500    │
+│                            side-by-side; reads both data trees directly)    │
+│   app/chart_themes.py      palette, sidebar theme switcher                  │
+│   app/chart_export.py      plotly→PNG hook used by render_chart             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -80,6 +86,11 @@ Stages 8–12 are the "EEE Analysis" group (informal label, surfaced in dashboar
 sub-tabs). Stage 12 (SNN) is wrapped in `try/except ImportError` inside
 `run_pipeline.py` — the rest of the pipeline completes if the optional
 `[snn]` extra (`torch + snntorch`) is not installed.
+
+Phase D parameterised every stage's output path by `config.market_id`, so
+artifacts now live under `data/<market>/{raw,processed,results}/` rather than
+the legacy `data/{raw,processed,results}/`. BIST, S&P-500, and EEG universes
+coexist on disk via different `market_id` values.
 
 ## Module dependency graph (intra-`src/`)
 
@@ -122,6 +133,7 @@ the most reused functions in the pipeline (called by RMT and wavelet stages).
 | TE shuffle null distribution | Pipeline (seeded). App reads precomputed matrix. |
 | Wavelet decomposition | Pipeline (one pass per scale). App reads `wavelet_corr_scale{1..7}.parquet`. |
 | SNN training (universal model) | Pipeline (one pooled training run, ~12 min CPU). App reads `snn_metrics.json` and the per-pair signal parquets. Re-inference reuses cached `universal.pt` (~30 s). |
+| Cross-market comparison table | Script (`scripts/sp500_vs_bist.py`) → `data/comparison_bist_vs_sp500.csv`. App's Cross-Market page reads the CSV plus each universe's eigenvalue spectrum + MST + crisis-window stats directly. |
 
 ## Glossary
 

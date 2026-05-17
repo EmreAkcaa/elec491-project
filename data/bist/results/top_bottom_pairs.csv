@@ -1,0 +1,21 @@
+ticker_1,ticker_2,correlation,sector_1,sector_2,rank_type
+YKBNK,AKBNK,0.8594526903247254,Banking,Banking,top
+AKBNK,GARAN,0.8485596601057145,Banking,Banking,top
+YKBNK,ISCTR,0.84384893270985,Banking,Banking,top
+AKBNK,ISCTR,0.8433883710087919,Banking,Banking,top
+VAKBN,HALKB,0.8343968535866869,Banking,Banking,top
+YKBNK,GARAN,0.8011831000329147,Banking,Banking,top
+ISCTR,GARAN,0.7932560714187544,Banking,Banking,top
+PGSUS,THYAO,0.7755057396231612,Airlines,Airlines,top
+SAHOL,KCHOL,0.775405009520187,Conglomerates,Conglomerates,top
+EREGL,KRDMD,0.7293187829709539,Steel,Steel,top
+BIMAS,PAPIL,0.13412494426645,Retail,Defense,bottom
+BTCIM,AGESA,0.14066448003959564,Building Materials,Insurance,bottom
+BTCIM,ANHYT,0.15895304438943925,Building Materials,Insurance,bottom
+OYAKC,PAPIL,0.16573397848272092,Building Materials,Defense,bottom
+BTCIM,BIMAS,0.16698029065494557,Building Materials,Retail,bottom
+BTCIM,TCELL,0.1758753782555815,Building Materials,Telecommunications,bottom
+PAPIL,AGESA,0.17740081287164447,Defense,Insurance,bottom
+BTCIM,ECILC,0.17771781378576842,Building Materials,Pharmaceuticals,bottom
+BTCIM,MGROS,0.1782127607610176,Building Materials,Retail,bottom
+PAPIL,GARAN,0.18157768616367329,Defense,Banking,bottom

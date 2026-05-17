@@ -127,3 +127,25 @@ See FUTURE_WORK F-2 for the full hoist list.
 ### L-5 — Test gaps for 6 of 11 src modules
 
 See FUTURE_WORK F-4. Testing exists for: analysis, clustering, pair_dislocation, preprocessing, rolling_correlation. Missing: data_acquisition, data_validation, config, rmt_denoising, partial_correlation, wavelet_analysis, transfer_entropy.
+
+---
+
+## RESOLVED (Phase G, 2026-05-17)
+
+### G-1 — BIST anomalies output was 4 unhandled corporate actions, not market events — RESOLVED
+
+| | |
+|---|---|
+| File:line | `data/bist/processed/anomalies.csv` (output); `src/preprocessing.py:135-160` (fix); `config/settings.yaml:18-26` (override list) |
+| Symptom | The 4 entries flagged in `anomalies.csv` (CCOLA 2024-08-01 log-return −2.38, HEKTS 2024-09-09 −1.05, AYGAZ 2022-09-01 +0.55, HEKTS 2021-04-30 +0.37) were not market anomalies but unhandled corporate-action artifacts. yfinance `Adj Close` failed to back-adjust four BIST corporate actions: CCOLA's 10.81× bonus issue (828.44 → 76.65), HEKTS's 2.84× and 1.45× bonus issues, AYGAZ's 1.72× bonus issue. Inspected pre/post adjusted-close prices to confirm. The contaminated cells inflated \|log-return\| values 0.4–2.4, dragging affected tickers' mean correlation down (CCOLA's mean \|corr\| was 0.124 with the bug, 0.361 after the mask — a 3× hidden distortion). |
+| Fix | Added `manual_anomaly_nulls: list = field(default_factory=list)` to `PreprocessingConfig`. `run_preprocessing` iterates the list and sets `log_returns.loc[ts, ticker] = NaN` for each `[ticker, "YYYY-MM-DD"]` entry, **after** `compute_log_returns` and **before** `flag_anomalies`. Default empty list preserves backward compatibility for `settings_sp500.yaml` and `settings_eeg.yaml`. BIST `settings.yaml` declares the 4 corrections inline with audit comments. |
+| Verification | Post-rerun: `data/bist/processed/anomalies.csv` is header-only (0 flagged rows); the 4 (ticker, date) cells are NaN; CCOLA mean \|corr\| = 0.361 (was 0.124); MST hubs (KCHOL, SISE, SAHOL) unchanged; downstream NaN handling validated (TE delta per masked cell ≈ +0.001 nats; Glasso loses 3 of 1543 rows = 0.2 %). |
+
+### G-2 — S&P-500 universe had 3 dual-class share duplicates — RESOLVED
+
+| | |
+|---|---|
+| File:line | `config/universes/sp500_full.csv` |
+| Symptom | The Wikipedia S&P 500 constituent list contains the company entries for Alphabet, Fox Corp, and News Corp **twice** — once for Class A and once for Class B/C shares. Including both in the universe caused mechanical 0.99+ pairwise correlations (GOOGL-GOOG 0.996, FOXA-FOX 0.988, NWSA-NWS 0.974) and produced a nonsense pair-dislocation #1 candidate of GOOGL-GOOG (share-class arbitrage with current Z-score −2.26 and 26-day half-life — literally tradable but meaningless). |
+| Fix | Dropped GOOG, FOX, NWS from the universe CSV (kept GOOGL, FOXA, NWSA — the voting/more-liquid classes by convention). BRK-B and BF-B are NOT duplicates (their A-class counterparts are not in S&P 500) and were kept. Universe: 503 → 500. |
+| Verification | Post-rerun: top-10 correlations contain no 0.99+ artifacts (max now UDR-EQR 0.927, apartment REITs); pair-dislocation #1 is CMS-AEP (electric utilities, 35-day half-life, actually tradeable); RMT structure unchanged (D_eff = 6.56, top eig share 38.1 %); MST hubs unchanged (PRU/AMP/PH). |

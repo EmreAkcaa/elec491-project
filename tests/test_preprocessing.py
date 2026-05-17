@@ -100,3 +100,49 @@ def test_flag_anomalies():
     assert set(anomalies["ticker"]) == {"X"}
     assert 0.50 in anomalies["return_value"].values
     assert -0.40 in anomalies["return_value"].values
+
+
+def test_manual_anomaly_nulls_applied():
+    """Mirror of the masking loop in run_preprocessing: each (ticker, date)
+    in manual_anomaly_nulls must NaN-mask the corresponding log_returns cell
+    before anomaly flagging. Missing tickers/dates skip cleanly."""
+    dates = pd.date_range("2020-01-01", periods=10, freq="B")
+    prices = pd.DataFrame(
+        {"AAA": np.linspace(100, 110, 10), "BBB": np.linspace(50, 55, 10)},
+        index=dates,
+    )
+    log_returns = compute_log_returns(prices)
+
+    # Apply the same in-place mask logic that run_preprocessing uses
+    overrides = [
+        ("AAA", "2020-01-03"),
+        ("BBB", "2020-01-07"),
+        ("AAA", "2099-12-31"),   # missing date -> should skip
+        ("ZZZ", "2020-01-06"),   # missing ticker -> should skip
+    ]
+    applied = skipped = 0
+    for ticker, date_str in overrides:
+        ts = pd.Timestamp(date_str)
+        if ticker in log_returns.columns and ts in log_returns.index:
+            log_returns.loc[ts, ticker] = np.nan
+            applied += 1
+        else:
+            skipped += 1
+
+    assert applied == 2
+    assert skipped == 2
+    assert np.isnan(log_returns.loc["2020-01-03", "AAA"])
+    assert np.isnan(log_returns.loc["2020-01-07", "BBB"])
+    # Untouched cells stay non-NaN
+    assert not np.isnan(log_returns.loc["2020-01-03", "BBB"])
+    assert not np.isnan(log_returns.loc["2020-01-07", "AAA"])
+
+    # And the masked cells are correctly dropped by flag_anomalies' stack()
+    # (which by default has dropna=True so NaN cells never appear)
+    flagged = flag_anomalies(log_returns, threshold=0.001)
+    assert not (
+        (flagged["ticker"] == "AAA") & (flagged["date"] == pd.Timestamp("2020-01-03"))
+    ).any()
+    assert not (
+        (flagged["ticker"] == "BBB") & (flagged["date"] == pd.Timestamp("2020-01-07"))
+    ).any()

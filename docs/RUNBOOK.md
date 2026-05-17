@@ -45,17 +45,54 @@ stage logs a warning and the rest of the pipeline still completes
 
 ## Run the full pipeline
 
+### BIST 100 (default)
+
 ```bash
 uv run python run_pipeline.py
 ```
 
+Writes to `data/bist/{raw,processed,results}/`.
+
+### S&P 500
+
+```bash
+uv run python run_pipeline.py --config config/settings_sp500.yaml
+```
+
+Writes to `data/sp500/{raw,processed,results}/`. ~95 min wall time including
+parallel TE on 12 cores (485 surviving tickers post-coverage filter).
+
+### EEG (scaffold)
+
+```bash
+uv sync --extra eeg
+uv run python run_pipeline_eeg.py
+```
+
+Writes to `data/eeg_motor_left_right/{processed,results}/`. Not yet wired
+into the dashboard's universe selector (the SNN and Pair Analysis sub-tabs
+assume stock semantics).
+
+### Cross-market refresh
+
+After running both BIST and S&P pipelines:
+
+```bash
+uv run python scripts/sp500_vs_bist.py
+```
+
+Regenerates `data/comparison_bist_vs_sp500.csv` — the Cross-Market dashboard
+page's headline-numbers data source.
+
+### Timings
+
 Stages execute in the order documented in
-[`ARCHITECTURE.md`](ARCHITECTURE.md). Total wall time ~10–30 min depending
+[`ARCHITECTURE.md`](ARCHITECTURE.md). BIST total wall time ~10–30 min depending
 on network and CPU (~12 additional minutes for SNN training if the `[snn]`
 extra is installed). The slowest stages are **transfer entropy**
-(`O(N² · S · T)` ≈ 10k pair-shuffles, typically 5–10 min) and **SNN
-training** (~12 min CPU; subsequent re-inference is ~30 s when the cached
-`universal.pt` exists).
+(`O(N² · S · T)` ≈ 10k pair-shuffles, typically 5–10 min on BIST, ~80 min on
+S&P) and **SNN training** (~12 min CPU; subsequent re-inference is ~30 s when
+the cached `universal.pt` exists).
 
 Logging goes to stdout at INFO; redirect to a file if you want a record:
 
@@ -98,7 +135,34 @@ uv run streamlit run app/dashboard.py
 ```
 
 Opens at `http://localhost:8501`. The dashboard reads exclusively from
-`data/processed/` and `data/results/` — it doesn't touch the network.
+`data/<universe>/processed/` and `data/<universe>/results/` — it doesn't
+touch the network.
+
+### Switching universes
+
+The sidebar has a **Dataset** dropdown when more than one universe has a
+populated `pipeline_metadata.json` on disk. BIST and S&P caches coexist —
+switching back to the previous universe is a warm cache hit, not a re-read.
+
+To pick the boot-time default without using the sidebar (e.g. for sharing
+a deep-linked URL), set the env var:
+
+```bash
+DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py    # boots into S&P
+DASHBOARD_UNIVERSE=bist  uv run streamlit run app/dashboard.py    # boots into BIST (default)
+```
+
+The browser tab title is set once from this env var; the in-page header
+chip updates immediately when the user changes the sidebar selector.
+
+### Cross-Market page
+
+Top-level nav has three pages: **Market Overview**, **Pair Analysis**,
+**Cross-Market**. The Cross-Market page reads from both universes
+simultaneously (not via the sidebar selector) and shows the headline
+side-by-side comparison: D_eff invariance (~6.5 across both), MST sector-purity
+divergence (BIST 0.40 vs S&P 0.80), eigenvalue spectra, crisis windows,
+top hubs, and top dislocation candidate per universe.
 
 To kill an orphan Streamlit process on Windows:
 
@@ -199,9 +263,11 @@ uv run python -m src.snn_signals            # ~12 min (requires `[snn]` extra)
 ### Wipe everything and start fresh
 
 ```bash
-rm -rf data/raw data/processed data/results .venv
-uv sync
-uv run python run_pipeline.py
+rm -rf data/bist/{raw,processed,results} data/sp500/{raw,processed,results} .venv
+uv sync --all-extras                                                              # core + snn + eeg + dev
+uv run python run_pipeline.py                                                     # BIST
+uv run python run_pipeline.py --config config/settings_sp500.yaml                 # S&P-500 (~95 min)
+uv run python scripts/sp500_vs_bist.py                                            # refresh cross-market table
 ```
 
 ## Configuration reference

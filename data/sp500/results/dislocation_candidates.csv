@@ -1,0 +1,21 @@
+ticker_a,ticker_b,sector_a,sector_b,correlation,beta,half_life,spread_std,n_signals,current_zscore,rank_score
+CMS,AEP,Utilities,Utilities,0.8432,1.9801,34.8,0.093311,65,-2.5772,0.4867
+MLM,VMC,Materials,Materials,0.9106,0.8377,26.7,0.037391,60,-0.4309,0.4841
+CMS,LNT,Utilities,Utilities,0.8907,1.3997,45.0,0.056127,62,-2.5095,0.4798
+AVB,EQR,Real Estate,Real Estate,0.9258,0.748,48.8,0.047023,73,1.001,0.4756
+WEC,AEE,Utilities,Utilities,0.8574,1.0092,37.1,0.043688,69,1.7916,0.4672
+FITB,HBAN,Financials,Financials,0.887,0.6862,40.2,0.067165,58,-1.5811,0.4528
+NI,CMS,Utilities,Utilities,0.8076,0.3553,29.4,0.048361,53,2.6219,0.4499
+PNC,FITB,Financials,Financials,0.8962,1.0477,58.3,0.077932,58,2.0021,0.4432
+MCO,SPGI,Financials,Financials,0.8867,0.9431,64.5,0.05116,65,-1.9335,0.4393
+WEC,CMS,Utilities,Utilities,0.8787,0.6223,82.5,0.056746,61,2.6503,0.4338
+KEY,USB,Financials,Financials,0.8442,0.8767,29.3,0.065506,60,0.5879,0.4336
+MAA,UDR,Real Estate,Real Estate,0.8725,0.8786,44.5,0.05889,67,0.9027,0.4316
+KEY,TFC,Financials,Financials,0.8724,0.8159,31.0,0.059745,58,-0.1288,0.427
+SYF,COF,Financials,Financials,0.8954,0.6515,139.4,0.138619,62,-2.1574,0.4266
+ESS,EQR,Real Estate,Real Estate,0.9134,0.8409,56.4,0.048225,58,1.0334,0.4239
+CMS,ETR,Utilities,Utilities,0.7645,1.9359,30.8,0.089552,55,-2.5976,0.4238
+LEN,DHI,Consumer Discretionary,Consumer Discretionary,0.9191,1.2498,77.0,0.096166,64,0.7994,0.4232
+PNC,BAC,Financials,Financials,0.8581,0.9205,43.2,0.062521,65,-0.9393,0.4213
+NVR,PHM,Consumer Discretionary,Consumer Discretionary,0.8193,1.8539,40.5,0.133031,62,1.4522,0.42
+NXPI,AMAT,Information Technology,Information Technology,0.7467,1.8922,35.9,0.167861,67,2.129,0.4183

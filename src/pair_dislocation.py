@@ -12,8 +12,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 
 def compute_hedge_ratio(
@@ -300,8 +298,8 @@ def run_pair_dislocation(config: PipelineConfig) -> None:
     """Pipeline Step 7: pair dislocation analysis."""
     logger.info("Step 7 — Pair dislocation analysis")
 
-    adj_close = pd.read_parquet(DATA_PROCESSED / "adj_close.parquet")
-    corr = pd.read_parquet(DATA_RESULTS / "pearson_corr.parquet")
+    adj_close = pd.read_parquet(config.data_processed / "adj_close.parquet")
+    corr = pd.read_parquet(config.data_results / "pearson_corr.parquet")
 
     dc = config.dislocation
     candidates = rank_candidate_pairs(
@@ -319,8 +317,8 @@ def run_pair_dislocation(config: PipelineConfig) -> None:
     )
 
     if not candidates.empty:
-        candidates.to_csv(DATA_RESULTS / "dislocation_candidates.csv", index=False)
-        candidates.to_parquet(DATA_RESULTS / "dislocation_candidates.parquet", index=False)
+        candidates.to_csv(config.data_results / "dislocation_candidates.csv", index=False)
+        candidates.to_parquet(config.data_results / "dislocation_candidates.parquet", index=False)
         logger.info(
             "Saved %d dislocation candidates to data/results/", len(candidates)
         )

@@ -1,0 +1,21 @@
+ticker_1,ticker_2,correlation,sector_1,sector_2,rank_type
+UDR,EQR,0.9269452775482909,Real Estate,Real Estate,top
+AVB,EQR,0.9258058635775186,Real Estate,Real Estate,top
+REG,FRT,0.924847627201957,Real Estate,Real Estate,top
+CFG,FITB,0.9241919066930643,Financials,Financials,top
+RF,FITB,0.9213532924807984,Financials,Financials,top
+MET,PRU,0.9209841702994033,Financials,Financials,top
+LEN,DHI,0.9191330910224291,Consumer Discretionary,Consumer Discretionary,top
+LRCX,AMAT,0.918619317657549,Information Technology,Information Technology,top
+MAA,CPT,0.9159517072700895,Real Estate,Real Estate,top
+KEY,CFG,0.914634241455413,Financials,Financials,top
+CLX,FANG,-0.09566929012102128,Consumer Staples,Energy,bottom
+VRT,GIS,-0.09294535618871924,Industrials,Consumer Staples,bottom
+VRT,CPB,-0.08359872753713032,Industrials,Consumer Staples,bottom
+UBER,GIS,-0.08021996225991072,Industrials,Consumer Staples,bottom
+UBER,CPB,-0.06851855260607914,Industrials,Consumer Staples,bottom
+GIS,CRWD,-0.06724433608209318,Consumer Staples,Information Technology,bottom
+SMCI,GIS,-0.0657733282750236,Information Technology,Consumer Staples,bottom
+SJM,CRWD,-0.06285574367910331,Consumer Staples,Information Technology,bottom
+LYV,CLX,-0.06237126327079446,Communication Services,Consumer Staples,bottom
+CLX,APA,-0.059985002708600965,Consumer Staples,Energy,bottom

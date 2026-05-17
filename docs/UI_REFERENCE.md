@@ -1,16 +1,43 @@
 # UI_REFERENCE
 
-The Streamlit app has two top-level pages selected via a `st.segmented_control`
-in `app/dashboard.py:130`:
+The Streamlit app has three top-level pages selected via a `st.segmented_control`
+in `app/dashboard.py`:
 
-1. **Market Overview** — `app/dashboard.py` (entry; ~1189 lines).
-2. **Pair Analysis** — `app/pair_analysis.py:render` (called from
-   `dashboard.py:148-152`).
+1. **Market Overview** — `app/dashboard.py` (entry; ~1240 lines).
+2. **Pair Analysis** — `app/pair_analysis.py:render`.
+3. **Cross-Market** — `app/cross_market.py:render` (BIST 100 vs S&P 500 side-by-side).
 
 Inside Market Overview, the **EEE Analysis** sub-tab dispatches to
-`app/eee_analysis.py:render` (called from `dashboard.py:1023-1025`).
+`app/eee_analysis.py:render`.
 
 ---
+
+## Universe switcher (Phase H)
+
+The sidebar shows a **Dataset** dropdown when more than one universe has a
+populated `data/<key>/results/pipeline_metadata.json` on disk. The selector
+binds `key="universe"` directly to `st.session_state`, so changing it triggers
+a Streamlit auto-rerun. Every cached loader in `app/utils.py` routes through
+a universe-keyed underscore-prefixed function (`_load_X(universe, ...)`) so
+BIST and S&P caches coexist; switching back to the previous universe hits a
+warm cache.
+
+The boot-time default still comes from the `DASHBOARD_UNIVERSE` env var so
+`DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py` lands
+directly on the S&P universe.
+
+Universes are registered in `app/universe_registry.py` — currently `bist`
+and `sp500`. EEG is registered separately in `data/eeg_motor_left_right/`
+but not added to the dashboard registry yet (the SNN and Pair Analysis
+sub-tabs assume stock semantics).
+
+Page-header behaviour:
+- Browser tab title (`st.set_page_config(page_title=...)`) is set once at
+  boot from the env-var default. It lags by one page-load when the user
+  switches universes; this is a Streamlit API limitation
+  (`set_page_config` cannot be re-called).
+- The in-page header chip ("BIST 100 NETWORK ANALYSIS" / "S&P 500 NETWORK
+  ANALYSIS") updates immediately on switch.
 
 ## Navigation model
 
@@ -18,23 +45,29 @@ Inside Market Overview, the **EEE Analysis** sub-tab dispatches to
 directory). Page switching is done by re-rendering the same script with a
 different `nav_page` session-state value:
 
-```
+```python
 st.segmented_control(
     "Navigate",
-    ["Market Overview", "Pair Analysis"],
+    ["Market Overview", "Pair Analysis", "Cross-Market"],
     key="nav_page",
     default="Market Overview",
 )
 ```
 
 The "Pair Analysis" branch calls `pair_analysis.render(...)` and then
-`st.stop()` to skip the rest of the script. Any chart in Market Overview
-that wants to jump to Pair Analysis sets the deferred flag
-`_goto_pair_analysis` and reruns:
+`st.stop()`; the "Cross-Market" branch calls `cross_market.render()` and
+stops — that route runs BEFORE per-universe data loads since the page reads
+from both `data/bist/` and `data/sp500/` directly.
+
+Any chart in Market Overview that wants to jump to Pair Analysis sets the
+deferred flag `_goto_pair_analysis`; analogously `_goto_cross_market` jumps
+to the Cross-Market page:
 
 ```python
 if st.session_state.pop("_goto_pair_analysis", False):
     st.session_state["nav_page"] = "Pair Analysis"
+if st.session_state.pop("_goto_cross_market", False):
+    st.session_state["nav_page"] = "Cross-Market"
 ```
 
 ---
@@ -150,6 +183,25 @@ Pair selector at top (two ticker dropdowns + warning banner via
 | Spread | Log spread | Log-price spread `log(Pb) - β log(Pa)` | computed | go.Scatter |
 | Spread | Z-score | Rolling Z-score with entry/exit thresholds and signals | computed | go.Scatter |
 | Network | MST sub-graph | Local MST around the pair (k-hop neighbourhood) | `mst_edges.csv` | go.Scatter |
+
+---
+
+### Page 3 — Cross-Market Comparison (`cross_market.py:render`)
+
+Universe-independent — reads from BOTH `data/bist/` and `data/sp500/` directly
+via the underscore-prefixed loaders (`_load_X(universe, ...)`), so the sidebar
+selector does NOT affect this page.
+
+| Section | Chart / Block | Data file(s) | Library |
+|---|---|---|---|
+| Headline KPIs | 8 metric tiles: N, D_eff, top-eig share, MST sector purity per universe (BIST / S&P) | `data/comparison_bist_vs_sp500.csv` | st.metric |
+| Spectral structure (RMT) | Eigenvalue spectrum side-by-side (log y, signal-mode colouring, MP-bound overlay) | `data/bist/results/eigenvalue_spectrum.csv` + `data/sp500/results/eigenvalue_spectrum.csv` | go.Bar |
+| MST topology | Both MSTs side-by-side via kamada-kawai layout, sector-coloured, sized by betweenness; hub labels only above 45% of max-btw (keeps S&P 485-node plot readable) | `mst_edges.csv` + `mst_node_metrics.csv` (per universe) | go.Scatter |
+| MST topology | Top-5 hubs per universe (markdown list with sector + btw) | `mst_node_metrics.csv` | st.markdown |
+| Crisis windows | Grouped bar chart: avg pairwise corr in ±60-day before/during/after buckets, for COVID / Russia-Ukraine / Türkiye-earthquake, × {BIST, S&P} | `data/comparison_bist_vs_sp500.csv` (`<date>_<phase>` rows) | go.Bar (group mode) |
+| Pairwise dependence + Glasso/TE parity | Side-by-side stats: mean/median/std/max-abs correlation, signal eigenvalues, signal variance share, Glasso edge count + sector purity, TE edge count + sector purity | `data/comparison_bist_vs_sp500.csv` | st.markdown |
+| Top dislocation pair | One per universe: ρ, β, half-life, current Z | `dislocation_candidates.csv` (per universe) | st.markdown |
+| Methodology footnote | Identical hyperparameter disclosure, N-disparity caveat, manual_anomaly_nulls reference, xu100.parquet-for-^GSPC quirk | — | st.markdown |
 
 ---
 

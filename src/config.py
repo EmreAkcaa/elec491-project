@@ -29,6 +29,7 @@ class DataConfig:
     end_date: str
     download_interval: str
     store_raw_close: bool
+    source: str = "yfinance"  # yfinance | physionet — drives src/eeg_acquisition vs src/data_acquisition
 
 
 @dataclass
@@ -36,6 +37,12 @@ class PreprocessingConfig:
     min_coverage_pct: float
     anomaly_return_threshold: float
     forward_fill: bool
+    manual_anomaly_nulls: list = field(default_factory=list)
+    # ^ List of [ticker, "YYYY-MM-DD"] entries. The (ticker, date) cell in
+    # `log_returns` is set to NaN before anomaly detection runs. Use to mask
+    # unhandled corporate actions that yfinance Adj-Close failed to back-
+    # adjust (e.g. CCOLA 2024-08-01 10.81x bonus issue). Old YAMLs without
+    # this key continue to load — default factory yields [].
 
 
 @dataclass
@@ -81,6 +88,20 @@ class TransferEntropyConfig:
 
 
 @dataclass
+class EEGConfig:
+    """PhysioNet EEG-Motor-Imagery-specific knobs (Phase F)."""
+    task_type: str = "left_right"       # left_right | feet_fists | baseline
+    subject_ids: list = field(default_factory=lambda: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    runs_per_condition: list = field(default_factory=lambda: [4, 8, 12])  # left_right runs
+    sampling_rate_hz: int = 160
+    bandpass_low_hz: float = 1.0
+    bandpass_high_hz: float = 50.0
+    notch_hz: float = 50.0              # 50 = Türkiye / EU grid; 60 = US
+    car_reference: bool = True
+    cache_raw: bool = True
+
+
+@dataclass
 class PipelineConfig:
     market: MarketConfig
     data: DataConfig
@@ -92,6 +113,7 @@ class PipelineConfig:
     rolling: RollingConfig = field(default_factory=RollingConfig)
     dislocation: DislocationConfig = field(default_factory=DislocationConfig)
     transfer_entropy: TransferEntropyConfig = field(default_factory=TransferEntropyConfig)
+    eeg: EEGConfig = field(default_factory=EEGConfig)
 
     @property
     def tickers(self) -> list[str]:
@@ -104,6 +126,26 @@ class PipelineConfig:
     @property
     def index_provider_symbol(self) -> str:
         return self.market.index_ticker + self.market.provider_suffix
+
+    # ---- Per-market data path properties (Phase D) ----
+    # Each market gets its own data/<market_dir>/{raw,processed,results} tree
+    # so multiple universes (BIST, S&P 500, EEG) can coexist on disk.
+    @property
+    def market_dir(self) -> str:
+        """Lower-cased market_id used as the filesystem namespace."""
+        return self.market.market_id.lower()
+
+    @property
+    def data_raw(self) -> Path:
+        return PROJECT_ROOT / "data" / self.market_dir / "raw"
+
+    @property
+    def data_processed(self) -> Path:
+        return PROJECT_ROOT / "data" / self.market_dir / "processed"
+
+    @property
+    def data_results(self) -> Path:
+        return PROJECT_ROOT / "data" / self.market_dir / "results"
 
 
 def _load_universe(universe_path: Path) -> tuple[pd.DataFrame, dict]:
@@ -158,6 +200,7 @@ def load_config(
     rolling_raw = raw.get("rolling", {})
     dislocation_raw = raw.get("dislocation", {})
     transfer_entropy_raw = raw.get("transfer_entropy", {})
+    eeg_raw = raw.get("eeg", {})
 
     config = PipelineConfig(
         market=MarketConfig(**raw["market"]),
@@ -170,6 +213,7 @@ def load_config(
         rolling=RollingConfig(**rolling_raw),
         dislocation=DislocationConfig(**dislocation_raw),
         transfer_entropy=TransferEntropyConfig(**transfer_entropy_raw),
+        eeg=EEGConfig(**eeg_raw),
     )
 
     return config

@@ -17,8 +17,6 @@ from src.clustering import build_mst, mst_to_edge_df, compute_mst_metrics
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
 
 
 def marchenko_pastur_bounds(T: int, N: int, sigma2: float = 1.0) -> tuple[float, float]:
@@ -134,28 +132,28 @@ def denoise_correlation(
 def run_rmt_denoising(config: PipelineConfig) -> None:
     """Pipeline step: RMT denoising of correlation matrix."""
     logger.info("=== RMT Correlation Denoising ===")
-    DATA_RESULTS.mkdir(parents=True, exist_ok=True)
+    config.data_results.mkdir(parents=True, exist_ok=True)
 
-    corr = pd.read_parquet(DATA_RESULTS / "pearson_corr.parquet")
-    returns = pd.read_parquet(DATA_PROCESSED / "log_returns.parquet")
+    corr = pd.read_parquet(config.data_results / "pearson_corr.parquet")
+    returns = pd.read_parquet(config.data_processed / "log_returns.parquet")
     T = len(returns)
 
     # Denoise
     denoised_corr, spectrum = denoise_correlation(corr, T, method="constant")
-    denoised_corr.to_parquet(DATA_RESULTS / "denoised_corr.parquet")
-    spectrum.to_csv(DATA_RESULTS / "eigenvalue_spectrum.csv", index=False)
+    denoised_corr.to_parquet(config.data_results / "denoised_corr.parquet")
+    spectrum.to_csv(config.data_results / "eigenvalue_spectrum.csv", index=False)
     logger.info("Saved denoised correlation matrix and eigenvalue spectrum")
 
     # Denoised distance matrix and MST
     denoised_dist = compute_distance_matrix(denoised_corr)
     mst = build_mst(denoised_dist)
     edges = mst_to_edge_df(mst, denoised_corr)
-    edges.to_csv(DATA_RESULTS / "denoised_mst_edges.csv", index=False)
+    edges.to_csv(config.data_results / "denoised_mst_edges.csv", index=False)
 
     metrics = compute_mst_metrics(mst)
     sector_map = dict(zip(config.universe["ticker"], config.universe["sector"]))
     metrics["sector"] = metrics["ticker"].map(sector_map)
-    metrics.to_csv(DATA_RESULTS / "denoised_mst_node_metrics.csv", index=False)
+    metrics.to_csv(config.data_results / "denoised_mst_node_metrics.csv", index=False)
     logger.info("Saved denoised MST edges and node metrics")
 
     logger.info("RMT denoising complete")

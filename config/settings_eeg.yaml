@@ -1,0 +1,77 @@
+# EEG Motor-Imagery (PhysioNet) settings — Phase F scaffold.
+#
+# Pipeline run:
+#   uv sync --extra eeg                                              # one-time, ~50 MB (mne)
+#   uv run python run_pipeline_eeg.py --task left_right              # downloads ~3.4 GB on first run
+# Dashboard:
+#   DASHBOARD_UNIVERSE=eeg_motor_left_right uv run streamlit run app/dashboard.py
+#
+# Status: SCAFFOLD — the universe CSV + this config + src/eeg_acquisition.py
+# are in place, but end-to-end verification (sanity checks 1–5 in
+# docs/EEG_INTEGRATION.md) needs the actual PhysioNet download which we have
+# not run yet. Run that download, verify sanity checks 1–5, then declare F done.
+
+market:
+  market_id: "eeg_motor_left_right"
+  universe_file: "config/universes/eeg_motor_left_right.csv"
+  index_ticker: ""        # No index for EEG
+  provider_suffix: ""
+  currency: ""
+
+data:
+  source: "physionet"
+  start_date: "1900-01-01"   # placeholder; EEG data has no date range
+  end_date: "1900-01-01"
+  download_interval: "tick"   # 160 Hz sample rate, not daily
+  store_raw_close: false
+
+preprocessing:
+  min_coverage_pct: 0.0       # disabled — EEG has no missing channels per recording
+  anomaly_return_threshold: 1.0  # not meaningful for EEG; left in to satisfy schema
+  forward_fill: false
+
+analysis:
+  correlation_method: "pearson"
+  annualization_factor: 1     # no annualisation; EEG is not a financial-return series
+  corr_min_periods: 5000      # ~31 s at 160 Hz
+
+validation:
+  enabled: false              # no İş Yatırım cross-check for EEG
+  sample_size: 0
+
+rolling:
+  windows: [320, 800]         # ~2 s and ~5 s windows at 160 Hz
+  step: 80                    # ~0.5 s
+  method: "pearson"
+  min_periods_ratio: 0.6
+
+dislocation:
+  zscore_window: 320
+  entry_zscore: 2.0
+  exit_zscore: 0.5
+  min_half_life: 5
+  max_half_life: 252
+  top_n_candidates: 20
+  lookback_window: 800
+  min_correlation: 0.5
+
+transfer_entropy:
+  lag: 5                      # ~31 ms at 160 Hz; equivalent to lag=1 day for stocks
+  n_bins: 3
+  significance_shuffles: 0    # EEG: ~593k samples/channel makes shuffle-null cost-prohibitive.
+                              # Skipping the null produces TE values but no p-values; we
+                              # post-hoc threshold on TE magnitude in the dashboard / report.
+                              # Re-enable with shuffles > 0 after downsampling EEG to 32 Hz.
+  significance_level: 0.05
+  seed: 42
+
+eeg:
+  task_type: "left_right"           # left_right | feet_fists | baseline
+  subject_ids: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]   # 10 subjects, curated
+  runs_per_condition: [4, 8, 12]    # left_right runs in the PhysioNet dataset
+  sampling_rate_hz: 160
+  bandpass_low_hz: 1.0
+  bandpass_high_hz: 50.0
+  notch_hz: 50.0                    # 50 Hz Türkiye grid; switch to 60 if running in US
+  car_reference: true
+  cache_raw: true

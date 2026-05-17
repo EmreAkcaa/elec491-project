@@ -770,4 +770,4 @@ Suggested talking points for the final ELEC 491 report:
 *Last updated: 2026-05-17 (canonical doc-set integration: §15.4 operational
 limitations added; "Step 13" → "Stage 12" to match pipeline numbering;
 universal-vs-per-pair training-time figure corrected from 3× to ~19× total
-end-to-end).*
+end-to-end; Phase H merge of `origin/main`).*

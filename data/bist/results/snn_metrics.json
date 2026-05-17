@@ -1,0 +1,966 @@
+{
+  "n_pairs": 20,
+  "per_pair": {
+    "BRSAN_BRYAT": {
+      "macro_f1": 0.7543488427819506,
+      "per_class_f1": [
+        0.7815126050420169,
+        0.6548672566371682,
+        0.8266666666666667
+      ],
+      "per_class_precision": [
+        0.8857142857142857,
+        0.5138888888888888,
+        0.8611111111111112
+      ],
+      "per_class_recall": [
+        0.6992481203007519,
+        0.9024390243902439,
+        0.7948717948717948
+      ],
+      "confusion_matrix": [
+        [
+          93,
+          35,
+          5
+        ],
+        [
+          4,
+          37,
+          0
+        ],
+        [
+          8,
+          0,
+          31
+        ]
+      ],
+      "snn_sharpe": 3.4752941336830827,
+      "snn_hit_rate": 0.87,
+      "snn_n_trades": 100,
+      "classical_sharpe": 4.05055160587863,
+      "classical_hit_rate": 0.9090909090909091,
+      "classical_n_trades": 110,
+      "delta_sharpe": -0.5752574721955477,
+      "n_test": 213,
+      "pair_id": "BRSAN_BRYAT",
+      "ticker_a": "BRSAN",
+      "ticker_b": "BRYAT",
+      "sample_pair": "BRSAN_BRYAT"
+    },
+    "YKBNK_AKBNK": {
+      "macro_f1": 0.8136363636363636,
+      "per_class_f1": [
+        0.8928571428571429,
+        0.8571428571428571,
+        0.6909090909090909
+      ],
+      "per_class_precision": [
+        0.8928571428571429,
+        0.8297872340425532,
+        0.7307692307692307
+      ],
+      "per_class_recall": [
+        0.8928571428571429,
+        0.8863636363636364,
+        0.6551724137931034
+      ],
+      "confusion_matrix": [
+        [
+          125,
+          8,
+          7
+        ],
+        [
+          5,
+          39,
+          0
+        ],
+        [
+          10,
+          0,
+          19
+        ]
+      ],
+      "snn_sharpe": 3.2809204800396055,
+      "snn_hit_rate": 0.7971014492753623,
+      "snn_n_trades": 69,
+      "classical_sharpe": 2.901465906093336,
+      "classical_hit_rate": 0.7662337662337663,
+      "classical_n_trades": 77,
+      "delta_sharpe": 0.3794545739462696,
+      "n_test": 213,
+      "pair_id": "YKBNK_AKBNK",
+      "ticker_a": "YKBNK",
+      "ticker_b": "AKBNK"
+    },
+    "SAHOL_ISCTR": {
+      "macro_f1": 0.6780518400349055,
+      "per_class_f1": [
+        0.804270462633452,
+        0.5862068965517241,
+        0.6436781609195402
+      ],
+      "per_class_precision": [
+        0.8188405797101449,
+        0.5483870967741935,
+        0.6363636363636364
+      ],
+      "per_class_recall": [
+        0.7902097902097902,
+        0.6296296296296297,
+        0.6511627906976745
+      ],
+      "confusion_matrix": [
+        [
+          113,
+          14,
+          16
+        ],
+        [
+          10,
+          17,
+          0
+        ],
+        [
+          15,
+          0,
+          28
+        ]
+      ],
+      "snn_sharpe": 4.382037914255717,
+      "snn_hit_rate": 0.9295774647887324,
+      "snn_n_trades": 71,
+      "classical_sharpe": 5.708435692384687,
+      "classical_hit_rate": 0.972972972972973,
+      "classical_n_trades": 37,
+      "delta_sharpe": -1.3263977781289702,
+      "n_test": 213,
+      "pair_id": "SAHOL_ISCTR",
+      "ticker_a": "SAHOL",
+      "ticker_b": "ISCTR"
+    },
+    "SAHOL_AKBNK": {
+      "macro_f1": 0.5835340434608808,
+      "per_class_f1": [
+        0.8591065292096219,
+        0.18181818181818182,
+        0.7096774193548387
+      ],
+      "per_class_precision": [
+        0.8802816901408451,
+        0.125,
+        0.6984126984126984
+      ],
+      "per_class_recall": [
+        0.8389261744966443,
+        0.3333333333333333,
+        0.7213114754098361
+      ],
+      "confusion_matrix": [
+        [
+          125,
+          5,
+          19
+        ],
+        [
+          2,
+          1,
+          0
+        ],
+        [
+          15,
+          2,
+          44
+        ]
+      ],
+      "snn_sharpe": 4.05816081062488,
+      "snn_hit_rate": 0.8382352941176471,
+      "snn_n_trades": 68,
+      "classical_sharpe": 4.061924731866285,
+      "classical_hit_rate": 0.8426966292134831,
+      "classical_n_trades": 89,
+      "delta_sharpe": -0.0037639212414051215,
+      "n_test": 213,
+      "pair_id": "SAHOL_AKBNK",
+      "ticker_a": "SAHOL",
+      "ticker_b": "AKBNK"
+    },
+    "AGHOL_SAHOL": {
+      "macro_f1": 0.8204338936846888,
+      "per_class_f1": [
+        0.8943661971830986,
+        0.825,
+        0.7419354838709677
+      ],
+      "per_class_precision": [
+        0.8698630136986302,
+        0.825,
+        0.8518518518518519
+      ],
+      "per_class_recall": [
+        0.9202898550724637,
+        0.825,
+        0.6571428571428571
+      ],
+      "confusion_matrix": [
+        [
+          127,
+          7,
+          4
+        ],
+        [
+          7,
+          33,
+          0
+        ],
+        [
+          12,
+          0,
+          23
+        ]
+      ],
+      "snn_sharpe": 3.479687152091957,
+      "snn_hit_rate": 0.8870967741935484,
+      "snn_n_trades": 62,
+      "classical_sharpe": 4.6334499194505,
+      "classical_hit_rate": 0.9263157894736842,
+      "classical_n_trades": 95,
+      "delta_sharpe": -1.1537627673585433,
+      "n_test": 213,
+      "pair_id": "AGHOL_SAHOL",
+      "ticker_a": "AGHOL",
+      "ticker_b": "SAHOL"
+    },
+    "KCHOL_KRDMD": {
+      "macro_f1": 0.5782054782054782,
+      "per_class_f1": [
+        0.8588588588588588,
+        0.6333333333333333,
+        0.24242424242424243
+      ],
+      "per_class_precision": [
+        0.8265895953757225,
+        0.6129032258064516,
+        0.4444444444444444
+      ],
+      "per_class_recall": [
+        0.89375,
+        0.6551724137931034,
+        0.16666666666666666
+      ],
+      "confusion_matrix": [
+        [
+          143,
+          12,
+          5
+        ],
+        [
+          10,
+          19,
+          0
+        ],
+        [
+          20,
+          0,
+          4
+        ]
+      ],
+      "snn_sharpe": 3.850407864945251,
+      "snn_hit_rate": 0.875,
+      "snn_n_trades": 40,
+      "classical_sharpe": 3.6408453563663263,
+      "classical_hit_rate": 0.8518518518518519,
+      "classical_n_trades": 81,
+      "delta_sharpe": 0.20956250857892478,
+      "n_test": 213,
+      "pair_id": "KCHOL_KRDMD",
+      "ticker_a": "KCHOL",
+      "ticker_b": "KRDMD"
+    },
+    "YKBNK_VAKBN": {
+      "macro_f1": 0.6552799605424077,
+      "per_class_f1": [
+        0.7011952191235059,
+        0.8070175438596492,
+        0.4576271186440678
+      ],
+      "per_class_precision": [
+        0.8543689320388349,
+        0.7419354838709677,
+        0.34177215189873417
+      ],
+      "per_class_recall": [
+        0.5945945945945946,
+        0.8846153846153846,
+        0.6923076923076923
+      ],
+      "confusion_matrix": [
+        [
+          88,
+          8,
+          52
+        ],
+        [
+          3,
+          23,
+          0
+        ],
+        [
+          12,
+          0,
+          27
+        ]
+      ],
+      "snn_sharpe": 2.2192692773952234,
+      "snn_hit_rate": 0.6666666666666666,
+      "snn_n_trades": 90,
+      "classical_sharpe": 2.1072693643543094,
+      "classical_hit_rate": 0.6363636363636364,
+      "classical_n_trades": 99,
+      "delta_sharpe": 0.11199991304091395,
+      "n_test": 213,
+      "pair_id": "YKBNK_VAKBN",
+      "ticker_a": "YKBNK",
+      "ticker_b": "VAKBN"
+    },
+    "PETKM_KRDMD": {
+      "macro_f1": 0.6011125183725803,
+      "per_class_f1": [
+        0.8359133126934984,
+        0.5090909090909091,
+        0.4583333333333333
+      ],
+      "per_class_precision": [
+        0.84375,
+        0.4375,
+        0.5238095238095238
+      ],
+      "per_class_recall": [
+        0.8282208588957055,
+        0.6086956521739131,
+        0.4074074074074074
+      ],
+      "confusion_matrix": [
+        [
+          135,
+          18,
+          10
+        ],
+        [
+          9,
+          14,
+          0
+        ],
+        [
+          16,
+          0,
+          11
+        ]
+      ],
+      "snn_sharpe": 3.554664361868672,
+      "snn_hit_rate": 0.8958333333333334,
+      "snn_n_trades": 48,
+      "classical_sharpe": 5.27591909839914,
+      "classical_hit_rate": 0.9857142857142858,
+      "classical_n_trades": 70,
+      "delta_sharpe": -1.7212547365304682,
+      "n_test": 213,
+      "pair_id": "PETKM_KRDMD",
+      "ticker_a": "PETKM",
+      "ticker_b": "KRDMD"
+    },
+    "KCHOL_ISCTR": {
+      "macro_f1": 0.7137402329352794,
+      "per_class_f1": [
+        0.891640866873065,
+        0.7352941176470588,
+        0.5142857142857143
+      ],
+      "per_class_precision": [
+        0.8372093023255814,
+        0.8064516129032258,
+        0.9
+      ],
+      "per_class_recall": [
+        0.9536423841059603,
+        0.6756756756756757,
+        0.36
+      ],
+      "confusion_matrix": [
+        [
+          144,
+          6,
+          1
+        ],
+        [
+          12,
+          25,
+          0
+        ],
+        [
+          16,
+          0,
+          9
+        ]
+      ],
+      "snn_sharpe": 7.953703163237739,
+      "snn_hit_rate": 0.975609756097561,
+      "snn_n_trades": 41,
+      "classical_sharpe": 7.786784692218602,
+      "classical_hit_rate": 0.9479166666666666,
+      "classical_n_trades": 96,
+      "delta_sharpe": 0.16691847101913648,
+      "n_test": 213,
+      "pair_id": "KCHOL_ISCTR",
+      "ticker_a": "KCHOL",
+      "ticker_b": "ISCTR"
+    },
+    "SAHOL_KCHOL": {
+      "macro_f1": 0.7534366218576745,
+      "per_class_f1": [
+        0.8831168831168831,
+        0.6666666666666666,
+        0.7105263157894737
+      ],
+      "per_class_precision": [
+        0.912751677852349,
+        0.7368421052631579,
+        0.6
+      ],
+      "per_class_recall": [
+        0.8553459119496856,
+        0.6086956521739131,
+        0.8709677419354839
+      ],
+      "confusion_matrix": [
+        [
+          136,
+          5,
+          18
+        ],
+        [
+          9,
+          14,
+          0
+        ],
+        [
+          4,
+          0,
+          27
+        ]
+      ],
+      "snn_sharpe": 3.3755116046800744,
+      "snn_hit_rate": 0.7540983606557377,
+      "snn_n_trades": 61,
+      "classical_sharpe": 4.4376876902083735,
+      "classical_hit_rate": 0.8405797101449275,
+      "classical_n_trades": 69,
+      "delta_sharpe": -1.0621760855282991,
+      "n_test": 213,
+      "pair_id": "SAHOL_KCHOL",
+      "ticker_a": "SAHOL",
+      "ticker_b": "KCHOL"
+    },
+    "KCHOL_AKBNK": {
+      "macro_f1": 0.7110203113407905,
+      "per_class_f1": [
+        0.8859934853420195,
+        0.45161290322580644,
+        0.7954545454545455
+      ],
+      "per_class_precision": [
+        0.8607594936708861,
+        0.6363636363636364,
+        0.7954545454545454
+      ],
+      "per_class_recall": [
+        0.912751677852349,
+        0.35,
+        0.7954545454545454
+      ],
+      "confusion_matrix": [
+        [
+          136,
+          4,
+          9
+        ],
+        [
+          13,
+          7,
+          0
+        ],
+        [
+          9,
+          0,
+          35
+        ]
+      ],
+      "snn_sharpe": 6.617685515664386,
+      "snn_hit_rate": 0.9615384615384616,
+      "snn_n_trades": 52,
+      "classical_sharpe": 5.548259947933343,
+      "classical_hit_rate": 0.90625,
+      "classical_n_trades": 64,
+      "delta_sharpe": 1.0694255677310425,
+      "n_test": 213,
+      "pair_id": "KCHOL_AKBNK",
+      "ticker_a": "KCHOL",
+      "ticker_b": "AKBNK"
+    },
+    "SAHOL_KRDMD": {
+      "macro_f1": 0.5625463491338862,
+      "per_class_f1": [
+        0.8486646884272997,
+        0.358974358974359,
+        0.48000000000000004
+      ],
+      "per_class_precision": [
+        0.7526315789473684,
+        0.875,
+        0.8
+      ],
+      "per_class_recall": [
+        0.9727891156462585,
+        0.22580645161290322,
+        0.34285714285714286
+      ],
+      "confusion_matrix": [
+        [
+          143,
+          1,
+          3
+        ],
+        [
+          24,
+          7,
+          0
+        ],
+        [
+          23,
+          0,
+          12
+        ]
+      ],
+      "snn_sharpe": 1.8541470741088895,
+      "snn_hit_rate": 0.6521739130434783,
+      "snn_n_trades": 23,
+      "classical_sharpe": 3.1866064056348273,
+      "classical_hit_rate": 0.7454545454545455,
+      "classical_n_trades": 55,
+      "delta_sharpe": -1.3324593315259379,
+      "n_test": 213,
+      "pair_id": "SAHOL_KRDMD",
+      "ticker_a": "SAHOL",
+      "ticker_b": "KRDMD"
+    },
+    "KCHOL_TUPRS": {
+      "macro_f1": 0.7021860377392383,
+      "per_class_f1": [
+        0.8043478260869565,
+        0.6808510638297872,
+        0.6213592233009708
+      ],
+      "per_class_precision": [
+        0.8345864661654135,
+        0.6956521739130435,
+        0.5614035087719298
+      ],
+      "per_class_recall": [
+        0.7762237762237763,
+        0.6666666666666666,
+        0.6956521739130435
+      ],
+      "confusion_matrix": [
+        [
+          111,
+          7,
+          25
+        ],
+        [
+          8,
+          16,
+          0
+        ],
+        [
+          14,
+          0,
+          32
+        ]
+      ],
+      "snn_sharpe": 2.4552089253018057,
+      "snn_hit_rate": 0.9253731343283582,
+      "snn_n_trades": 67,
+      "classical_sharpe": 3.6315906225217125,
+      "classical_hit_rate": 0.9390243902439024,
+      "classical_n_trades": 82,
+      "delta_sharpe": -1.1763816972199068,
+      "n_test": 213,
+      "pair_id": "KCHOL_TUPRS",
+      "ticker_a": "KCHOL",
+      "ticker_b": "TUPRS"
+    },
+    "SISE_KRDMD": {
+      "macro_f1": 0.5175981588397516,
+      "per_class_f1": [
+        0.7886435331230284,
+        0.5,
+        0.2641509433962264
+      ],
+      "per_class_precision": [
+        0.7102272727272727,
+        0.6666666666666666,
+        0.4375
+      ],
+      "per_class_recall": [
+        0.8865248226950354,
+        0.4,
+        0.1891891891891892
+      ],
+      "confusion_matrix": [
+        [
+          125,
+          7,
+          9
+        ],
+        [
+          21,
+          14,
+          0
+        ],
+        [
+          30,
+          0,
+          7
+        ]
+      ],
+      "snn_sharpe": 6.0712891579807104,
+      "snn_hit_rate": 1.0,
+      "snn_n_trades": 33,
+      "classical_sharpe": 4.949329442274837,
+      "classical_hit_rate": 0.9166666666666666,
+      "classical_n_trades": 60,
+      "delta_sharpe": 1.1219597157058736,
+      "n_test": 213,
+      "pair_id": "SISE_KRDMD",
+      "ticker_a": "SISE",
+      "ticker_b": "KRDMD"
+    },
+    "VAKBN_EKGYO": {
+      "macro_f1": 0.612946802172709,
+      "per_class_f1": [
+        0.6418604651162791,
+        0.5172413793103449,
+        0.6797385620915033
+      ],
+      "per_class_precision": [
+        0.7340425531914894,
+        0.4166666666666667,
+        0.6265060240963856
+      ],
+      "per_class_recall": [
+        0.5702479338842975,
+        0.6818181818181818,
+        0.7428571428571429
+      ],
+      "confusion_matrix": [
+        [
+          69,
+          21,
+          31
+        ],
+        [
+          7,
+          15,
+          0
+        ],
+        [
+          18,
+          0,
+          52
+        ]
+      ],
+      "snn_sharpe": 1.0527437576906504,
+      "snn_hit_rate": 0.6574074074074074,
+      "snn_n_trades": 108,
+      "classical_sharpe": 1.3912992413523328,
+      "classical_hit_rate": 0.668918918918919,
+      "classical_n_trades": 148,
+      "delta_sharpe": -0.3385554836616824,
+      "n_test": 213,
+      "pair_id": "VAKBN_EKGYO",
+      "ticker_a": "VAKBN",
+      "ticker_b": "EKGYO"
+    },
+    "TUPRS_AYGAZ": {
+      "macro_f1": 0.7338820194363307,
+      "per_class_f1": [
+        0.7935222672064778,
+        0.7272727272727272,
+        0.6808510638297872
+      ],
+      "per_class_precision": [
+        0.7596899224806202,
+        0.8421052631578947,
+        0.5925925925925926
+      ],
+      "per_class_recall": [
+        0.8305084745762712,
+        0.64,
+        0.8
+      ],
+      "confusion_matrix": [
+        [
+          98,
+          9,
+          11
+        ],
+        [
+          27,
+          48,
+          0
+        ],
+        [
+          4,
+          0,
+          16
+        ]
+      ],
+      "snn_sharpe": 3.786173513341483,
+      "snn_hit_rate": 0.8674698795180723,
+      "snn_n_trades": 83,
+      "classical_sharpe": 3.7857267586764745,
+      "classical_hit_rate": 0.8470588235294118,
+      "classical_n_trades": 85,
+      "delta_sharpe": 0.00044675466500843086,
+      "n_test": 213,
+      "pair_id": "TUPRS_AYGAZ",
+      "ticker_a": "TUPRS",
+      "ticker_b": "AYGAZ"
+    },
+    "TTKOM_AKBNK": {
+      "macro_f1": 0.6750346858650107,
+      "per_class_f1": [
+        0.7942238267148014,
+        0.6753246753246753,
+        0.5555555555555555
+      ],
+      "per_class_precision": [
+        0.7857142857142857,
+        0.7428571428571429,
+        0.5263157894736842
+      ],
+      "per_class_recall": [
+        0.8029197080291971,
+        0.6190476190476191,
+        0.5882352941176471
+      ],
+      "confusion_matrix": [
+        [
+          110,
+          9,
+          18
+        ],
+        [
+          16,
+          26,
+          0
+        ],
+        [
+          14,
+          0,
+          20
+        ]
+      ],
+      "snn_sharpe": 3.899175620959985,
+      "snn_hit_rate": 0.8714285714285714,
+      "snn_n_trades": 70,
+      "classical_sharpe": 3.8598354243932307,
+      "classical_hit_rate": 0.8589743589743589,
+      "classical_n_trades": 78,
+      "delta_sharpe": 0.03934019656675414,
+      "n_test": 213,
+      "pair_id": "TTKOM_AKBNK",
+      "ticker_a": "TTKOM",
+      "ticker_b": "AKBNK"
+    },
+    "VESTL_VESBE": {
+      "macro_f1": 0.48503801119865964,
+      "per_class_f1": [
+        0.8531073446327683,
+        0.3846153846153846,
+        0.21739130434782608
+      ],
+      "per_class_precision": [
+        0.7905759162303665,
+        0.5555555555555556,
+        0.38461538461538464
+      ],
+      "per_class_recall": [
+        0.9263803680981595,
+        0.29411764705882354,
+        0.15151515151515152
+      ],
+      "confusion_matrix": [
+        [
+          151,
+          4,
+          8
+        ],
+        [
+          12,
+          5,
+          0
+        ],
+        [
+          28,
+          0,
+          5
+        ]
+      ],
+      "snn_sharpe": 4.9669453708468785,
+      "snn_hit_rate": 0.9047619047619048,
+      "snn_n_trades": 21,
+      "classical_sharpe": 6.460133405410722,
+      "classical_hit_rate": 0.967741935483871,
+      "classical_n_trades": 62,
+      "delta_sharpe": -1.4931880345638433,
+      "n_test": 213,
+      "pair_id": "VESTL_VESBE",
+      "ticker_a": "VESTL",
+      "ticker_b": "VESBE"
+    },
+    "SISE_PETKM": {
+      "macro_f1": 0.5327538924274592,
+      "per_class_f1": [
+        0.7961783439490446,
+        0.20833333333333331,
+        0.5937499999999999
+      ],
+      "per_class_precision": [
+        0.7309941520467836,
+        0.38461538461538464,
+        0.6551724137931034
+      ],
+      "per_class_recall": [
+        0.8741258741258742,
+        0.14285714285714285,
+        0.5428571428571428
+      ],
+      "confusion_matrix": [
+        [
+          125,
+          8,
+          10
+        ],
+        [
+          30,
+          5,
+          0
+        ],
+        [
+          16,
+          0,
+          19
+        ]
+      ],
+      "snn_sharpe": 4.304617854398001,
+      "snn_hit_rate": 0.8857142857142857,
+      "snn_n_trades": 35,
+      "classical_sharpe": 3.7771279338197985,
+      "classical_hit_rate": 0.8867924528301887,
+      "classical_n_trades": 53,
+      "delta_sharpe": 0.5274899205782022,
+      "n_test": 213,
+      "pair_id": "SISE_PETKM",
+      "ticker_a": "SISE",
+      "ticker_b": "PETKM"
+    },
+    "EKGYO_HALKB": {
+      "macro_f1": 0.7057923198699898,
+      "per_class_f1": [
+        0.8478964401294499,
+        0.75,
+        0.5194805194805195
+      ],
+      "per_class_precision": [
+        0.8506493506493507,
+        0.8823529411764706,
+        0.47619047619047616
+      ],
+      "per_class_recall": [
+        0.8451612903225807,
+        0.6521739130434783,
+        0.5714285714285714
+      ],
+      "confusion_matrix": [
+        [
+          131,
+          2,
+          22
+        ],
+        [
+          8,
+          15,
+          0
+        ],
+        [
+          15,
+          0,
+          20
+        ]
+      ],
+      "snn_sharpe": 3.82039437595528,
+      "snn_hit_rate": 0.8703703703703703,
+      "snn_n_trades": 54,
+      "classical_sharpe": 2.6565034953832707,
+      "classical_hit_rate": 0.7790697674418605,
+      "classical_n_trades": 86,
+      "delta_sharpe": 1.1638908805720094,
+      "n_test": 213,
+      "pair_id": "EKGYO_HALKB",
+      "ticker_a": "EKGYO",
+      "ticker_b": "HALKB"
+    }
+  },
+  "config": {
+    "n_hidden": 96,
+    "beta": 0.92,
+    "v_threshold": 0.5,
+    "n_timesteps": 20,
+    "window_size": 5,
+    "use_universal_model": true,
+    "use_recurrent_hidden": true,
+    "readout": "membrane",
+    "input_scaling": 2.0,
+    "class_weight_mode": "sqrt_inv_freq",
+    "learning_rate": 0.003,
+    "weight_decay": 0.0001,
+    "n_epochs": 25,
+    "batch_size": 128,
+    "early_stop_patience": 5,
+    "seed": 42,
+    "use_focal_loss": true,
+    "focal_gamma": 2.0,
+    "delta_threshold": 0.25,
+    "n_population_fields": 5,
+    "label_horizon": 20,
+    "label_entry_z": 1.2,
+    "label_min_reversion": 0.8,
+    "label_exit_z": 0.5,
+    "train_ratio": 0.7,
+    "top_n_pairs": 20,
+    "rolling_window": 60,
+    "retrain": false,
+    "sample_pair": []
+  },
+  "sample_pair": "BRSAN_BRYAT",
+  "model_type": "universal",
+  "n_inputs": 65,
+  "aggregate": {
+    "mean_macro_f1": 0.6595289191768018,
+    "mean_snn_sharpe": 3.9229018964535127,
+    "mean_classical_sharpe": 4.1925373367310375,
+    "mean_delta_sharpe": -0.26963544027752473
+  }
+}

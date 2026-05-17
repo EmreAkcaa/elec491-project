@@ -12,9 +12,6 @@ from src.config import PipelineConfig, PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-DATA_RAW = PROJECT_ROOT / "data" / "raw"
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-
 
 def _select_sample_tickers(
     tickers: list[str], n: int = 10, seed: int = 42
@@ -79,10 +76,10 @@ def validate_sample(config: PipelineConfig) -> pd.DataFrame:
         return pd.DataFrame()
 
     logger.info("=== Data Validation ===")
-    DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
+    config.data_processed.mkdir(parents=True, exist_ok=True)
 
     # Load yfinance data
-    raw_path = DATA_RAW / "prices_raw.parquet"
+    raw_path = config.data_raw / "prices_raw.parquet"
     if not raw_path.exists():
         logger.warning("Raw prices not found, skipping validation")
         return pd.DataFrame()
@@ -192,8 +189,8 @@ def validate_sample(config: PipelineConfig) -> pd.DataFrame:
             )
 
     # Save report
-    report.to_csv(DATA_PROCESSED / "validation_report.csv", index=False)
-    logger.info("Validation report saved to %s", DATA_PROCESSED / "validation_report.csv")
+    report.to_csv(config.data_processed / "validation_report.csv", index=False)
+    logger.info("Validation report saved to %s", config.data_processed / "validation_report.csv")
 
     return report
 

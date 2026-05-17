@@ -400,4 +400,3 @@ through `config/settings.yaml` yet — see FUTURE_WORK F-2. Key knobs:
 - Brandli, C. et al. (2014). *A 240×180 130 dB 3 μs latency global shutter
   spatiotemporal vision sensor.* IEEE J. Solid-State Circuits 49(10):
   2333–2341.
-

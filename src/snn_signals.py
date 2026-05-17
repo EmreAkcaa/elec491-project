@@ -45,10 +45,8 @@ from src.pair_dislocation import (
 
 logger = logging.getLogger(__name__)
 
-DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-DATA_RESULTS = PROJECT_ROOT / "data" / "results"
-SNN_SIGNALS_DIR = DATA_RESULTS / "snn_signals"
-SNN_WEIGHTS_DIR = DATA_RESULTS / "snn_model_weights"
+# Path constants are derived per-call from the active `config` (config.data_*)
+# so that BIST, S&P, EEG universes can coexist on disk without collisions.
 
 # Class encoding: order matters for label arrays and confusion matrix axes
 HOLD, BUY, SELL = 0, 1, 2
@@ -829,6 +827,7 @@ def _write_raster_and_membrane(
     pair_data: dict,
     out: dict,
     cfg: SNNConfig,
+    data_results: Path,
 ):
     """Write spike raster + membrane V(t) artifacts for the sample pair.
 
@@ -869,7 +868,7 @@ def _write_raster_and_membrane(
                         "neuron_name": CLASS_NAMES[n],
                     })
     pd.DataFrame(raster_rows).to_parquet(
-        DATA_RESULTS / "snn_spike_raster_sample.parquet", index=False
+        data_results / "snn_spike_raster_sample.parquet", index=False
     )
 
     mem_rows = []
@@ -885,7 +884,7 @@ def _write_raster_and_membrane(
                     "membrane": float(mem_sample[d, t, n]),
                 })
     pd.DataFrame(mem_rows).to_parquet(
-        DATA_RESULTS / "snn_membrane_sample.parquet", index=False
+        data_results / "snn_membrane_sample.parquet", index=False
     )
 
 
@@ -911,9 +910,15 @@ def run_snn_signals(
     cfg = snn_cfg if snn_cfg is not None else SNNConfig()
     cfg.retrain = retrain
 
-    adj_path = DATA_PROCESSED / "adj_close.parquet"
-    ret_path = DATA_PROCESSED / "log_returns.parquet"
-    disloc_path = DATA_RESULTS / "dislocation_candidates.csv"
+    # Per-market data paths derived from config
+    data_processed = config.data_processed
+    data_results = config.data_results
+    snn_signals_dir = data_results / "snn_signals"
+    snn_weights_dir = data_results / "snn_model_weights"
+
+    adj_path = data_processed / "adj_close.parquet"
+    ret_path = data_processed / "log_returns.parquet"
+    disloc_path = data_results / "dislocation_candidates.csv"
     for p in (adj_path, ret_path, disloc_path):
         if not p.exists():
             logger.warning("Missing required artifact %s — skipping SNN step.", p)
@@ -926,8 +931,8 @@ def run_snn_signals(
         logger.warning("No dislocation candidates — skipping SNN step.")
         return {}
 
-    SNN_SIGNALS_DIR.mkdir(parents=True, exist_ok=True)
-    SNN_WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
+    snn_signals_dir.mkdir(parents=True, exist_ok=True)
+    snn_weights_dir.mkdir(parents=True, exist_ok=True)
 
     n_pairs_total = len(candidates)
     sample_pair_id = f"{candidates.iloc[0]['ticker_a']}_{candidates.iloc[0]['ticker_b']}"
@@ -971,7 +976,7 @@ def run_snn_signals(
     )
 
     # ── Phase 2: pool, time-split per pair, train universal model ─────
-    universal_weights_path = SNN_WEIGHTS_DIR / "universal.pt"
+    universal_weights_path = snn_weights_dir / "universal.pt"
     history: list[dict] = []
 
     if universal_weights_path.exists() and not cfg.retrain:
@@ -1054,11 +1059,11 @@ def run_snn_signals(
             "signal": [CLASS_NAMES[i] for i in pred],
             "classical_signal": [CLASS_NAMES[i] for i in d["classical"]],
         })
-        sig_df.to_parquet(SNN_SIGNALS_DIR / f"{pair_id}.parquet", index=False)
+        sig_df.to_parquet(snn_signals_dir / f"{pair_id}.parquet", index=False)
 
         # Spike raster + membrane V(t) for the sample pair only
         if pair_id == sample_pair_id:
-            _write_raster_and_membrane(d, ev["out"], cfg)
+            _write_raster_and_membrane(d, ev["out"], cfg, data_results)
             per_pair_metrics[pair_id]["sample_pair"] = pair_id
 
         logger.info(
@@ -1089,11 +1094,11 @@ def run_snn_signals(
             "mean_delta_sharpe": mean_snn_sh - mean_cls_sh,
         },
     }
-    with open(DATA_RESULTS / "snn_metrics.json", "w") as f:
+    with open(data_results / "snn_metrics.json", "w") as f:
         json.dump(summary, f, indent=2, default=str)
-    pd.DataFrame(pair_list).to_csv(DATA_RESULTS / "snn_pair_list.csv", index=False)
+    pd.DataFrame(pair_list).to_csv(data_results / "snn_pair_list.csv", index=False)
     if history:
-        pd.DataFrame(history).to_csv(DATA_RESULTS / "snn_training_history.csv", index=False)
+        pd.DataFrame(history).to_csv(data_results / "snn_training_history.csv", index=False)
 
     logger.info(
         "SNN signals saved to data/results/snn_signals/ (%d pairs).",
