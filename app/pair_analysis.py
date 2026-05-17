@@ -86,7 +86,25 @@ def render(
     min_date,
     max_date,
 ) -> None:
-    """Render the full Pair Analysis view with inline controls."""
+    """Render the full Pair Analysis view with inline controls.
+
+    Defence-in-depth: the dashboard nav already hides this page when the
+    active universe has ``has_pair_trading=False``, but a direct deep-link
+    via ?nav_page=Pair+Analysis could bypass that. We re-check the capability
+    flag here and bail out with a friendly notice instead of rendering a
+    nonsensical pair-trading view on non-financial data.
+    """
+
+    from universe_registry import get_universe
+    from utils import current_universe
+    _active = get_universe(current_universe())
+    if not _active.has_pair_trading:
+        st.warning(
+            f"Pair Analysis isn't applicable to the **{_active.label}** universe "
+            "(no pair-trading semantics). Switch back to a financial universe "
+            "from the sidebar selector."
+        )
+        return
 
     inject_custom_css()
 

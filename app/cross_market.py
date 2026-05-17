@@ -44,7 +44,7 @@ from utils import (
     _load_cluster_assignments,
     _load_dislocation_candidates,
 )
-from universe_registry import UNIVERSES, get_universe
+from universe_registry import UNIVERSES, get_universe, available_universes
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +271,20 @@ def render() -> None:
         "Universes selected because they sit at opposite ends of the emerging vs "
         "developed-market dimension while sharing the same sampling and pipeline.",
     )
+
+    # Defence-in-depth filter: only universes flagged eligible_for_cross_market
+    # participate here. EEG (eligible_for_cross_market=False) is filtered out
+    # even if the page is reached programmatically — the BIST-vs-S&P comparison
+    # numbers come from data/comparison_bist_vs_sp500.csv which only knows the
+    # two financial universes.
+    _eligible = [u for u in available_universes() if u.eligible_for_cross_market]
+    if len(_eligible) < 2:
+        st.info(
+            "Cross-Market Comparison needs at least two financial universes "
+            f"with `eligible_for_cross_market=True`. Currently eligible: "
+            f"{[u.key for u in _eligible] or 'none'}."
+        )
+        return
 
     comp_df = _load_comparison_table()
     if comp_df.empty:

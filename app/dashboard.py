@@ -165,9 +165,22 @@ if st.session_state.pop("_goto_pair_analysis", False):
 if st.session_state.pop("_goto_cross_market", False):
     st.session_state["nav_page"] = "Cross-Market"
 
+# Nav: hide Pair Analysis when the active universe has no pair-trading concept.
+# Cross-Market always visible (universe-independent page).
+_nav_options = ["Market Overview"]
+if _active_universe.has_pair_trading:
+    _nav_options.append("Pair Analysis")
+_nav_options.append("Cross-Market")
+
+# Clamp stored nav_page to options the current universe supports (otherwise
+# Streamlit would render the segmented_control with an out-of-set default and
+# raise StreamlitValueAssignmentNotAllowedError).
+if st.session_state.get("nav_page") not in _nav_options:
+    st.session_state["nav_page"] = "Market Overview"
+
 _nav = st.segmented_control(
     "Navigate",
-    ["Market Overview", "Pair Analysis", "Cross-Market"],
+    _nav_options,
     key="nav_page",
     default="Market Overview",
     label_visibility="collapsed",
@@ -222,11 +235,12 @@ with _settings_col:
                 st.write(f"**Tickers:** {fetch_meta.get('ticker_count', 'N/A')}")
                 if fetch_meta.get("failures"):
                     st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-            val_path = data_processed() / "validation_report.csv"
-            if val_path.exists():
-                val_df = pd.read_csv(val_path)
-                n_pass = (val_df["status"] == "PASS").sum()
-                st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
+            if _active_universe.has_validation_report:
+                val_path = data_processed() / "validation_report.csv"
+                if val_path.exists():
+                    val_df = pd.read_csv(val_path)
+                    n_pass = (val_df["status"] == "PASS").sum()
+                    st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
 
 if len(date_range) == 2:
     start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
@@ -238,8 +252,11 @@ prices_window = adj_close.loc[start_dt:end_dt]
 window_length = len(returns)
 dynamic_min_periods = max(30, int(window_length * 0.6))
 
-m1.metric("Tickers", f"{returns.shape[1]}")
-m2.metric("Trading Days", f"{returns.shape[0]:,}")
+m1.metric(_active_universe.items_label, f"{returns.shape[1]}")
+m2.metric(
+    "Samples" if _active_universe.domain == "neuroscience" else "Trading Days",
+    f"{returns.shape[0]:,}",
+)
 m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
 m4.metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
 m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
@@ -248,13 +265,21 @@ m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%
 _returns_json = returns.to_json(orient="split", date_format="iso")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Market Overview — Sub-Tab Layout
+# Market Overview — Sub-Tab Layout (Pairs & Dislocations gated by capability)
 # ══════════════════════════════════════════════════════════════════════════════
 
-tab_data, tab_corr, tab_cluster, tab_rolling, tab_pairs, tab_eee = st.tabs([
-    "Data & Stats", "Correlation", "Clustering & Network",
-    "Rolling Analysis", "Pairs & Dislocations", "EEE Analysis",
-])
+_tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
+if _active_universe.has_pair_trading:
+    _tab_labels.append("Pairs & Dislocations")
+_tab_labels.append("EEE Analysis")
+_tabs = st.tabs(_tab_labels)
+_tab_by_label = dict(zip(_tab_labels, _tabs))
+tab_data    = _tab_by_label["Data & Stats"]
+tab_corr    = _tab_by_label["Correlation"]
+tab_cluster = _tab_by_label["Clustering & Network"]
+tab_rolling = _tab_by_label["Rolling Analysis"]
+tab_pairs   = _tab_by_label.get("Pairs & Dislocations")   # None when EEG
+tab_eee     = _tab_by_label["EEE Analysis"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -265,12 +290,20 @@ with tab_data:
 
     # ── Section 1: Coverage & Normalized Prices ─────────────────────────────
     with st.container(border=True):
-        section_header(
-            "Data Coverage & Price Performance",
-            f"Left: per-ticker data availability (90% threshold). "
-            f"Right: all prices rebased to 100 — the bold black line is "
-            f"{_active_universe.index_ticker}.",
-        )
+        if _active_universe.has_index_series:
+            section_header(
+                "Data Coverage & Price Performance",
+                f"Left: per-{_active_universe.item_label.lower()} data availability "
+                f"(90% threshold). Right: all prices rebased to 100 — the bold black "
+                f"line is {_active_universe.index_ticker}.",
+            )
+        else:
+            section_header(
+                f"Data Coverage & {_active_universe.series_label} Performance",
+                f"Left: per-{_active_universe.item_label.lower()} data availability. "
+                f"Right: {_active_universe.series_label.lower()} time-series for a "
+                f"representative subset of channels (first 30 s).",
+            )
 
         col_left, col_right = st.columns(2)
 
@@ -294,32 +327,82 @@ with tab_data:
                          title_key="mo_coverage", default_title="Data Coverage by Ticker")
 
         with col_right:
-            norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
-            xu100 = load_xu100()
-            _index_label = _active_universe.index_ticker  # "XU100" for BIST, "^GSPC" for S&P
-            if not xu100.empty:
-                xu100_window = xu100.loc[start_dt:end_dt]
-                if not xu100_window.empty:
-                    norm_prices[_index_label] = xu100_window / xu100_window.iloc[0] * 100
+            if _active_universe.has_index_series:
+                # Financial universe: rebased prices + bold market-index overlay.
+                norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
+                xu100 = load_xu100()
+                _index_label = _active_universe.index_ticker  # "XU100" / "^GSPC"
+                if not xu100.empty:
+                    xu100_window = xu100.loc[start_dt:end_dt]
+                    if not xu100_window.empty:
+                        norm_prices[_index_label] = xu100_window / xu100_window.iloc[0] * 100
 
-            fig_prices = go.Figure()
-            for col in norm_prices.columns:
-                is_index = col == _index_label
-                fig_prices.add_trace(go.Scatter(
-                    x=norm_prices.index, y=norm_prices[col], name=col,
-                    mode="lines",
-                    line=dict(
-                        width=3.0 if is_index else 0.6,
-                        color="#2B2D42" if is_index else get_colors()["muted"],
-                    ),
-                    opacity=1.0 if is_index else 0.35,
-                    hovertemplate=f"{col}: %{{y:.1f}}<extra></extra>" if is_index else None,
-                    hoverinfo="skip" if not is_index else None,
-                ))
-            apply_chart_style(fig_prices, height=max(400, len(coverage) * 8),
-                              showlegend=False, yaxis_title="Normalized Price (base=100)")
-            render_chart(fig_prices, chart_id="mo_prices", filename_base="normalized_prices",
-                         title_key="mo_prices", default_title="Normalized Price Performance")
+                fig_prices = go.Figure()
+                for col in norm_prices.columns:
+                    is_index = col == _index_label
+                    fig_prices.add_trace(go.Scatter(
+                        x=norm_prices.index, y=norm_prices[col], name=col,
+                        mode="lines",
+                        line=dict(
+                            width=3.0 if is_index else 0.6,
+                            color="#2B2D42" if is_index else get_colors()["muted"],
+                        ),
+                        opacity=1.0 if is_index else 0.35,
+                        hovertemplate=f"{col}: %{{y:.1f}}<extra></extra>" if is_index else None,
+                        hoverinfo="skip" if not is_index else None,
+                    ))
+                apply_chart_style(fig_prices, height=max(400, len(coverage) * 8),
+                                  showlegend=False, yaxis_title="Normalized Price (base=100)")
+                render_chart(fig_prices, chart_id="mo_prices", filename_base="normalized_prices",
+                             title_key="mo_prices", default_title="Normalized Price Performance")
+            else:
+                # Non-financial universe (EEG): stacked voltage time-series of
+                # 10 evenly-spaced channels for the first 30 seconds. Each trace
+                # is vertically offset so overlaps stay readable.
+                n_show = min(10, prices_window.shape[1])
+                if n_show == 0:
+                    st.info("No channels available for the active universe.")
+                else:
+                    sample_rate_hz = 160                              # PhysioNet EEG default
+                    n_samples = min(int(30 * sample_rate_hz), len(prices_window))
+                    channel_idx = np.linspace(0, prices_window.shape[1] - 1, n_show, dtype=int)
+
+                    fig_volt = go.Figure()
+                    cumulative_offset = 0.0
+                    for i, col_idx in enumerate(channel_idx):
+                        ch = prices_window.columns[col_idx]
+                        series = prices_window.iloc[:n_samples, col_idx].values
+                        std = float(np.nanstd(series)) if np.isfinite(series).any() else 1.0
+                        spacing = max(std * 4.0, 1.0)
+                        fig_volt.add_trace(go.Scatter(
+                            x=np.arange(n_samples) / sample_rate_hz,
+                            y=series + cumulative_offset,
+                            mode="lines", name=ch,
+                            line=dict(width=0.8, color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)]),
+                            hovertemplate=f"{ch}: %{{y:.2f}} {_active_universe.series_units}<extra></extra>",
+                        ))
+                        cumulative_offset += spacing
+                    apply_chart_style(
+                        fig_volt, height=max(400, n_show * 38),
+                        xaxis_title="Time (seconds)",
+                        yaxis_title=(
+                            f"{_active_universe.series_label} "
+                            f"({_active_universe.series_units}) — stacked"
+                        ),
+                        showlegend=True,
+                        legend=dict(orientation="v", yanchor="top", y=1.0,
+                                    xanchor="left", x=1.02, font=dict(size=9)),
+                    )
+                    render_chart(
+                        fig_volt, chart_id="mo_voltage",
+                        filename_base="voltage_trace",
+                        title_key="mo_voltage",
+                        default_title=(
+                            f"{_active_universe.series_label} Time-Series "
+                            f"(first {n_samples / sample_rate_hz:.0f}s, "
+                            f"{n_show} sample channels)"
+                        ),
+                    )
 
     # ── Section 2: Descriptive Stats & Return Distribution ──────────────────
     with st.container(border=True):
@@ -363,88 +446,89 @@ with tab_data:
                 render_chart(fig_hist, chart_id="mo_hist", filename_base="return_distribution",
                              title_key="mo_hist", default_title="Return Distribution")
 
-    # ── Section 3: Return Anomalies ─────────────────────────────────────────
-    with st.container(border=True):
-        section_header(
-            "Return Anomalies",
-            "Days where a ticker's daily log return exceeded the configured "
-            "threshold (default ±30%) — usually corporate actions or data glitches.",
-        )
+    # ── Section 3: Return Anomalies (financial universes only) ──────────────
+    if _active_universe.has_anomaly_detection:
+      with st.container(border=True):
+          section_header(
+              "Return Anomalies",
+              "Days where a ticker's daily log return exceeded the configured "
+              "threshold (default ±30%) — usually corporate actions or data glitches.",
+          )
 
-        anomalies = load_anomalies()
-        if anomalies.empty:
-            st.success("No anomalies flagged in the current data window.")
-        else:
-            anom_view = anomalies.copy()
-            if "date" in anom_view.columns:
-                anom_view["date"] = pd.to_datetime(anom_view["date"])
-            anom_view["abs_return"] = anom_view["return_value"].abs()
+          anomalies = load_anomalies()
+          if anomalies.empty:
+              st.success("No anomalies flagged in the current data window.")
+          else:
+              anom_view = anomalies.copy()
+              if "date" in anom_view.columns:
+                  anom_view["date"] = pd.to_datetime(anom_view["date"])
+              anom_view["abs_return"] = anom_view["return_value"].abs()
 
-            col_table, col_scatter = st.columns([2, 3])
+              col_table, col_scatter = st.columns([2, 3])
 
-            with col_table:
-                disp = anom_view.copy()
-                if "date" in disp.columns:
-                    disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
-                disp = disp[["date", "ticker", "return_value", "abs_return"]]
-                st.dataframe(
-                    disp.sort_values("abs_return", ascending=False),
-                    use_container_width=True, hide_index=True, height=320,
-                    column_config={
-                        "return_value": st.column_config.NumberColumn(format="%.4f"),
-                        "abs_return": st.column_config.NumberColumn("|return|", format="%.4f"),
-                    },
-                )
+              with col_table:
+                  disp = anom_view.copy()
+                  if "date" in disp.columns:
+                      disp["date"] = disp["date"].dt.strftime("%Y-%m-%d")
+                  disp = disp[["date", "ticker", "return_value", "abs_return"]]
+                  st.dataframe(
+                      disp.sort_values("abs_return", ascending=False),
+                      use_container_width=True, hide_index=True, height=320,
+                      column_config={
+                          "return_value": st.column_config.NumberColumn(format="%.4f"),
+                          "abs_return": st.column_config.NumberColumn("|return|", format="%.4f"),
+                      },
+                  )
 
-            with col_scatter:
-                colors_now = get_colors()
-                fig_anom = go.Figure()
-                neg = anom_view[anom_view["return_value"] < 0]
-                pos = anom_view[anom_view["return_value"] >= 0]
-                if not neg.empty:
-                    fig_anom.add_trace(go.Scatter(
-                        x=neg["date"], y=neg["ticker"], mode="markers",
-                        marker=dict(
-                            size=8 + 30 * neg["abs_return"].clip(0, 1),
-                            color=colors_now["secondary"], opacity=0.8,
-                            symbol="triangle-down",
-                            line=dict(width=0.5, color="#fff"),
-                        ),
-                        name="negative",
-                        hovertemplate=(
-                            "%{y} on %{x|%Y-%m-%d}<br>"
-                            "return = %{customdata:.4f}<extra></extra>"
-                        ),
-                        customdata=neg["return_value"],
-                    ))
-                if not pos.empty:
-                    fig_anom.add_trace(go.Scatter(
-                        x=pos["date"], y=pos["ticker"], mode="markers",
-                        marker=dict(
-                            size=8 + 30 * pos["abs_return"].clip(0, 1),
-                            color=colors_now["primary"], opacity=0.8,
-                            symbol="triangle-up",
-                            line=dict(width=0.5, color="#fff"),
-                        ),
-                        name="positive",
-                        hovertemplate=(
-                            "%{y} on %{x|%Y-%m-%d}<br>"
-                            "return = %{customdata:.4f}<extra></extra>"
-                        ),
-                        customdata=pos["return_value"],
-                    ))
-                apply_chart_style(
-                    fig_anom, height=320,
-                    xaxis_title="Date", yaxis_title="Ticker",
-                    yaxis=dict(tickfont=dict(size=9)),
-                    showlegend=True,
-                )
-                render_chart(
-                    fig_anom, chart_id="mo_anomalies",
-                    filename_base="anomaly_timeline",
-                    title_key="mo_anom",
-                    default_title=f"Anomaly Timeline ({len(anom_view)} flagged events)",
-                )
+              with col_scatter:
+                  colors_now = get_colors()
+                  fig_anom = go.Figure()
+                  neg = anom_view[anom_view["return_value"] < 0]
+                  pos = anom_view[anom_view["return_value"] >= 0]
+                  if not neg.empty:
+                      fig_anom.add_trace(go.Scatter(
+                          x=neg["date"], y=neg["ticker"], mode="markers",
+                          marker=dict(
+                              size=8 + 30 * neg["abs_return"].clip(0, 1),
+                              color=colors_now["secondary"], opacity=0.8,
+                              symbol="triangle-down",
+                              line=dict(width=0.5, color="#fff"),
+                          ),
+                          name="negative",
+                          hovertemplate=(
+                              "%{y} on %{x|%Y-%m-%d}<br>"
+                              "return = %{customdata:.4f}<extra></extra>"
+                          ),
+                          customdata=neg["return_value"],
+                      ))
+                  if not pos.empty:
+                      fig_anom.add_trace(go.Scatter(
+                          x=pos["date"], y=pos["ticker"], mode="markers",
+                          marker=dict(
+                              size=8 + 30 * pos["abs_return"].clip(0, 1),
+                              color=colors_now["primary"], opacity=0.8,
+                              symbol="triangle-up",
+                              line=dict(width=0.5, color="#fff"),
+                          ),
+                          name="positive",
+                          hovertemplate=(
+                              "%{y} on %{x|%Y-%m-%d}<br>"
+                              "return = %{customdata:.4f}<extra></extra>"
+                          ),
+                          customdata=pos["return_value"],
+                      ))
+                  apply_chart_style(
+                      fig_anom, height=320,
+                      xaxis_title="Date", yaxis_title="Ticker",
+                      yaxis=dict(tickfont=dict(size=9)),
+                      showlegend=True,
+                  )
+                  render_chart(
+                      fig_anom, chart_id="mo_anomalies",
+                      filename_base="anomaly_timeline",
+                      title_key="mo_anom",
+                      default_title=f"Anomaly Timeline ({len(anom_view)} flagged events)",
+                  )
 
     # ── Section 9: Market Summary ───────────────────────────────────────────
     with st.container(border=True):
@@ -659,39 +743,39 @@ with tab_cluster:
                         sv2.metric("Normalized Mutual Info", f"{nmi:.3f}")
                         sv3.metric("Sectors Represented", f"{cluster_df['sector'].nunique()}")
 
-                        # Universe-appropriate financial-sector sanity check.
-                        # BIST tags banks with "Bank"/"Finans"; S&P uses GICS "Financials".
-                        _BANK_KEYWORDS = {
-                            "bist":  ["Bank", "Finans"],
-                            "sp500": ["Financials"],
-                        }
-                        _bank_keywords = _BANK_KEYWORDS.get(current_universe(), [])
-                        if _bank_keywords:
-                            bank_tickers = cluster_df[
-                                cluster_df["sector"].str.contains(
-                                    "|".join(_bank_keywords), case=False, na=False
+                        # Universe-appropriate sanity-check banners. The
+                        # groups come from the Universe.sanity_check_groups
+                        # dict in app/universe_registry.py — BIST checks
+                        # the banking sector; S&P checks mega-cap tech;
+                        # EEG checks central-motor / occipital / prefrontal
+                        # electrode triples. Group membership uses an EXACT
+                        # match against the cluster_df['ticker'] column,
+                        # since the registry lists concrete tickers or
+                        # channel names (not sector keywords).
+                        for group_label, members in (_active_universe.sanity_check_groups or {}).items():
+                            present = cluster_df[cluster_df["ticker"].isin(members)]
+                            if present.empty:
+                                continue
+                            present_clusters = present["cluster_id"].unique()
+                            # Cap displayed names so long lists stay readable.
+                            names = present["ticker"].tolist()
+                            if len(names) > 12:
+                                names_str = ", ".join(names[:12]) + f", … (+{len(names) - 12} more)"
+                            else:
+                                names_str = ", ".join(names)
+                            if len(present_clusters) == 1:
+                                st.success(
+                                    f"**{group_label} sanity check passed.** All "
+                                    f"{len(present)} members ({names_str}) are in "
+                                    f"Cluster {present_clusters[0]}."
                                 )
-                            ]
-                            if not bank_tickers.empty:
-                                bank_clusters = bank_tickers["cluster_id"].unique()
-                                n_bank_clusters = len(bank_clusters)
-                                # Cap displayed tickers so the message stays readable on S&P (60+ financials).
-                                if len(bank_tickers) > 12:
-                                    bank_names = ", ".join(bank_tickers["ticker"].tolist()[:12]) + f", … (+{len(bank_tickers) - 12} more)"
-                                else:
-                                    bank_names = ", ".join(bank_tickers["ticker"].tolist())
-                                if n_bank_clusters == 1:
-                                    st.success(
-                                        f"**Financial-sector sanity check passed.** All {len(bank_tickers)} "
-                                        f"financial tickers ({bank_names}) are in Cluster {bank_clusters[0]}."
-                                    )
-                                else:
-                                    st.warning(
-                                        f"**Financial-sector sanity check:** {len(bank_tickers)} "
-                                        f"financial tickers span {n_bank_clusters} clusters "
-                                        f"({', '.join(str(c) for c in sorted(bank_clusters))}). "
-                                        f"Tickers: {bank_names}"
-                                    )
+                            else:
+                                st.warning(
+                                    f"**{group_label}:** {len(present)} members span "
+                                    f"{len(present_clusters)} clusters "
+                                    f"({', '.join(str(c) for c in sorted(present_clusters))}). "
+                                    f"Members: {names_str}"
+                                )
 
                         st.markdown("**Cluster Purity**")
                         st.caption(
@@ -1114,131 +1198,134 @@ with tab_rolling:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tab 5 — Pairs & Dislocations
+# Tab 5 — Pairs & Dislocations  (financial universes only)
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tab_pairs:
+# Skip the whole block when the active universe has no pair-trading semantics.
+# tab_pairs is None for EEG (we never added the tab in that case).
+if tab_pairs is not None:
+  with tab_pairs:
 
-    # ── Section 7: Top/Bottom Pairs & Correlation Distribution ──────────────
-    with st.container(border=True):
-        section_header(
-            "Top/Bottom Pairs & Correlation Distribution",
-            "Most/least correlated pairs (left) and the full distribution of pairwise "
-            "correlations (right). Click a pair to investigate in the Pair Analysis view.",
-        )
+      # ── Section 7: Top/Bottom Pairs & Correlation Distribution ──────────────
+      with st.container(border=True):
+          section_header(
+              "Top/Bottom Pairs & Correlation Distribution",
+              "Most/least correlated pairs (left) and the full distribution of pairwise "
+              "correlations (right). Click a pair to investigate in the Pair Analysis view.",
+          )
 
-        col_pairs, col_dist = st.columns([3, 2])
+          col_pairs, col_dist = st.columns([3, 2])
 
-        with col_pairs:
-            pairs = load_top_bottom()
-            top_pairs = pairs[pairs["rank_type"] == "top"][
-                ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
-            ].reset_index(drop=True)
-            bottom_pairs = pairs[pairs["rank_type"] == "bottom"][
-                ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
-            ].reset_index(drop=True)
+          with col_pairs:
+              pairs = load_top_bottom()
+              top_pairs = pairs[pairs["rank_type"] == "top"][
+                  ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
+              ].reset_index(drop=True)
+              bottom_pairs = pairs[pairs["rank_type"] == "bottom"][
+                  ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
+              ].reset_index(drop=True)
 
-            tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
-            with tab_top:
-                st.dataframe(top_pairs, use_container_width=True, hide_index=True)
-                _top_pair_idx = st.selectbox(
-                    "Select pair to analyze",
-                    range(len(top_pairs)),
-                    format_func=lambda i: f"{top_pairs.iloc[i]['ticker_1']} / {top_pairs.iloc[i]['ticker_2']} ({top_pairs.iloc[i]['correlation']:.4f})",
-                    key="top_pair_sel",
-                )
-                if st.button("Open in Pair Analysis", key="top_pair_btn"):
-                    st.session_state["pa_ticker_a"] = top_pairs.iloc[_top_pair_idx]["ticker_1"]
-                    st.session_state["pa_ticker_b"] = top_pairs.iloc[_top_pair_idx]["ticker_2"]
-                    st.session_state["_goto_pair_analysis"] = True
-                    st.rerun()
+              tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
+              with tab_top:
+                  st.dataframe(top_pairs, use_container_width=True, hide_index=True)
+                  _top_pair_idx = st.selectbox(
+                      "Select pair to analyze",
+                      range(len(top_pairs)),
+                      format_func=lambda i: f"{top_pairs.iloc[i]['ticker_1']} / {top_pairs.iloc[i]['ticker_2']} ({top_pairs.iloc[i]['correlation']:.4f})",
+                      key="top_pair_sel",
+                  )
+                  if st.button("Open in Pair Analysis", key="top_pair_btn"):
+                      st.session_state["pa_ticker_a"] = top_pairs.iloc[_top_pair_idx]["ticker_1"]
+                      st.session_state["pa_ticker_b"] = top_pairs.iloc[_top_pair_idx]["ticker_2"]
+                      st.session_state["_goto_pair_analysis"] = True
+                      st.rerun()
 
-            with tab_bottom:
-                st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
-                _bot_pair_idx = st.selectbox(
-                    "Select pair to analyze",
-                    range(len(bottom_pairs)),
-                    format_func=lambda i: f"{bottom_pairs.iloc[i]['ticker_1']} / {bottom_pairs.iloc[i]['ticker_2']} ({bottom_pairs.iloc[i]['correlation']:.4f})",
-                    key="bot_pair_sel",
-                )
-                if st.button("Open in Pair Analysis", key="bot_pair_btn"):
-                    st.session_state["pa_ticker_a"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_1"]
-                    st.session_state["pa_ticker_b"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_2"]
-                    st.session_state["_goto_pair_analysis"] = True
-                    st.rerun()
+              with tab_bottom:
+                  st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
+                  _bot_pair_idx = st.selectbox(
+                      "Select pair to analyze",
+                      range(len(bottom_pairs)),
+                      format_func=lambda i: f"{bottom_pairs.iloc[i]['ticker_1']} / {bottom_pairs.iloc[i]['ticker_2']} ({bottom_pairs.iloc[i]['correlation']:.4f})",
+                      key="bot_pair_sel",
+                  )
+                  if st.button("Open in Pair Analysis", key="bot_pair_btn"):
+                      st.session_state["pa_ticker_a"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_1"]
+                      st.session_state["pa_ticker_b"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_2"]
+                      st.session_state["_goto_pair_analysis"] = True
+                      st.rerun()
 
-        with col_dist:
-            mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
-            upper_vals = corr.where(mask).stack().values
-            upper_vals = upper_vals[~np.isnan(upper_vals)]
+          with col_dist:
+              mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
+              upper_vals = corr.where(mask).stack().values
+              upper_vals = upper_vals[~np.isnan(upper_vals)]
 
-            fig_corr_dist = go.Figure()
-            fig_corr_dist.add_trace(go.Histogram(
-                x=upper_vals, nbinsx=60,
-                marker_color=get_colors()["primary"], opacity=0.75,
-                hovertemplate="Corr: %{x:.3f}<br>Count: %{y}<extra></extra>",
-            ))
-            mean_val = np.mean(upper_vals)
-            median_val = np.median(upper_vals)
-            fig_corr_dist.add_vline(x=mean_val, line_dash="dash", line_color=get_colors()["secondary"],
-                                     annotation_text=f"Mean: {mean_val:.3f}", annotation_font_size=10)
-            fig_corr_dist.add_vline(x=median_val, line_dash="dot", line_color=get_colors()["tertiary"],
-                                     annotation_text=f"Median: {median_val:.3f}", annotation_font_size=10)
-            apply_chart_style(fig_corr_dist, height=420,
-                              xaxis_title="Pairwise Correlation", yaxis_title="Frequency",
-                              showlegend=False)
-            render_chart(fig_corr_dist, chart_id="mo_corr_dist", filename_base="correlation_distribution",
-                         title_key="mo_corr_dist", default_title="Correlation Distribution")
+              fig_corr_dist = go.Figure()
+              fig_corr_dist.add_trace(go.Histogram(
+                  x=upper_vals, nbinsx=60,
+                  marker_color=get_colors()["primary"], opacity=0.75,
+                  hovertemplate="Corr: %{x:.3f}<br>Count: %{y}<extra></extra>",
+              ))
+              mean_val = np.mean(upper_vals)
+              median_val = np.median(upper_vals)
+              fig_corr_dist.add_vline(x=mean_val, line_dash="dash", line_color=get_colors()["secondary"],
+                                       annotation_text=f"Mean: {mean_val:.3f}", annotation_font_size=10)
+              fig_corr_dist.add_vline(x=median_val, line_dash="dot", line_color=get_colors()["tertiary"],
+                                       annotation_text=f"Median: {median_val:.3f}", annotation_font_size=10)
+              apply_chart_style(fig_corr_dist, height=420,
+                                xaxis_title="Pairwise Correlation", yaxis_title="Frequency",
+                                showlegend=False)
+              render_chart(fig_corr_dist, chart_id="mo_corr_dist", filename_base="correlation_distribution",
+                           title_key="mo_corr_dist", default_title="Correlation Distribution")
 
-    # ── Section 8: Dislocation Candidates ───────────────────────────────────
-    with st.container(border=True):
-        section_header(
-            "Dislocation Candidates",
-            "Historically correlated pairs ranked by mean-reversion characteristics. "
-            "Pairs with shorter half-lives and active Z-score dislocations are ranked higher.",
-        )
+      # ── Section 8: Dislocation Candidates ───────────────────────────────────
+      with st.container(border=True):
+          section_header(
+              "Dislocation Candidates",
+              "Historically correlated pairs ranked by mean-reversion characteristics. "
+              "Pairs with shorter half-lives and active Z-score dislocations are ranked higher.",
+          )
 
-        _candidates = load_dislocation_candidates()
-        if not _candidates.empty:
-            _display_cols = [
-                "ticker_a", "ticker_b", "sector_a", "sector_b",
-                "correlation", "beta", "half_life", "current_zscore",
-                "n_signals", "rank_score",
-            ]
-            _disp_cands = _candidates[[c for c in _display_cols if c in _candidates.columns]].copy()
+          _candidates = load_dislocation_candidates()
+          if not _candidates.empty:
+              _display_cols = [
+                  "ticker_a", "ticker_b", "sector_a", "sector_b",
+                  "correlation", "beta", "half_life", "current_zscore",
+                  "n_signals", "rank_score",
+              ]
+              _disp_cands = _candidates[[c for c in _display_cols if c in _candidates.columns]].copy()
 
-            st.dataframe(
-                _disp_cands,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "correlation": st.column_config.NumberColumn(format="%.4f"),
-                    "beta": st.column_config.NumberColumn(format="%.4f"),
-                    "half_life": st.column_config.NumberColumn("Half-Life (days)", format="%.1f"),
-                    "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
-                    "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
-                },
-            )
+              st.dataframe(
+                  _disp_cands,
+                  use_container_width=True,
+                  hide_index=True,
+                  column_config={
+                      "correlation": st.column_config.NumberColumn(format="%.4f"),
+                      "beta": st.column_config.NumberColumn(format="%.4f"),
+                      "half_life": st.column_config.NumberColumn("Half-Life (days)", format="%.1f"),
+                      "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
+                      "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
+                  },
+              )
 
-            _cand_idx = st.selectbox(
-                "Select a candidate pair to analyze",
-                range(len(_disp_cands)),
-                format_func=lambda i: (
-                    f"{_disp_cands.iloc[i]['ticker_a']} / {_disp_cands.iloc[i]['ticker_b']}  "
-                    f"(Z={_disp_cands.iloc[i]['current_zscore']:.2f}, HL={_disp_cands.iloc[i]['half_life']:.0f}d)"
-                ),
-                key="cand_pair_sel",
-            )
-            if st.button("Analyze in Pair Analysis", key="cand_pair_btn"):
-                st.session_state["pa_ticker_a"] = _disp_cands.iloc[_cand_idx]["ticker_a"]
-                st.session_state["pa_ticker_b"] = _disp_cands.iloc[_cand_idx]["ticker_b"]
-                st.session_state["_goto_pair_analysis"] = True
-                st.rerun()
-        else:
-            st.info(
-                "No dislocation candidates available. Run the pipeline "
-                "(`python run_pipeline.py`) to generate ranked candidate pairs."
-            )
+              _cand_idx = st.selectbox(
+                  "Select a candidate pair to analyze",
+                  range(len(_disp_cands)),
+                  format_func=lambda i: (
+                      f"{_disp_cands.iloc[i]['ticker_a']} / {_disp_cands.iloc[i]['ticker_b']}  "
+                      f"(Z={_disp_cands.iloc[i]['current_zscore']:.2f}, HL={_disp_cands.iloc[i]['half_life']:.0f}d)"
+                  ),
+                  key="cand_pair_sel",
+              )
+              if st.button("Analyze in Pair Analysis", key="cand_pair_btn"):
+                  st.session_state["pa_ticker_a"] = _disp_cands.iloc[_cand_idx]["ticker_a"]
+                  st.session_state["pa_ticker_b"] = _disp_cands.iloc[_cand_idx]["ticker_b"]
+                  st.session_state["_goto_pair_analysis"] = True
+                  st.rerun()
+          else:
+              st.info(
+                  "No dislocation candidates available. Run the pipeline "
+                  "(`python run_pipeline.py`) to generate ranked candidate pairs."
+              )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
