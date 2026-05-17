@@ -88,6 +88,46 @@ UNIVERSES: dict[str, Universe] = {
             ],
         },
     ),
+    "bist_usd": Universe(
+        key="bist_usd",
+        label="BIST 100 — USD-denominated",
+        short_label="BIST in USD",
+        config_path="config/settings_bist_usd.yaml",
+        description=(
+            "Same BIST universe re-expressed in USD by dividing each ticker's "
+            "price by the USDTRY spot rate. Numéraire sensitivity probe: how "
+            "much of BIST co-movement is FX vs equity?"
+        ),
+        currency="USD",
+        index_ticker="XU100",
+        index_display_name="XU100 (BIST 100, USD-denominated)",
+        eligible_for_cross_market=False,
+        sanity_check_groups={
+            "Banking sector": [
+                "AKBNK", "GARAN", "YKBNK", "VAKBN", "HALKB", "SKBNK", "ISCTR",
+            ],
+        },
+    ),
+    "bist_gold": Universe(
+        key="bist_gold",
+        label="BIST 100 — Gold-denominated",
+        short_label="BIST in Gold",
+        config_path="config/settings_bist_gold.yaml",
+        description=(
+            "Same BIST universe re-expressed in gold (XAU/TRY) by dividing "
+            "each ticker's price by the gold-TRY rate. Numéraire sensitivity "
+            "probe: real-purchasing-power view of BIST co-movement."
+        ),
+        currency="XAU",
+        index_ticker="XU100",
+        index_display_name="XU100 (BIST 100, gold-denominated)",
+        eligible_for_cross_market=False,
+        sanity_check_groups={
+            "Banking sector": [
+                "AKBNK", "GARAN", "YKBNK", "VAKBN", "HALKB", "SKBNK", "ISCTR",
+            ],
+        },
+    ),
     "sp500": Universe(
         key="sp500",
         label="S&P 500 — United States",
