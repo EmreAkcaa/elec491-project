@@ -251,7 +251,7 @@ def render(
                     _sub[_c] = _sub[_c].map(lambda v: f"{v:.4f}")
                 for _c in ["skewness", "kurtosis"]:
                     _sub[_c] = _sub[_c].map(lambda v: f"{v:.2f}")
-                st.dataframe(_sub.set_index("ticker"), use_container_width=True)
+                st.dataframe(_sub.set_index("ticker"), width="stretch")
             except Exception:
                 pass
 
@@ -342,7 +342,7 @@ def render(
             with _rc2:
                 rc_step = st.selectbox(
                     "Step", [1, 5, 21], index=1, key="pa_rc_step",
-                    format_func=lambda v: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}[v],
+                    format_func=lambda v: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(v, str(v)),
                 )
             with _rc3:
                 rc_method = st.selectbox("Method", ["pearson", "spearman"], key="pa_rc_method")
@@ -658,7 +658,7 @@ def render(
                         _disp = _window_signals.copy()
                         _disp["date"] = pd.to_datetime(_disp["date"]).dt.strftime("%Y-%m-%d")
                         _disp["zscore_value"] = _disp["zscore_value"].map(lambda v: f"{v:.4f}")
-                        st.dataframe(_disp, hide_index=True, use_container_width=True)
+                        st.dataframe(_disp, hide_index=True, width="stretch")
                 else:
                     st.warning("Not enough data to compute Z-score for the selected window.")
 
@@ -826,7 +826,7 @@ def render(
                                 d = G[ticker_a][n]["weight"]
                                 s = sector_map.get(n, "")
                                 _na_data.append({"Neighbor": n, "Distance": f"{d:.4f}", "Sector": s})
-                            st.dataframe(pd.DataFrame(_na_data), hide_index=True, use_container_width=True)
+                            st.dataframe(pd.DataFrame(_na_data), hide_index=True, width="stretch")
                     with col_nb:
                         st.markdown(f"**{ticker_b} MST Neighbors** ({len(neighbors_b)})")
                         if neighbors_b:
@@ -835,7 +835,7 @@ def render(
                                 d = G[ticker_b][n]["weight"]
                                 s = sector_map.get(n, "")
                                 _nb_data.append({"Neighbor": n, "Distance": f"{d:.4f}", "Sector": s})
-                            st.dataframe(pd.DataFrame(_nb_data), hide_index=True, use_container_width=True)
+                            st.dataframe(pd.DataFrame(_nb_data), hide_index=True, width="stretch")
 
                 else:
                     missing = []

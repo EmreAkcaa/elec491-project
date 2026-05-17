@@ -394,7 +394,7 @@ def render_theme_sidebar() -> None:
         set_active_theme(updated)
 
     # ── Reset button ─────────────────────────────────────────────────────
-    if st.button("Reset to Default", key="_theme_reset", use_container_width=True):
+    if st.button("Reset to Default", key="_theme_reset", width="stretch"):
         set_active_theme(deepcopy(DEFAULT_THEME))
         st.rerun()
 

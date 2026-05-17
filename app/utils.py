@@ -91,10 +91,25 @@ def render_chart(
     filename_base: str = "chart",
     title_key: str = "",
     default_title: str = "",
-    use_container_width: bool = True,
+    width: str = "stretch",
+    use_container_width: bool | None = None,   # deprecated; kept for back-compat
 ) -> None:
-    """Render a Plotly figure with configured modebar, optional title, and export popover."""
+    """Render a Plotly figure with configured modebar, optional title, and export popover.
+
+    Width API
+    ---------
+    ``width="stretch"`` (default) → chart fills its container.
+    ``width="content"``           → chart sizes to its own content.
+
+    The legacy ``use_container_width`` kwarg is still accepted for back-compat
+    (True → ``"stretch"``, False → ``"content"``); callers should migrate to
+    ``width=`` since Streamlit deprecates ``use_container_width`` after 2025-12-31.
+    """
     from chart_export import render_export_popover, get_plotly_config
+
+    # Back-compat shim — translate legacy kwarg to the new width= API.
+    if use_container_width is not None:
+        width = "stretch" if use_container_width else "content"
 
     # Per-chart title input — only updates the title, does NOT re-apply full theme
     if title_key:
@@ -119,7 +134,7 @@ def render_chart(
             )
 
     config = get_plotly_config(chart_id)
-    st.plotly_chart(fig, use_container_width=use_container_width, config=config)
+    st.plotly_chart(fig, width=width, config=config)
     render_export_popover(fig, chart_id, filename_base)
 
 

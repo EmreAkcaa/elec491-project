@@ -285,7 +285,7 @@ market_summary = pipe_meta.get("market_summary", {})
 _settings_col, m1, m2, m3, m4, m5 = st.columns([1, 1, 1, 1, 1, 1.5])
 
 with _settings_col:
-    with st.popover("Settings", icon=":material/settings:", use_container_width=True):
+    with st.popover("Settings", icon=":material/settings:", width="stretch"):
         date_range = st.date_input(
             "Date range",
             value=(min_date, max_date),
@@ -493,7 +493,7 @@ with tab_data:
                 display_df[c] = display_df[c].map(lambda x: f"{x:.4f}")
             for c in ["skewness", "kurtosis"]:
                 display_df[c] = display_df[c].map(lambda x: f"{x:.2f}")
-            st.dataframe(display_df, use_container_width=True, height=420)
+            st.dataframe(display_df, width="stretch", height=420)
 
         with col_hist:
             selected_ticker = st.selectbox("Ticker", sorted(returns.columns.tolist()))
@@ -541,7 +541,7 @@ with tab_data:
                   disp = disp[["date", "ticker", "return_value", "abs_return"]]
                   st.dataframe(
                       disp.sort_values("abs_return", ascending=False),
-                      use_container_width=True, hide_index=True, height=320,
+                      width="stretch", hide_index=True, height=320,
                       column_config={
                           "return_value": st.column_config.NumberColumn(format="%.4f"),
                           "abs_return": st.column_config.NumberColumn("|return|", format="%.4f"),
@@ -782,12 +782,12 @@ with tab_cluster:
                 st.metric("Clusters Found", n_clusters)
 
                 display_clusters = cluster_df.sort_values(["cluster_id", "ticker"]).reset_index(drop=True)
-                st.dataframe(display_clusters, use_container_width=True, height=350, hide_index=True)
+                st.dataframe(display_clusters, width="stretch", height=350, hide_index=True)
 
                 if "sector" in cluster_df.columns:
                     st.markdown("**Cluster vs Sector**")
                     crosstab = pd.crosstab(cluster_df["cluster_id"], cluster_df["sector"])
-                    st.dataframe(crosstab, use_container_width=True)
+                    st.dataframe(crosstab, width="stretch")
 
                     try:
                         from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
@@ -863,7 +863,7 @@ with tab_cluster:
                                 "Members": ", ".join(sorted(grp["ticker"].tolist())),
                             })
                         purity_df = pd.DataFrame(purity_rows)
-                        st.dataframe(purity_df, use_container_width=True, hide_index=True)
+                        st.dataframe(purity_df, width="stretch", hide_index=True)
             else:
                 st.info("Run the clustering pipeline to see cluster assignments.")
 
@@ -962,7 +962,7 @@ with tab_cluster:
                 display_metrics["betweenness_centrality"] = display_metrics[
                     "betweenness_centrality"
                 ].map(lambda x: f"{x:.4f}")
-                st.dataframe(display_metrics, use_container_width=True, height=500, hide_index=True)
+                st.dataframe(display_metrics, width="stretch", height=500, hide_index=True)
 
                 st.markdown("---")
                 st.markdown("**Quick Jump to Pair Analysis**")
@@ -1009,7 +1009,7 @@ with tab_rolling:
             rc_window = st.selectbox("Window (days)", [60, 120, 252, 504], index=2, key="rc_win")
         with rc_col2:
             rc_step = st.selectbox("Step", [1, 5, 21], index=1, key="rc_step",
-                                   format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}[x])
+                                   format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(x, str(x)))
         with rc_col3:
             rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
         with rc_col4:
@@ -1295,7 +1295,7 @@ if tab_pairs is not None:
 
               tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
               with tab_top:
-                  st.dataframe(top_pairs, use_container_width=True, hide_index=True)
+                  st.dataframe(top_pairs, width="stretch", hide_index=True)
                   _top_pair_idx = st.selectbox(
                       "Select pair to analyze",
                       range(len(top_pairs)),
@@ -1309,7 +1309,7 @@ if tab_pairs is not None:
                       st.rerun()
 
               with tab_bottom:
-                  st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
+                  st.dataframe(bottom_pairs, width="stretch", hide_index=True)
                   _bot_pair_idx = st.selectbox(
                       "Select pair to analyze",
                       range(len(bottom_pairs)),
@@ -1364,7 +1364,7 @@ if tab_pairs is not None:
 
               st.dataframe(
                   _disp_cands,
-                  use_container_width=True,
+                  width="stretch",
                   hide_index=True,
                   column_config={
                       "correlation": st.column_config.NumberColumn(format="%.4f"),
