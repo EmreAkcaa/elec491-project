@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1176" viewBox="0 0 1100 1176">
+<defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#374151" /></marker></defs>
+<text x="550.0" y="28" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">StoNeCoAl signal-processing pipeline — sensor to network to inference</text>
+<rect x="40.0" y="50.0" width="1020" height="124" rx="14" ry="14" fill="#4361EE22" stroke="#4361EE" stroke-width="1.8" />
+<text x="58.0" y="78.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#4361EE">SENSORS</text>
+<text x="62.0" y="100.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Borsa Istanbul order-book aggregates (.IS, daily, 5 yr)</text>
+<text x="62.0" y="118.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• S&amp;P 500 exchange aggregates (NYSE/NASDAQ, daily, 5 yr)</text>
+<text x="62.0" y="136.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• 64-channel EEG cap (10-10 montage, 160 Hz ADC, PhysioNet BCI2000)</text>
+<line x1="550.0" y1="178.0" x2="550.0" y2="198.0" stroke="#374151" stroke-width="2.4" marker-end="url(#arrowhead)" />
+<rect x="40.0" y="202.0" width="1020" height="124" rx="14" ry="14" fill="#3A86FF22" stroke="#3A86FF" stroke-width="1.8" />
+<text x="58.0" y="230.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#3A86FF">ACQUISITION &amp; PREPROCESSING</text>
+<text x="62.0" y="252.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• yfinance / İş Yatırım pulls (5 yr × ~500 tickers)</text>
+<text x="62.0" y="270.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• MNE-Python EDF+ ingest, bandpass 1–50 Hz, 50 Hz notch, CAR ref (EEG)</text>
+<text x="62.0" y="288.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• log-return · calendar align · 90% coverage filter · anomaly mask</text>
+<line x1="550.0" y1="330.0" x2="550.0" y2="350.0" stroke="#374151" stroke-width="2.4" marker-end="url(#arrowhead)" />
+<rect x="40.0" y="354.0" width="1020" height="142" rx="14" ry="14" fill="#7209B722" stroke="#7209B7" stroke-width="1.8" />
+<text x="58.0" y="382.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#7209B7">STATISTICAL SIGNAL PROCESSING</text>
+<text x="62.0" y="404.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Pearson + Spearman correlation, rolling-window stats</text>
+<text x="62.0" y="422.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• RMT denoising (Marchenko-Pastur, signal vs noise eigenvalues)</text>
+<text x="62.0" y="440.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Graphical LASSO (sparse inverse covariance, partial correlation)</text>
+<text x="62.0" y="458.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Wavelet decomposition (db4, scales 1–7)</text>
+<line x1="550.0" y1="500.0" x2="550.0" y2="520.0" stroke="#374151" stroke-width="2.4" marker-end="url(#arrowhead)" />
+<rect x="40.0" y="524.0" width="1020" height="142" rx="14" ry="14" fill="#F7258522" stroke="#F72585" stroke-width="1.8" />
+<text x="58.0" y="552.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F72585">INFORMATION THEORY</text>
+<text x="62.0" y="574.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Pairwise mutual information (plug-in + closed-form Gaussian baseline)</text>
+<text x="62.0" y="592.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Effective dimensionality D_eff, joint entropy ΔH = −½ log det Σ</text>
+<text x="62.0" y="610.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Transfer entropy with circular-block-bootstrap null + BH-FDR</text>
+<text x="62.0" y="628.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Regime KL divergence between calm and crisis covariances</text>
+<line x1="550.0" y1="670.0" x2="550.0" y2="690.0" stroke="#374151" stroke-width="2.4" marker-end="url(#arrowhead)" />
+<rect x="40.0" y="694.0" width="1020" height="142" rx="14" ry="14" fill="#06D6A022" stroke="#06D6A0" stroke-width="1.8" />
+<text x="58.0" y="722.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#06D6A0">NETWORK EXTRACTION &amp; VALIDATION</text>
+<text x="62.0" y="744.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Mantegna distance d = √(2(1 − ρ))</text>
+<text x="62.0" y="762.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Minimum Spanning Tree (Kruskal)</text>
+<text x="62.0" y="780.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Hierarchical clustering (Ward linkage, n_clusters via maxclust)</text>
+<text x="62.0" y="798.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Sector / anatomical-region validation (ARI, NMI)</text>
+<line x1="550.0" y1="840.0" x2="550.0" y2="860.0" stroke="#374151" stroke-width="2.4" marker-end="url(#arrowhead)" />
+<rect x="40.0" y="864.0" width="1020" height="124" rx="14" ry="14" fill="#FFC40022" stroke="#FFC400" stroke-width="1.8" />
+<text x="58.0" y="892.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#FFC400">NEUROMORPHIC INFERENCE (optional)</text>
+<text x="62.0" y="914.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Σ-Δ-style delta-modulation encoder, population coding</text>
+<text x="62.0" y="932.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Recurrent LIF SNN (96 hidden, β = 0.92, surrogate gradient)</text>
+<text x="62.0" y="950.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Target deployment substrates: Intel Loihi 2, IBM TrueNorth, SpiNNaker</text>
+<line x1="550.0" y1="992.0" x2="550.0" y2="1012.0" stroke="#374151" stroke-width="2.4" marker-end="url(#arrowhead)" />
+<rect x="40.0" y="1016.0" width="1020" height="124" rx="14" ry="14" fill="#9CA3AF22" stroke="#9CA3AF" stroke-width="1.8" />
+<text x="58.0" y="1044.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#9CA3AF">VISUALISATION</text>
+<text x="62.0" y="1066.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Streamlit dashboard (3 pages × N tabs per universe)</text>
+<text x="62.0" y="1084.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Multi-universe sidebar selector (BIST, S&amp;P, BIST/USD, BIST/Gold, EEG)</text>
+<text x="62.0" y="1102.0" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#111827">• Cross-market comparison + numéraire sensitivity sub-tabs</text>
+<text x="550.0" y="1164" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" font-style="italic" fill="#4B5563">EEE methods on the chain: sampling (160 Hz ADC), DSP (bandpass, notch, CAR), random matrix theory, sparse precision, multi-resolution wavelet, Shannon/KL information theory, transfer entropy, spike-coded LIF inference.</text>
+</svg>
