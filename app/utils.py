@@ -97,7 +97,7 @@ def apply_chart_style(fig, height: int = 420, title: str = "", **overrides):
 N_INTERACTIVE_MATRIX_MAX = 160
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner="Rendering matrix as PNG (large-N path)...")
 def _rasterize_matrix_png(
     matrix_bytes: bytes,
     shape: tuple[int, int],

@@ -183,9 +183,13 @@ def _compute_market_stats(_returns: pd.DataFrame, cache_key: str, window, step, 
 
 
 @st.cache_data(show_spinner=False)
-def _compute_pair(_returns: pd.DataFrame, cache_key: str, a, b, window, method, wtype):
+def _compute_pair(_returns: pd.DataFrame, cache_key: str, a, b, window, method, wtype, ewm_span=None):
+    # `ewm_span` is honoured only when wtype == "ewm"; the underlying
+    # compute_rolling_pair_correlation ignores it for rolling/expanding.
     return compute_rolling_pair_correlation(
-        _returns, a, b, window=window, method=method, window_type=wtype,
+        _returns, a, b,
+        window=window, method=method, window_type=wtype,
+        ewm_span=ewm_span,
     )
 
 
@@ -211,10 +215,72 @@ def _compute_sector(_returns: pd.DataFrame, cache_key: str, sec_map_items, windo
 # a full script rerun anyway).
 #
 # We deliberately do NOT fragment:
-#   - Correlation Heatmap → heat_method change affects `corr` which the Pairs
-#     tab also reads, so a full script rerun is the wanted behaviour.
 #   - Rolling Market Stats → widgets are outer (rc_*), fragmenting just this
 #     sub-tab gives marginal win.
+
+@st.fragment
+def _render_correlation_heatmap() -> None:
+    """Full-period correlation heatmap. Owns heat_method + use_clustering_order
+    widgets. Computes `corr` via @st.cache_data — the Pairs & Dislocations tab
+    later recomputes the same `_compute_corr(...)` call using the heat_method
+    value from session_state and gets a cache HIT, so cross-tab semantics are
+    preserved without paying the compute twice.
+    """
+    _heat_c1, _heat_c2 = st.columns(2)
+    with _heat_c1:
+        heat_method = st.selectbox(
+            "Correlation method", ["pearson", "spearman"],
+            key="heat_method",
+        )
+    with _heat_c2:
+        use_clustering_order = st.checkbox(
+            "Reorder by hierarchical clustering", value=True, key="mo_corr_reorder",
+        )
+
+    with st.spinner("Computing correlation matrix..."):
+        corr = _compute_corr(returns, returns_cache_key, dynamic_min_periods, heat_method)
+    leaf_order = load_dendrogram_order()
+
+    if use_clustering_order and leaf_order is not None:
+        valid_order = [t for t in leaf_order if t in corr.columns]
+        corr_display = corr.loc[valid_order, valid_order] if valid_order else corr
+    else:
+        corr_display = corr
+
+    with st.container(border=True):
+        _series_lower = _cap(_active_universe, 'series_label', 'Log return').lower()
+        _samp_unit = (
+            "trading days" if _cap(_active_universe, 'domain', 'finance') == "finance"
+            else "samples"
+        )
+        st.caption(
+            f"Pairwise correlation matrix of {_series_lower}s across all "
+            f"{_samp_unit} in the window. Toggle method and clustering reorder above.",
+        )
+
+        render_matrix_heatmap(
+            corr_display,
+            chart_id="mo_heatmap",
+            filename_base="correlation_heatmap",
+            title_key="mo_heatmap",
+            default_title="Correlation Matrix",
+            zmin=-1.0, zmax=1.0, diverging=True,
+            height=_heatmap_height(min(len(corr_display), 200)),
+            hover_label="corr",
+            colorbar_title="Corr",
+        )
+        with st.expander(
+            f"Download full-resolution matrix as CSV "
+            f"({corr_display.shape[0]}×{corr_display.shape[0]})"
+        ):
+            st.download_button(
+                "Download CSV",
+                data=corr_display.to_csv().encode("utf-8"),
+                file_name=f"correlation_{_active_universe.key}.csv",
+                mime="text/csv",
+                key="mo_heatmap_csv_dl",
+            )
+
 
 @st.fragment
 def _render_pit_correlation() -> None:
@@ -223,45 +289,89 @@ def _render_pit_correlation() -> None:
     reruns only this block."""
     _is_finance_pit = _cap(_active_universe, 'domain', 'finance') == "finance"
     st.caption(
-        "Slide to a specific date to see the correlation matrix for that rolling window. "
+        "Pick a date + window to see the correlation matrix at that point in time. "
         + ("Useful for comparing market structure during crises vs calm periods."
            if _is_finance_pit else
            "Useful for tracking how network structure shifts across the recording.")
     )
 
+    trading_dates = returns.index.tolist()
+    if not trading_dates:
+        st.warning("No data available for this universe.")
+        return
+    _date_min = trading_dates[0].date()
+    _date_max = trading_dates[-1].date()
+
     pit_c1, pit_c2, pit_c3 = st.columns(3)
     with pit_c1:
         _win_label = "Window (days)" if _is_finance_pit else "Window (samples)"
-        pit_window = st.selectbox(
-            _win_label, [60, 120, 252], index=2, key="pit_window",
-        )
+        # Number input replaces the 3-option selectbox. Bounded so the user
+        # can't pick a window larger than the data window itself; default 252
+        # matches the prior selectbox default.
+        pit_window = int(st.number_input(
+            _win_label,
+            min_value=20,
+            max_value=min(504, max(20, len(trading_dates))),
+            value=252 if 252 <= len(trading_dates) else max(20, len(trading_dates) // 2),
+            step=10,
+            key="pit_window",
+            help="Trading days in the rolling window used to compute the correlation snapshot.",
+        ))
     with pit_c2:
         pit_method = st.selectbox(
             "Method", ["pearson", "spearman"], key="pit_method",
         )
     with pit_c3:
-        trading_dates = returns.index.tolist()
+        # Date picker replaces the select_slider. The slider was good for
+        # exploration but bad for known-date queries ("show me 2020-03-12");
+        # number_input + date_input still re-runs only this fragment, so
+        # interactive scrubbing is preserved at the cost of two clicks
+        # instead of a drag.
         valid_start = max(0, pit_window - 1)
-        pit_date = st.select_slider(
+        _min_pick = trading_dates[valid_start].date() if valid_start < len(trading_dates) else _date_min
+        _default_pick = _date_max
+        pit_date_picked = st.date_input(
             "Snapshot date",
-            options=trading_dates[valid_start:] if len(trading_dates) > valid_start else trading_dates,
-            value=trading_dates[-1] if trading_dates else None,
-            format_func=lambda d: d.strftime("%Y-%m-%d"),
+            value=_default_pick,
+            min_value=_min_pick,
+            max_value=_date_max,
             key="pit_date",
         )
 
-    if pit_date is None:
-        return
+    # date_input can return a date OR a tuple if range mode is on (we use
+    # single-date mode, so it's always a single date). Coerce to Timestamp
+    # for downstream _pit_corr (which serialises via isoformat()) — and
+    # snap to the NEAREST trading day in case the user picks a weekend
+    # / market holiday.
+    if isinstance(pit_date_picked, tuple):
+        pit_date_picked = pit_date_picked[0] if pit_date_picked else _default_pick
+    _picked_ts = pd.Timestamp(pit_date_picked)
+    _date_idx = returns.index.searchsorted(_picked_ts, side="right") - 1
+    _date_idx = max(0, min(_date_idx, len(returns.index) - 1))
+    pit_date = returns.index[_date_idx]
+    if pit_date.date() != pit_date_picked:
+        st.caption(
+            f":material/info: Snapped to nearest trading day "
+            f"{pit_date.strftime('%Y-%m-%d')} "
+            f"(you picked {pit_date_picked.isoformat()} — weekend/holiday)."
+        )
 
-    pit_corr = _pit_corr(
-        returns, returns_cache_key, pit_date.isoformat(), pit_window, pit_method,
-    )
+    with st.spinner("Computing snapshot correlation..."):
+        pit_corr = _pit_corr(
+            returns, returns_cache_key, pit_date.isoformat(), pit_window, pit_method,
+        )
     if pit_corr.empty:
         st.warning("Not enough data for the selected date and window size.")
         return
 
-    if use_clustering_order and leaf_order is not None:
-        pit_valid = [t for t in leaf_order if t in pit_corr.columns]
+    # use_clustering_order and leaf_order used to be script-level globals set
+    # inside `with tab_corr:`. Now that the heatmap is also a fragment, they
+    # aren't visible at module scope — read from session_state + load dendrogram
+    # directly (load_dendrogram_order is @st.cache_data, so it's free).
+    _use_clustering_order = bool(st.session_state.get("mo_corr_reorder", True))
+    _leaf_order = load_dendrogram_order()
+    if _use_clustering_order and _leaf_order is not None:
+        pit_valid = [t for t in _leaf_order if t in pit_corr.columns]
         pit_display = pit_corr.loc[pit_valid, pit_valid] if pit_valid else pit_corr
     else:
         pit_display = pit_corr
@@ -318,8 +428,17 @@ def _render_rolling_pair() -> None:
         pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pair_b")
 
     if pair_a and pair_b and pair_a != pair_b:
+        # When window_type == "ewm", convert α → span (pandas formula:
+        # span = 2/α - 1). Otherwise pass None and the underlying
+        # compute_rolling_pair_correlation ignores ewm_span.
+        _ewm_span = None
+        if rc_window_type == "ewm":
+            _alpha = float(st.session_state.get("rc_ewm_alpha", 0.05))
+            _ewm_span = max(2, int((2.0 / _alpha) - 1))
         pair_corr = _compute_pair(
-            returns, returns_cache_key, pair_a, pair_b, rc_window, rc_method, rc_window_type,
+            returns, returns_cache_key, pair_a, pair_b,
+            rc_window, rc_method, rc_window_type,
+            ewm_span=_ewm_span,
         )
 
         fig_pair = go.Figure()
@@ -1076,71 +1195,14 @@ with tab_data:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_corr:
-
-    _heat_c1, _heat_c2 = st.columns(2)
-    with _heat_c1:
-        heat_method = st.selectbox(
-            "Correlation method", ["pearson", "spearman"],
-            key="heat_method",
-        )
-    with _heat_c2:
-        use_clustering_order = st.checkbox(
-            "Reorder by hierarchical clustering", value=True, key="mo_corr_reorder",
-        )
-
-    # `_compute_corr` is @st.cache_data — on hits it returns in microseconds,
-    # making the status widget pure visual flicker. Drop it.
-    corr = _compute_corr(returns, returns_cache_key, dynamic_min_periods, heat_method)
-
-    leaf_order = load_dendrogram_order()
-
-    if use_clustering_order and leaf_order is not None:
-        valid_order = [t for t in leaf_order if t in corr.columns]
-        corr_display = corr.loc[valid_order, valid_order] if valid_order else corr
-    else:
-        corr_display = corr
-
+    # Both sub-tabs are @st.fragment-scoped. Widget changes inside one
+    # sub-tab (heat_method, pit_window, pit_date, etc.) only re-run that
+    # fragment — the other sub-tab, the other top-level tabs, and the
+    # rest of the script are skipped. Cross-tab state (heat_method,
+    # use_clustering_order) flows via st.session_state.
     _corr_heatmap_tab, _corr_pit_tab = st.tabs(["Heatmap", "Point-in-Time Snapshot"])
-
-    # ── Sub-tab: Full-period heatmap ──────────────────────────────────────
     with _corr_heatmap_tab:
-        with st.container(border=True):
-            _series_lower = _cap(_active_universe, 'series_label', 'Log return').lower()
-            _samp_unit = (
-                "trading days" if _cap(_active_universe, 'domain', 'finance') == "finance"
-                else "samples"
-            )
-            st.caption(
-                f"Pairwise correlation matrix of {_series_lower}s across all {_samp_unit} in the window. "
-                "Toggle method and clustering reorder above.",
-            )
-
-            render_matrix_heatmap(
-                corr_display,
-                chart_id="mo_heatmap",
-                filename_base="correlation_heatmap",
-                title_key="mo_heatmap",
-                default_title="Correlation Matrix",
-                zmin=-1.0, zmax=1.0, diverging=True,
-                height=_heatmap_height(min(len(corr_display), 200)),
-                hover_label="corr",
-                colorbar_title="Corr",
-            )
-            with st.expander(
-                f"Download full-resolution matrix as CSV "
-                f"({corr_display.shape[0]}×{corr_display.shape[0]})"
-            ):
-                st.download_button(
-                    "Download CSV",
-                    data=corr_display.to_csv().encode("utf-8"),
-                    file_name=f"correlation_{_active_universe.key}.csv",
-                    mime="text/csv",
-                    key="mo_heatmap_csv_dl",
-                )
-
-    # ── Sub-tab: Point-in-Time Correlation Snapshot ────────────────────────
-    # Body lives in `_render_pit_correlation` fragment (defined at module top).
-    # Dragging the date slider only reruns the fragment, not the whole script.
+        _render_correlation_heatmap()
     with _corr_pit_tab:
         with st.container(border=True):
             _render_pit_correlation()
@@ -1429,23 +1491,53 @@ with tab_rolling:
             "**Recompute** to refresh charts. Precomputed combos "
             "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly."
         )
+        # Read the last-submitted window_type from session_state to decide
+        # whether to render the EWM-α input. Inside a form, widget values
+        # don't propagate until submit, so this reflects the previous submit
+        # (NOT the current in-form selection) — slightly clunky but the
+        # documented Streamlit pattern. Default to "rolling" so first paint
+        # doesn't show α.
+        _last_wtype = st.session_state.get("rc_wtype", "rolling")
+        _show_alpha = _last_wtype == "ewm"
+
         with st.form("rolling_params", border=False):
-            rc_col1, rc_col2, rc_col3, rc_col4, rc_col5 = st.columns([2, 2, 2, 2, 1.2])
-            with rc_col1:
-                rc_window = st.selectbox(
+            _form_cols = st.columns(
+                [2, 2, 2, 2, 2, 1.2] if _show_alpha else [2, 2, 2, 2, 1.2]
+            )
+            with _form_cols[0]:
+                # Number input replaces the 4-option selectbox so users
+                # can pick any window in [20, 504]. The downstream
+                # `_use_precomputed_market` check (rc_window in {60, 120,
+                # 252}) still works for those three values; everything
+                # else falls into the slow on-the-fly compute path, which
+                # is now gated by the Recompute submit button.
+                rc_window = int(st.number_input(
                     "Window (days)" if _is_finance_rc else "Window (samples)",
-                    [60, 120, 252, 504], index=2, key="rc_win",
-                )
-            with rc_col2:
+                    min_value=20, max_value=504, value=252, step=10,
+                    key="rc_win",
+                    help="Trading days in each rolling window. {60, 120, 252} hit the precomputed parquet (instant); other values compute on the fly.",
+                ))
+            with _form_cols[1]:
                 rc_step = st.selectbox(
                     "Step", [1, 5, 21], index=1, key="rc_step",
                     format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(x, str(x)),
                 )
-            with rc_col3:
+            with _form_cols[2]:
                 rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
-            with rc_col4:
+            with _form_cols[3]:
                 rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
-            with rc_col5:
+            if _show_alpha:
+                with _form_cols[4]:
+                    rc_ewm_alpha = float(st.number_input(
+                        "EWM α", min_value=0.01, max_value=0.5,
+                        value=0.05, step=0.01, key="rc_ewm_alpha",
+                        help="Exponential weighting decay. α=0.05 ≈ span 39 days; α=0.1 ≈ span 19 days. Only applies to the Pair Correlation sub-tab (market & sector stats use the rolling window).",
+                    ))
+                _btn_col_idx = 5
+            else:
+                rc_ewm_alpha = float(st.session_state.get("rc_ewm_alpha", 0.05))
+                _btn_col_idx = 4
+            with _form_cols[_btn_col_idx]:
                 # Vertical alignment hack: empty markdown matches the label
                 # height of the selectboxes so the button aligns to their
                 # input row, not their label row.
@@ -1492,7 +1584,20 @@ with tab_rolling:
                         )
                         _ms_st.update(label="Rolling stats ready", state="complete")
             else:
-                with st.status("Computing rolling stats (custom params)...", expanded=False) as _ms_st:
+                # Off-grid params take 10-15 seconds on S&P-500 (Python loop
+                # over ~260 window positions, each running .corr() on a
+                # 252×485 slice). Make the wait explicit so the user knows
+                # it's working, not frozen. The same message is shown on
+                # both cache miss and cache hit (the cache layer would
+                # short-circuit before the spinner shows up — Streamlit's
+                # `with st.status` block only renders if the body actually
+                # runs, but @st.cache_data wraps from the outside, so this
+                # path enters the status block first then hits the cache).
+                with st.status(
+                    "Computing rolling stats (off-grid params — first run "
+                    "takes 10-15 s on S&P; cached on subsequent reruns)...",
+                    expanded=False,
+                ) as _ms_st:
                     market_stats = _compute_market_stats(
                         returns, returns_cache_key, rc_window, rc_step, rc_method, rc_expanding,
                     )
@@ -1698,6 +1803,17 @@ if tab_pairs is not None:
                       st.rerun()
 
           with col_dist:
+              # `corr` used to be set as a script-level global inside
+              # `with tab_corr:` (when the heatmap was not yet @st.fragment).
+              # Now that the heatmap is fragment-scoped, `corr` is local to
+              # `_render_correlation_heatmap()`. Recompute it here using the
+              # current heat_method from session_state — `_compute_corr` is
+              # @st.cache_data so we get a cache HIT (the heatmap fragment
+              # already computed the same call with the same args).
+              _heat_method_for_dist = st.session_state.get("heat_method", "pearson")
+              corr = _compute_corr(
+                  returns, returns_cache_key, dynamic_min_periods, _heat_method_for_dist,
+              )
               mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
               upper_vals = corr.where(mask).stack().values
               upper_vals = upper_vals[~np.isnan(upper_vals)]
