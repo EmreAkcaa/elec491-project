@@ -1,6 +1,5 @@
 """StoNeCoAl — multi-universe correlation-network dashboard (BIST 100, S&P 500)."""
 
-import io
 import os
 import sys
 from pathlib import Path
@@ -116,24 +115,27 @@ def _cap(u, attr, default):
 # Cached computation helpers (module-level to avoid Streamlit re-registration)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data
-def _compute_corr(returns_json: str, min_periods: int, method: str):
-    _ret = pd.read_json(io.StringIO(returns_json), orient="split")
-    return _ret.corr(method=method, min_periods=min_periods)
+@st.cache_data(show_spinner=False)
+def _compute_corr(_returns: pd.DataFrame, cache_key: str, min_periods: int, method: str):
+    # `_returns` underscore-prefix → Streamlit skips hashing the DataFrame;
+    # the explicit `cache_key` (built cheaply by the caller from universe +
+    # date endpoints + shape) drives cache identity. Replaces the previous
+    # JSON ser/de pattern which cost 121 ms (38 ms to_json on every rerun
+    # + 83 ms read_json on miss) per call on S&P-500 returns.
+    return _returns.corr(method=method, min_periods=min_periods)
 
 
-@st.cache_data
-def _pit_corr(ret_json, end_date_str, window, method):
-    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _pit_corr(_returns: pd.DataFrame, cache_key: str, end_date_str, window, method):
     return compute_window_correlation(
-        ret, pd.Timestamp(end_date_str), window=window, method=method,
+        _returns, pd.Timestamp(end_date_str), window=window, method=method,
     )
 
 
-@st.cache_data
-def _mst_layout(edges_json):
+@st.cache_data(show_spinner=False)
+def _mst_layout(_edges: pd.DataFrame, cache_key: str):
     _G = nx.Graph()
-    for _, r in pd.read_json(io.StringIO(edges_json), orient="split").iterrows():
+    for _, r in _edges.iterrows():
         _G.add_edge(r["source"], r["target"], weight=r["distance"])
     # Kamada-Kawai is O(N^3) and stalls for ~minute on the 485-node S&P MST.
     # spring_layout (Fruchterman-Reingold) with a fixed iteration count
@@ -173,28 +175,206 @@ def _heatmap_height(n: int, max_px: int = 1100) -> int:
     return min(max_px, max(700, n * 12))
 
 
-@st.cache_data
-def _compute_market_stats(ret_json, window, step, method, expanding):
-    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _compute_market_stats(_returns: pd.DataFrame, cache_key: str, window, step, method, expanding):
     return compute_rolling_market_stats(
-        ret, window=window, step=step, method=method, expanding=expanding,
+        _returns, window=window, step=step, method=method, expanding=expanding,
     )
 
 
-@st.cache_data
-def _compute_pair(ret_json, a, b, window, method, wtype):
-    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _compute_pair(_returns: pd.DataFrame, cache_key: str, a, b, window, method, wtype):
     return compute_rolling_pair_correlation(
-        ret, a, b, window=window, method=method, window_type=wtype,
+        _returns, a, b, window=window, method=method, window_type=wtype,
     )
 
 
-@st.cache_data
-def _compute_sector(ret_json, sec_map_items, window, step, method):
-    ret = pd.read_json(io.StringIO(ret_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _compute_sector(_returns: pd.DataFrame, cache_key: str, sec_map_items, window, step, method):
     return compute_rolling_sector_stats(
-        ret, dict(sec_map_items), window=window, step=step, method=method,
+        _returns, dict(sec_map_items), window=window, step=step, method=method,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fragment-scoped sub-tab renderers
+# ══════════════════════════════════════════════════════════════════════════════
+# Streamlit reruns the entire dashboard.py script on every widget interaction.
+# Fragments (stable since Streamlit 1.37) scope re-execution to just their
+# decorated function when an internal widget changes — other tabs/sub-tabs
+# don't re-render, killing the perceived "gray screen" on slider drags etc.
+#
+# Each fragment reads its dependencies from module globals set by the linear
+# script flow (returns, returns_cache_key, _active_universe, etc.). On fragment
+# rerun those globals are NOT recomputed; that's correct because nothing inside
+# the fragment changes them — they only change via outer widgets (which trigger
+# a full script rerun anyway).
+#
+# We deliberately do NOT fragment:
+#   - Correlation Heatmap → heat_method change affects `corr` which the Pairs
+#     tab also reads, so a full script rerun is the wanted behaviour.
+#   - Rolling Market Stats → widgets are outer (rc_*), fragmenting just this
+#     sub-tab gives marginal win.
+
+@st.fragment
+def _render_pit_correlation() -> None:
+    """Point-in-time correlation snapshot. Owns pit_window/pit_method/pit_date.
+    Dragging the date slider used to rerun the whole 1700-line script; now it
+    reruns only this block."""
+    _is_finance_pit = _cap(_active_universe, 'domain', 'finance') == "finance"
+    st.caption(
+        "Slide to a specific date to see the correlation matrix for that rolling window. "
+        + ("Useful for comparing market structure during crises vs calm periods."
+           if _is_finance_pit else
+           "Useful for tracking how network structure shifts across the recording.")
+    )
+
+    pit_c1, pit_c2, pit_c3 = st.columns(3)
+    with pit_c1:
+        _win_label = "Window (days)" if _is_finance_pit else "Window (samples)"
+        pit_window = st.selectbox(
+            _win_label, [60, 120, 252], index=2, key="pit_window",
+        )
+    with pit_c2:
+        pit_method = st.selectbox(
+            "Method", ["pearson", "spearman"], key="pit_method",
+        )
+    with pit_c3:
+        trading_dates = returns.index.tolist()
+        valid_start = max(0, pit_window - 1)
+        pit_date = st.select_slider(
+            "Snapshot date",
+            options=trading_dates[valid_start:] if len(trading_dates) > valid_start else trading_dates,
+            value=trading_dates[-1] if trading_dates else None,
+            format_func=lambda d: d.strftime("%Y-%m-%d"),
+            key="pit_date",
+        )
+
+    if pit_date is None:
+        return
+
+    pit_corr = _pit_corr(
+        returns, returns_cache_key, pit_date.isoformat(), pit_window, pit_method,
+    )
+    if pit_corr.empty:
+        st.warning("Not enough data for the selected date and window size.")
+        return
+
+    if use_clustering_order and leaf_order is not None:
+        pit_valid = [t for t in leaf_order if t in pit_corr.columns]
+        pit_display = pit_corr.loc[pit_valid, pit_valid] if pit_valid else pit_corr
+    else:
+        pit_display = pit_corr
+
+    pit_mask = np.triu(np.ones(pit_display.shape, dtype=bool), k=1)
+    pit_vals = pit_display.values[pit_mask]
+    pit_vals = pit_vals[~np.isnan(pit_vals)]
+
+    pm1, pm2, pm3, pm4 = st.columns(4)
+    pm1.metric(
+        f"{_cap(_active_universe, 'items_label', 'Tickers')} in Window",
+        len(pit_display),
+    )
+    pm2.metric("Mean Corr", f"{np.mean(pit_vals):.4f}")
+    pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
+    pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
+
+    render_matrix_heatmap(
+        pit_display,
+        chart_id="mo_pit_heatmap",
+        filename_base="pit_correlation",
+        title_key="mo_pit_heatmap",
+        default_title="Point-in-Time Correlation",
+        zmin=-1.0, zmax=1.0, diverging=True,
+        height=_heatmap_height(min(len(pit_display), 200)),
+        hover_label="corr",
+        colorbar_title="Corr",
+    )
+
+
+@st.fragment
+def _render_rolling_pair() -> None:
+    """Rolling Analysis → Pair Correlation sub-tab. Owns pair_a/pair_b
+    selectors + the cross-page "Open in Pair Analysis" button. The nav
+    button uses `st.rerun(scope="app")` because the default `scope="fragment"`
+    wouldn't actually leave this sub-tab."""
+    ticker_list = sorted(returns.columns.tolist())
+    if (
+        "pair_a" not in st.session_state
+        or st.session_state["pair_a"] not in ticker_list
+    ):
+        st.session_state["pair_a"] = ticker_list[0] if ticker_list else ""
+    if (
+        "pair_b" not in st.session_state
+        or st.session_state["pair_b"] not in ticker_list
+    ):
+        st.session_state["pair_b"] = (
+            ticker_list[1] if len(ticker_list) > 1 else (ticker_list[0] if ticker_list else "")
+        )
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        pair_a = st.selectbox(f"{_item_rc} A", ticker_list, key="pair_a")
+    with pc2:
+        pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pair_b")
+
+    if pair_a and pair_b and pair_a != pair_b:
+        pair_corr = _compute_pair(
+            returns, returns_cache_key, pair_a, pair_b, rc_window, rc_method, rc_window_type,
+        )
+
+        fig_pair = go.Figure()
+        fig_pair.add_hline(y=0, line_dash="dot", line_color=get_colors()["muted"], opacity=0.5)
+        fig_pair.add_trace(go.Scatter(
+            x=pair_corr.index, y=pair_corr.clip(lower=0),
+            mode="lines", line=dict(width=0), showlegend=False,
+            fill="tozeroy", fillcolor=get_colors()["positive"],
+        ))
+        fig_pair.add_trace(go.Scatter(
+            x=pair_corr.index, y=pair_corr.clip(upper=0),
+            mode="lines", line=dict(width=0), showlegend=False,
+            fill="tozeroy", fillcolor=get_colors()["negative"],
+        ))
+        fig_pair.add_trace(go.Scatter(
+            x=pair_corr.index, y=pair_corr.values,
+            mode="lines", name=f"{pair_a} / {pair_b}",
+            line=dict(color=get_colors()["primary"], width=1.8),
+        ))
+
+        _valid = pair_corr.dropna()
+        if not _valid.empty:
+            draw_event_markers(fig_pair, show_defaults, custom_events,
+                               _valid.index.min(), _valid.index.max())
+        apply_chart_style(fig_pair, height=420,
+                          yaxis_title=f"{rc_method.title()} Correlation",
+                          yaxis=dict(range=[-1.05, 1.05], gridcolor="rgba(141,153,174,0.15)"),
+                          showlegend=False)
+        render_chart(fig_pair, chart_id="mo_pair_corr", filename_base="pair_correlation",
+                     title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
+
+        if _cap(_active_universe, 'has_pair_trading', True):
+            if st.button(f"Open full Pair Analysis for {pair_a} / {pair_b}", key="pair_deep_dive"):
+                st.session_state["pa_ticker_a"] = pair_a
+                st.session_state["pa_ticker_b"] = pair_b
+                st.session_state["_goto_pair_analysis"] = True
+                # scope="app" forces a full script rerun — the default
+                # fragment-scoped rerun would just re-render this sub-tab
+                # without switching to Pair Analysis.
+                st.rerun(scope="app")
+
+        # Two normalized price lines (matches original behaviour).
+        if pair_a in prices_window.columns and pair_b in prices_window.columns:
+            pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
+            pb = prices_window[pair_b] / prices_window[pair_b].iloc[0] * 100
+            fig_spread = go.Figure()
+            fig_spread.add_trace(go.Scatter(x=pa.index, y=pa, name=pair_a,
+                                            line=dict(color=get_colors()["primary"], width=2)))
+            fig_spread.add_trace(go.Scatter(x=pb.index, y=pb, name=pair_b,
+                                            line=dict(color=get_colors()["secondary"], width=2)))
+            apply_chart_style(fig_spread, height=300, yaxis_title="Normalized (100)")
+            render_chart(fig_spread, chart_id="mo_pair_spread", filename_base="pair_spread",
+                         title_key="mo_pair_spread", default_title="Pair Price Spread")
+    elif pair_a == pair_b:
+        st.info(f"Select two different {_items_rc.lower()}.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -397,8 +577,16 @@ m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}"
 m4.metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
 m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
 
-# Pre-serialize returns once for all cached computations
-_returns_json = returns.to_json(orient="split", date_format="iso")
+# Cheap deterministic cache key for @st.cache_data helpers. The actual
+# DataFrame is passed underscore-prefixed (Streamlit skips hashing it);
+# identity comes from this string. Universe + date endpoints + shape
+# uniquely identifies any returns slice we feed the helpers. Replaces the
+# previous `_returns_json = returns.to_json(...)` pattern that cost ~38 ms
+# per script rerun on S&P-500 (10 MB JSON ser/de roundtrip).
+returns_cache_key = (
+    f"{_active_universe.key}:{start_dt.date().isoformat()}:"
+    f"{end_dt.date().isoformat()}:{returns.shape[0]}x{returns.shape[1]}"
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -831,9 +1019,9 @@ with tab_corr:
             "Reorder by hierarchical clustering", value=True, key="mo_corr_reorder",
         )
 
-    with st.status("Computing correlation matrix...", expanded=False) as _corr_st:
-        corr = _compute_corr(_returns_json, dynamic_min_periods, heat_method)
-        _corr_st.update(label="Correlation matrix ready", state="complete")
+    # `_compute_corr` is @st.cache_data — on hits it returns in microseconds,
+    # making the status widget pure visual flicker. Drop it.
+    corr = _compute_corr(returns, returns_cache_key, dynamic_min_periods, heat_method)
 
     leaf_order = load_dendrogram_order()
 
@@ -882,75 +1070,11 @@ with tab_corr:
                 )
 
     # ── Sub-tab: Point-in-Time Correlation Snapshot ────────────────────────
+    # Body lives in `_render_pit_correlation` fragment (defined at module top).
+    # Dragging the date slider only reruns the fragment, not the whole script.
     with _corr_pit_tab:
         with st.container(border=True):
-            _is_finance_pit = _cap(_active_universe, 'domain', 'finance') == "finance"
-            st.caption(
-                "Slide to a specific date to see the correlation matrix for that rolling window. "
-                + ("Useful for comparing market structure during crises vs calm periods."
-                   if _is_finance_pit else
-                   "Useful for tracking how network structure shifts across the recording.")
-            )
-
-            pit_c1, pit_c2, pit_c3 = st.columns(3)
-            with pit_c1:
-                _win_label = "Window (days)" if _is_finance_pit else "Window (samples)"
-                pit_window = st.selectbox(
-                    _win_label, [60, 120, 252], index=2, key="pit_window",
-                )
-            with pit_c2:
-                pit_method = st.selectbox(
-                    "Method", ["pearson", "spearman"], key="pit_method",
-                )
-            with pit_c3:
-                trading_dates = returns.index.tolist()
-                valid_start = max(0, pit_window - 1)
-                pit_date = st.select_slider(
-                    "Snapshot date",
-                    options=trading_dates[valid_start:] if len(trading_dates) > valid_start else trading_dates,
-                    value=trading_dates[-1] if trading_dates else None,
-                    format_func=lambda d: d.strftime("%Y-%m-%d"),
-                    key="pit_date",
-                )
-
-            if pit_date is not None:
-                pit_corr = _pit_corr(
-                    _returns_json, pit_date.isoformat(), pit_window, pit_method,
-                )
-
-                if not pit_corr.empty:
-                    if use_clustering_order and leaf_order is not None:
-                        pit_valid = [t for t in leaf_order if t in pit_corr.columns]
-                        pit_display = pit_corr.loc[pit_valid, pit_valid] if pit_valid else pit_corr
-                    else:
-                        pit_display = pit_corr
-
-                    pit_mask = np.triu(np.ones(pit_display.shape, dtype=bool), k=1)
-                    pit_vals = pit_display.values[pit_mask]
-                    pit_vals = pit_vals[~np.isnan(pit_vals)]
-
-                    pm1, pm2, pm3, pm4 = st.columns(4)
-                    pm1.metric(
-                        f"{_cap(_active_universe, 'items_label', 'Tickers')} in Window",
-                        len(pit_display),
-                    )
-                    pm2.metric("Mean Corr", f"{np.mean(pit_vals):.4f}")
-                    pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
-                    pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
-
-                    render_matrix_heatmap(
-                        pit_display,
-                        chart_id="mo_pit_heatmap",
-                        filename_base="pit_correlation",
-                        title_key="mo_pit_heatmap",
-                        default_title="Point-in-Time Correlation",
-                        zmin=-1.0, zmax=1.0, diverging=True,
-                        height=_heatmap_height(min(len(pit_display), 200)),
-                        hover_label="corr",
-                        colorbar_title="Corr",
-                    )
-                else:
-                    st.warning("Not enough data for the selected date and window size.")
+            _render_pit_correlation()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1143,9 +1267,13 @@ with tab_cluster:
                 for _, row in mst_edges.iterrows():
                     G.add_edge(row["source"], row["target"], weight=row["distance"])
 
-                with st.status("Computing MST layout...", expanded=False) as _mst_st:
-                    pos = _mst_layout(mst_edges.to_json(orient="split"))
-                    _mst_st.update(label="MST layout ready", state="complete")
+                # `_mst_layout` is @st.cache_data — first compute is ~400 ms
+                # on S&P, subsequent universe re-renders are instant. The
+                # status widget flashes on every interaction otherwise.
+                pos = _mst_layout(
+                    mst_edges,
+                    f"{_active_universe.key}:mst:{len(mst_edges)}",
+                )
 
                 edge_traces = []
                 for u, v, d in G.edges(data=True):
@@ -1328,13 +1456,13 @@ with tab_rolling:
                 else:
                     with st.status("Computing rolling stats...", expanded=False) as _ms_st:
                         market_stats = _compute_market_stats(
-                            _returns_json, rc_window, rc_step, rc_method, rc_expanding,
+                            returns, returns_cache_key, rc_window, rc_step, rc_method, rc_expanding,
                         )
                         _ms_st.update(label="Rolling stats ready", state="complete")
             else:
                 with st.status("Computing rolling stats (custom params)...", expanded=False) as _ms_st:
                     market_stats = _compute_market_stats(
-                        _returns_json, rc_window, rc_step, rc_method, rc_expanding,
+                        returns, returns_cache_key, rc_window, rc_step, rc_method, rc_expanding,
                     )
                     _ms_st.update(label="Rolling stats ready", state="complete")
                 st.caption(
@@ -1394,87 +1522,12 @@ with tab_rolling:
                 st.warning("Not enough data for the selected window size.")
 
         # ── Sub-Tab 2: Pair rolling correlation ─────────────────────────────
+        # Body lives in `_render_rolling_pair` fragment (defined at module top).
+        # Changing pair_a / pair_b only reruns the fragment, not the whole
+        # script. The cross-page "Open in Pair Analysis" button uses
+        # st.rerun(scope="app") to escape the fragment scope.
         with tab_pair:
-            ticker_list = sorted(returns.columns.tolist())
-            # Init-once + key= only (no index=) to avoid Streamlit's
-            # "default value but also had its value set via the Session
-            # State API" warning banner. Same fix as pair_analysis.py.
-            if (
-                "pair_a" not in st.session_state
-                or st.session_state["pair_a"] not in ticker_list
-            ):
-                st.session_state["pair_a"] = ticker_list[0] if ticker_list else ""
-            if (
-                "pair_b" not in st.session_state
-                or st.session_state["pair_b"] not in ticker_list
-            ):
-                st.session_state["pair_b"] = (
-                    ticker_list[1] if len(ticker_list) > 1 else (ticker_list[0] if ticker_list else "")
-                )
-            pc1, pc2 = st.columns(2)
-            with pc1:
-                pair_a = st.selectbox(f"{_item_rc} A", ticker_list, key="pair_a")
-            with pc2:
-                pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pair_b")
-
-            if pair_a and pair_b and pair_a != pair_b:
-                with st.status("Computing pair correlation...", expanded=False) as _pc_st:
-                    pair_corr = _compute_pair(
-                        _returns_json, pair_a, pair_b, rc_window, rc_method, rc_window_type,
-                    )
-                    _pc_st.update(label="Pair correlation ready", state="complete")
-
-                fig_pair = go.Figure()
-                fig_pair.add_hline(y=0, line_dash="dot", line_color=get_colors()["muted"], opacity=0.5)
-                fig_pair.add_trace(go.Scatter(
-                    x=pair_corr.index, y=pair_corr.clip(lower=0),
-                    mode="lines", line=dict(width=0), showlegend=False,
-                    fill="tozeroy", fillcolor=get_colors()["positive"],
-                ))
-                fig_pair.add_trace(go.Scatter(
-                    x=pair_corr.index, y=pair_corr.clip(upper=0),
-                    mode="lines", line=dict(width=0), showlegend=False,
-                    fill="tozeroy", fillcolor=get_colors()["negative"],
-                ))
-                fig_pair.add_trace(go.Scatter(
-                    x=pair_corr.index, y=pair_corr.values,
-                    mode="lines", name=f"{pair_a} / {pair_b}",
-                    line=dict(color=get_colors()["primary"], width=1.8),
-                ))
-
-                _valid = pair_corr.dropna()
-                if not _valid.empty:
-                    draw_event_markers(fig_pair, show_defaults, custom_events,
-                                       _valid.index.min(), _valid.index.max())
-                apply_chart_style(fig_pair, height=420,
-                                  yaxis_title=f"{rc_method.title()} Correlation",
-                                  yaxis=dict(range=[-1.05, 1.05], gridcolor="rgba(141,153,174,0.15)"),
-                                  showlegend=False)
-                render_chart(fig_pair, chart_id="mo_pair_corr", filename_base="pair_correlation",
-                             title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
-
-                # Pair Analysis deep-dive button only when the universe
-                # actually has a Pair Analysis nav target (financial only).
-                if _cap(_active_universe, 'has_pair_trading', True):
-                    if st.button(f"Open full Pair Analysis for {pair_a} / {pair_b}", key="pair_deep_dive"):
-                        st.session_state["pa_ticker_a"] = pair_a
-                        st.session_state["pa_ticker_b"] = pair_b
-                        st.session_state["_goto_pair_analysis"] = True
-                        st.rerun()
-
-                if pair_a in prices_window.columns and pair_b in prices_window.columns:
-                    pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
-                    pb = prices_window[pair_b] / prices_window[pair_b].iloc[0] * 100
-                    fig_spread = go.Figure()
-                    fig_spread.add_trace(go.Scatter(x=pa.index, y=pa, name=pair_a,
-                                                    line=dict(color=get_colors()["primary"], width=2)))
-                    fig_spread.add_trace(go.Scatter(x=pb.index, y=pb, name=pair_b,
-                                                    line=dict(color=get_colors()["secondary"], width=2)))
-                    apply_chart_style(fig_spread, height=300, yaxis_title="Normalized (100)")
-                    render_chart(fig_spread, chart_id="mo_pair_spread", filename_base="pair_spread",
-                                 title_key="mo_pair_spread", default_title="Pair Price Spread")
-            elif pair_a == pair_b:
-                st.info(f"Select two different {_items_rc.lower()}.")
+            _render_rolling_pair()
 
         # ── Sub-Tab 3: Sector breakdown ─────────────────────────────────────
         with tab_sector:
@@ -1499,13 +1552,13 @@ with tab_rolling:
                     else:
                         with st.status(f"Computing {_sector_rc.lower()} stats...", expanded=False) as _ss_st:
                             sector_stats = _compute_sector(
-                                _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
+                                returns, returns_cache_key, tuple(sec_map.items()), rc_window, rc_step, rc_method,
                             )
                             _ss_st.update(label=f"{_sector_rc} stats ready", state="complete")
                 else:
                     with st.status(f"Computing {_sector_rc.lower()} stats (custom params)...", expanded=False) as _ss_st:
                         sector_stats = _compute_sector(
-                            _returns_json, tuple(sec_map.items()), rc_window, rc_step, rc_method,
+                            returns, returns_cache_key, tuple(sec_map.items()), rc_window, rc_step, rc_method,
                         )
                         _ss_st.update(label=f"{_sector_rc} stats ready", state="complete")
                     st.caption(
