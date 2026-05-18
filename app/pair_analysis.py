@@ -83,6 +83,7 @@ def _subgraph_layout(nodes, edges):
     return nx.spring_layout(_H, seed=42, k=3.0, iterations=80)
 
 
+@st.fragment
 def render(
     adj_close: pd.DataFrame,
     full_returns: pd.DataFrame,
@@ -91,6 +92,18 @@ def render(
     max_date,
 ) -> None:
     """Render the full Pair Analysis view with inline controls.
+
+    @st.fragment scope: changing ticker_a/ticker_b/date_range/dislocation
+    params re-runs ONLY this function — not the dashboard.py script
+    prologue (universe init, page_config, sidebar, top-nav, etc.). On S&P
+    that prologue is ~200-500 ms, so the perceived snappiness on every
+    pair switch and slider drag improves measurably.
+
+    Pair Analysis has no `st.rerun()` calls; all internal navigation is
+    cross-page via session_state flags (`_goto_pair_analysis` etc.),
+    which the outer dashboard.py reads on its NEXT full rerun (triggered
+    by users clicking a top-nav button, not by anything inside this
+    fragment). So `scope="app"` isn't needed.
 
     Defence-in-depth: the dashboard nav already hides this page when the
     active universe has ``has_pair_trading=False``, but a direct deep-link
