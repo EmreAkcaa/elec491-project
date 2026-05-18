@@ -128,8 +128,21 @@ def _eigenvalue_spectrum_fig(eig_df: pd.DataFrame, color: str, label: str) -> go
     return fig
 
 
-def _mst_fig(edges_df: pd.DataFrame, metrics_df: pd.DataFrame, color_fallback: str) -> go.Figure:
-    """Single-universe MST plotted with kamada-kawai layout, coloured by sector."""
+def _mst_fig(
+    edges_df: pd.DataFrame,
+    metrics_df: pd.DataFrame,
+    color_fallback: str,
+    *,
+    universe: str | None = None,
+) -> go.Figure:
+    """Single-universe MST plotted with kamada-kawai layout, coloured by sector.
+
+    PHASE Y (Y2): when ``universe`` is provided, tries the precomputed
+    `main_mst.json` layout from `data/<universe>/results/layouts/` BEFORE
+    falling back to live `nx.kamada_kawai_layout`. Saves ~1-2 s per render
+    on S&P (485 nodes). BIST and S&P calls pass their universe key
+    explicitly since cross_market reads both markets directly.
+    """
     if not HAS_NETWORKX or edges_df.empty:
         fig = go.Figure()
         fig.add_annotation(text="MST data not available", showarrow=False, font=dict(size=14))
@@ -138,7 +151,18 @@ def _mst_fig(edges_df: pd.DataFrame, metrics_df: pd.DataFrame, color_fallback: s
     G = nx.Graph()
     for _, r in edges_df.iterrows():
         G.add_edge(r["source"], r["target"], weight=float(r.get("distance", 1.0)))
-    pos = nx.kamada_kawai_layout(G, weight="weight")
+
+    pos: dict[str, tuple[float, float]] | None = None
+    if universe is not None:
+        from utils import _load_mst_layout
+        precomputed = _load_mst_layout(universe, "main_mst")
+        if precomputed:
+            graph_nodes = set(G.nodes())
+            pos_filtered = {n: precomputed[n] for n in graph_nodes if n in precomputed}
+            if len(pos_filtered) == len(graph_nodes):
+                pos = pos_filtered
+    if pos is None:
+        pos = nx.kamada_kawai_layout(G, weight="weight")
 
     sector_map: dict[str, str] = {}
     btw_map: dict[str, float] = {}
@@ -597,7 +621,7 @@ def render() -> None:
             st.markdown(f"**BIST 100 MST** — sector purity {_fmt(_get(comp_df, 'mst_sector_purity', 'BIST'), 'pct')}")
             if not mst_e_b.empty:
                 render_chart(
-                    _mst_fig(mst_e_b, mst_m_b, _BIST_COLOR),
+                    _mst_fig(mst_e_b, mst_m_b, _BIST_COLOR, universe="bist"),
                     chart_id="xm_mst_bist", filename_base="cross_market_mst_bist",
                 )
             else:
@@ -609,7 +633,7 @@ def render() -> None:
             st.markdown(f"**S&P 500 MST** — sector purity {_fmt(_get(comp_df, 'mst_sector_purity', 'S&P-500'), 'pct')}")
             if not mst_e_s.empty:
                 render_chart(
-                    _mst_fig(mst_e_s, mst_m_s, _SP500_COLOR),
+                    _mst_fig(mst_e_s, mst_m_s, _SP500_COLOR, universe="sp500"),
                     chart_id="xm_mst_sp", filename_base="cross_market_mst_sp500",
                 )
             else:

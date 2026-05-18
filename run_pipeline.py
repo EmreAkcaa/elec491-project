@@ -27,6 +27,8 @@ def main(argv: list[str] | None = None):
     from src.rolling_correlation import run_rolling_analysis
     from src.pair_dislocation import run_pair_dislocation
     from src.pit_snapshots import run_pit_snapshots
+    from src.cross_asset import run_cross_asset
+    from src.mst_layouts import run_mst_layouts
     from src.rmt_denoising import run_rmt_denoising
     from src.partial_correlation import run_partial_correlation
     from src.wavelet_analysis import run_wavelet_analysis
@@ -46,6 +48,15 @@ def main(argv: list[str] | None = None):
             "Skip the PIT snapshot grid stage (Phase 3 slim). "
             "Useful for dev iterations where you don't need to refresh "
             "Time Machine's instant-scrubbing cache."
+        ),
+    )
+    parser.add_argument(
+        "--skip-mst-layouts",
+        action="store_true",
+        help=(
+            "Skip the MST layout precompute stage (Phase Y). Useful "
+            "for dev iterations where the MST graph structure hasn't "
+            "changed since the last full run."
         ),
     )
     args = parser.parse_args(argv)
@@ -83,6 +94,23 @@ def main(argv: list[str] | None = None):
     run_wavelet_analysis(config)
     run_transfer_entropy(config)
     run_info_theory(config)
+
+    # --- Phase X — Cross-Asset sensitivity (BIST only) ---
+    # Per-ticker correlation with USD/TRY + Gold (USD/oz). Powers the
+    # Cross-Market page's "FX & Gold Sensitivity (BIST only)" subsection.
+    # Gates on market_id == "bist" inside the stage.
+    run_cross_asset(config)
+
+    # --- Phase Y (Y2) — MST layout precompute (finance only) ---
+    # Serialises NetworkX layout positions to JSON so the dashboard reads
+    # disk (~50 ms) instead of recomputing nx.spring_layout (~1-2 s) for
+    # each MST. MUST run AFTER RMT/Wavelet/TE stages so denoised + wavelet
+    # + TE MST edge CSVs exist on disk. Gated to finance universes inside
+    # the stage.
+    if not args.skip_mst_layouts:
+        run_mst_layouts(config)
+    else:
+        logger.info("MST layouts skipped via --skip-mst-layouts flag")
 
     # --- Spiking Neural Network (pair-signal classifier) ---
     # Optional: requires torch + snntorch (install with `uv sync --extra snn`).

@@ -122,12 +122,22 @@ def _plot_network(
     size_metric: str = "betweenness_centrality",
     size_range: tuple[int, int] = (8, 28),
     sector_node_label: str = "Sector",
+    *,
+    pos: dict[str, tuple[float, float]] | None = None,
+    layout_source: str | None = None,
 ) -> go.Figure:
     """Create a Plotly network graph from edges.
 
     If ``node_metrics`` is provided (with columns ``ticker`` and ``size_metric``),
     nodes are sized by that centrality measure mapped onto ``size_range``;
     otherwise size scales with degree (legacy behaviour).
+
+    PHASE Y (Y2): callers can pre-supply layout positions via ``pos=`` OR
+    name a precomputed source via ``layout_source=`` (e.g.,
+    ``"denoised_mst"``, ``"wavelet_mst_scale3"``, ``"te_network"``). The
+    function then tries the precomputed layout first and falls back to
+    live nx.kamada_kawai_layout when neither is provided or the
+    precomputed file is missing. Saves ~1-2 s per render on S&P.
     """
     if not HAS_NETWORKX or edges_df.empty:
         fig = go.Figure()
@@ -139,7 +149,21 @@ def _plot_network(
         w = abs(float(r.get(edge_weight_col, 1.0)))
         G.add_edge(r["source"], r["target"], weight=w if w > 0 else 0.01)
 
-    pos = nx.kamada_kawai_layout(G, weight="weight")
+    # PHASE Y (Y2): try precomputed positions first.
+    if pos is None and layout_source is not None:
+        from utils import load_mst_layout
+        precomputed = load_mst_layout(layout_source)
+        if precomputed:
+            # Only use precomputed positions for nodes that exist in this
+            # graph (defensive against schema drift between snapshot pipeline
+            # output + the edges CSV the caller passed in).
+            graph_nodes = set(G.nodes())
+            pos_filtered = {n: precomputed[n] for n in graph_nodes if n in precomputed}
+            # Need positions for ALL nodes; if any missing, fall back to live.
+            if len(pos_filtered) == len(graph_nodes):
+                pos = pos_filtered
+    if pos is None:
+        pos = nx.kamada_kawai_layout(G, weight="weight")
 
     # Edges
     edge_x, edge_y = [], []
@@ -303,6 +327,7 @@ def _items_label(u) -> str:
     return getattr(u, "items_label", "Tickers") if u is not None else "Tickers"
 
 
+@st.fragment
 def render_rmt(sector_map: dict, *, u=None):
     """Render RMT denoising section."""
     with st.container(border=True):
@@ -381,6 +406,7 @@ def render_rmt(sector_map: dict, *, u=None):
                     edge_weight_col="distance",
                     node_metrics=metrics_df,
                     sector_node_label=_sector_label(u),
+                    layout_source="main_mst",
                 )
             else:
                 metrics_df = load_denoised_mst_metrics()
@@ -389,6 +415,7 @@ def render_rmt(sector_map: dict, *, u=None):
                     edge_weight_col="distance",
                     node_metrics=metrics_df,
                     sector_node_label=_sector_label(u),
+                    layout_source="denoised_mst",
                 )
 
             render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
@@ -432,6 +459,7 @@ def render_rmt(sector_map: dict, *, u=None):
         )
 
 
+@st.fragment
 def render_glasso(sector_map: dict, *, u=None):
     """Render Graphical LASSO section."""
     with st.container(border=True):
@@ -583,6 +611,7 @@ def _render_wavelet_for_scale(
         edges, sector_map, edge_weight_col="distance",
         node_metrics=scale_metrics,
         sector_node_label=sector_node_label,
+        layout_source=f"wavelet_mst_scale{scale_level}",
     )
     total_weight = edges["distance"].sum()
     render_chart(
@@ -605,6 +634,7 @@ def _render_wavelet_for_scale(
     )
 
 
+@st.fragment
 def render_wavelets(sector_map: dict, *, u=None):
     """Render Wavelet multi-scale analysis section."""
     with st.container(border=True):
@@ -680,6 +710,7 @@ def render_wavelets(sector_map: dict, *, u=None):
                 st.caption("No wavelet scale results found.")
 
 
+@st.fragment
 def render_transfer_entropy(sector_map: dict, *, u=None):
     """Render Transfer Entropy section."""
     with st.container(border=True):
@@ -860,6 +891,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
 CLASS_COLORS = {"HOLD": "#9CA3AF", "BUY": "#06D6A0", "SELL": "#E63946"}
 
 
+@st.fragment
 def render_snn(sector_map: dict, *, u=None):
     """Render Spiking Neural Network (neuromorphic) section.
 
@@ -1151,6 +1183,7 @@ def _is_domain_finance(u) -> bool:
     return getattr(u, "domain", "finance") == "finance"
 
 
+@st.fragment
 def render_info_theory(sector_map: dict, *, u=None):
     """Render the Information-Theory sub-tab (Phase 3 mutable-candy).
 
@@ -1434,31 +1467,33 @@ def render():
     # contributing to "SessionInfo before init" log noise via Universe class
     # identity churn. Removed in PR #23.
     from universe_registry import get_universe
-    from utils import current_universe
+    from utils import current_universe, render_subtabs
     _active = get_universe(current_universe())
 
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    _sub_labels = [
+    # PHASE Y (Y1): replaced `st.tabs(...)` with `render_subtabs(...)` so
+    # only the active sub-tab body executes. Methods Lab previously paid
+    # for all 6 render_*() bodies on every page load (5-15 s on S&P);
+    # now it pays only for the visible sub-tab.
+    _sub_labels = (
         "RMT Denoising",
         "Graphical LASSO",
         "Wavelet Multi-Scale",
         "Transfer Entropy",
         "Information Theory",
-    ]
+    )
     if getattr(_active, "has_snn", True):
-        _sub_labels.append("Neuromorphic Signals")
-    _subs = st.tabs(_sub_labels)
-    _sub_by_label = dict(zip(_sub_labels, _subs))
+        _sub_labels = _sub_labels + ("Neuromorphic Signals",)
 
-    with _sub_by_label["RMT Denoising"]:
+    _active_sub = render_subtabs("methods_lab", _sub_labels, label="Method")
+
+    if _active_sub == "RMT Denoising":
         render_rmt(sector_map, u=_active)
-
-    with _sub_by_label["Graphical LASSO"]:
+    elif _active_sub == "Graphical LASSO":
         render_glasso(sector_map, u=_active)
-
-    with _sub_by_label["Wavelet Multi-Scale"]:
+    elif _active_sub == "Wavelet Multi-Scale":
         render_wavelets(sector_map, u=_active)
         # Neuroscience caption: scales are time-bands at 160 Hz, not days.
         if getattr(_active, "domain", "finance") == "neuroscience":
@@ -1468,13 +1503,9 @@ def render():
                 "~1.6 s (slow oscillations, scale 7), not days as in the financial "
                 "universes."
             )
-
-    with _sub_by_label["Transfer Entropy"]:
+    elif _active_sub == "Transfer Entropy":
         render_transfer_entropy(sector_map, u=_active)
-
-    with _sub_by_label["Information Theory"]:
+    elif _active_sub == "Information Theory":
         render_info_theory(sector_map, u=_active)
-
-    if "Neuromorphic Signals" in _sub_by_label:
-        with _sub_by_label["Neuromorphic Signals"]:
-            render_snn(sector_map, u=_active)
+    elif _active_sub == "Neuromorphic Signals":
+        render_snn(sector_map, u=_active)
