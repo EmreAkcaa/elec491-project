@@ -503,6 +503,50 @@ def inject_custom_css():
         font-weight: 500;
         color: #555;
     }
+
+    /* ── PHASE 0 — Loading-state polish ────────────────────────
+       Soften Streamlit's default gray-fade during script reruns.
+       Replace the opaque overlay with a subtle shimmer that conveys
+       "working" without erasing the prior content. Targets Streamlit
+       1.41's `stale element` class applied to .element-container
+       during reruns (selector verified by reading the bundled JS).
+
+       Two effects layered:
+        1. Reduce opacity of stale elements less aggressively
+           (was ~0.5; now 0.72 — readable while computing)
+        2. Add a subtle shimmer keyframe that signals activity
+           without the eye-grabbing pulse of a full spinner.
+       Apply only to top-level elements (not nested) to avoid
+       double-animation overhead. */
+    .element-container.stale,
+    [data-stale="true"] {
+        opacity: 0.72 !important;
+        transition: opacity 0.2s ease-in-out;
+    }
+    .element-container.stale > *:first-child,
+    [data-stale="true"] > *:first-child {
+        position: relative;
+        overflow: hidden;
+    }
+    .element-container.stale > *:first-child::after,
+    [data-stale="true"] > *:first-child::after {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: linear-gradient(
+            100deg,
+            rgba(255,255,255,0) 0%,
+            rgba(67,97,238,0.06) 50%,
+            rgba(255,255,255,0) 100%
+        );
+        background-size: 200% 100%;
+        animation: stonecoal-shimmer 1.4s ease-in-out infinite;
+        pointer-events: none;
+    }
+    @keyframes stonecoal-shimmer {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
     </style>
     """, unsafe_allow_html=True)
 

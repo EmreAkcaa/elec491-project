@@ -557,6 +557,43 @@ st.set_page_config(
 )
 inject_custom_css()
 
+
+# ── PHASE 0 — Background pre-warm of cross-universe loaders ─────────────
+# Cold dashboard boot pays the parquet-read cost on the first interaction
+# for every universe the user touches. On HF Spaces with Persistent
+# Storage warm, that's still ~200-500 ms per universe for log_returns +
+# metadata. By kicking off background loads for ALL universes on the
+# FIRST script run of a session, subsequent universe switches in the
+# sidebar hit the @st.cache_data hot path instead of cold disk.
+#
+# `_load_log_returns` and `_load_metadata` are @st.cache_data and
+# universe-keyed, so calling them with each universe key populates the
+# cache for the session. We dispatch via ThreadPoolExecutor so the
+# main thread isn't blocked — the first paint proceeds while loaders
+# warm in parallel. Wrapped in try/except so a single missing parquet
+# (e.g. an EEG dataset that wasn't downloaded yet) doesn't disrupt
+# dashboard boot.
+#
+# Guarded by a session_state flag so we only fire the pre-warm ONCE
+# per session, not on every script rerun.
+if "_prewarm_dispatched" not in st.session_state:
+    st.session_state["_prewarm_dispatched"] = True
+    try:
+        import concurrent.futures as _cf
+        from utils import _load_log_returns, _load_metadata  # noqa: E402
+        _prewarm_keys = [u.key for u in _AVAIL_UNIVERSES]
+        _prewarm_executor = _cf.ThreadPoolExecutor(max_workers=min(5, len(_prewarm_keys) or 1))
+        for _k in _prewarm_keys:
+            _prewarm_executor.submit(_load_log_returns, _k)
+            _prewarm_executor.submit(_load_metadata, _k)
+        # Don't wait — the futures run in the background; the executor
+        # itself is GC'd at function exit but its threads finish their
+        # work. We don't shutdown(wait=True) because that would block
+        # first paint.
+    except Exception:  # noqa: BLE001 — best-effort warm-up; never crash boot
+        pass
+
+
 # ── Sidebar: dataset selector (top) + theme controls (existing)
 with st.sidebar:
     if len(_AVAIL_UNIVERSES) > 1:
