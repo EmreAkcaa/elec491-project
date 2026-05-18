@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None):
     from src.rolling_correlation import run_rolling_analysis
     from src.pair_dislocation import run_pair_dislocation
     from src.pit_snapshots import run_pit_snapshots
+    from src.cross_asset import run_cross_asset
     from src.rmt_denoising import run_rmt_denoising
     from src.partial_correlation import run_partial_correlation
     from src.wavelet_analysis import run_wavelet_analysis
@@ -76,6 +77,12 @@ def main(argv: list[str] | None = None):
         run_pit_snapshots(config)
     else:
         logger.info("PIT snapshots skipped via --skip-pit flag")
+
+    # --- Phase X — Cross-Asset sensitivity (BIST only) ---
+    # Computes per-ticker correlation with USD/TRY + Gold (USD/oz),
+    # both full-period and rolling 252-day. Powers the Cross-Market
+    # page's "FX & Gold Sensitivity (BIST only)" subsection.
+    run_cross_asset(config)
 
     # --- EEE Analysis Methods ---
     run_rmt_denoising(config)

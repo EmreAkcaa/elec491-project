@@ -1060,6 +1060,54 @@ def load_pit_dislocation_snapshot(window: int, date_iso: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Phase X — Cross-asset sensitivity loaders (BIST only)
+# ---------------------------------------------------------------------------
+# Read precomputed per-ticker × {USD/TRY, Gold (USD/oz)} correlation
+# artifacts written by `src/cross_asset.py:run_cross_asset`. These are
+# only generated for the BIST universe; loaders return empty DataFrames
+# for any other active universe so the Cross-Market subsection can
+# render a friendly "BIST only" caption instead of crashing.
+
+
+@st.cache_data
+def _load_cross_asset_summary(universe: str) -> pd.DataFrame:
+    """Per-ticker summary table: ticker, sector, corr_usd_try, corr_gold_usd, n_obs.
+
+    Returns empty DataFrame when the artifact isn't on disk (i.e., when
+    the active universe isn't BIST).
+    """
+    path = data_results(universe) / "cross_asset_summary.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
+def load_cross_asset_summary() -> pd.DataFrame:
+    """Public wrapper: load the per-ticker cross-asset summary for the
+    current universe."""
+    return _load_cross_asset_summary(current_universe())
+
+
+@st.cache_data
+def _load_cross_asset_rolling(universe: str, asset_key: str) -> pd.DataFrame:
+    """Rolling 252-day correlation per ticker with one base asset.
+
+    Returns DataFrame indexed by date with columns = tickers. Empty
+    when missing. asset_key must be one of: ``usd_try``, ``gold_usd``.
+    """
+    path = data_results(universe) / f"cross_asset_corr_rolling_{asset_key}.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
+def load_cross_asset_rolling(asset_key: str) -> pd.DataFrame:
+    """Public wrapper: load the rolling cross-asset correlation matrix
+    for the current universe + the given base asset."""
+    return _load_cross_asset_rolling(current_universe(), asset_key)
+
+
+# ---------------------------------------------------------------------------
 # EEE Analysis loaders
 # ---------------------------------------------------------------------------
 

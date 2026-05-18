@@ -44,6 +44,8 @@ from utils import (
     _load_mst_metrics,
     _load_cluster_assignments,
     _load_dislocation_candidates,
+    _load_cross_asset_summary,
+    _load_cross_asset_rolling,
 )
 from universe_registry import UNIVERSES, get_universe, available_universes
 
@@ -465,6 +467,124 @@ def _render_bist_numeraire_section() -> None:
         )
 
 
+def _render_fx_gold_sensitivity_section() -> None:
+    """PHASE X — "FX & Gold Sensitivity (BIST only)" subsection.
+
+    Renders two side-by-side top-5 tables (most TRY-sensitive / most
+    Gold-sensitive BIST stocks by |full-period correlation|), plus a
+    rolling 252-day correlation sparkline for the top-ranked ticker
+    in each. Reads precomputed artifacts from
+    ``data/bist/results/cross_asset_summary.parquet`` +
+    ``cross_asset_corr_rolling_{usd_try,gold_usd}.parquet`` (written
+    by ``src/cross_asset.py``).
+
+    Universe-independent like the rest of cross_market.py — reads BIST
+    directly regardless of which universe the dashboard is showing.
+    """
+    summary = _load_cross_asset_summary("bist")
+    if summary.empty:
+        st.info(
+            "Cross-asset sensitivity not on disk — run "
+            "`uv run python run_pipeline.py` to generate it."
+        )
+        return
+
+    with st.container(border=True):
+        section_header(
+            "FX & Gold Sensitivity (BIST only)",
+            "Which BIST tickers move most with the Turkish Lira vs the US Dollar "
+            "(USD/TRY) and with international gold (Gold USD/oz)? Pearson correlation "
+            "of daily TRY-denominated log returns vs the base-asset log returns over "
+            "the full ~6-year window.",
+        )
+
+        # Build sortable views.
+        view = summary.copy()
+        view["abs_usd_try"] = view["corr_usd_try"].abs()
+        view["abs_gold_usd"] = view["corr_gold_usd"].abs()
+
+        col_try, col_gold = st.columns(2)
+
+        with col_try:
+            st.markdown("**Top 5 most TRY-sensitive (USD/TRY)**")
+            top_try = (
+                view.sort_values("abs_usd_try", ascending=False)
+                .head(5)[["ticker", "sector", "corr_usd_try"]]
+                .reset_index(drop=True)
+            )
+            st.dataframe(
+                top_try, hide_index=True, use_container_width=True,
+                column_config={
+                    "ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "sector": st.column_config.TextColumn("Sector"),
+                    "corr_usd_try": st.column_config.NumberColumn(
+                        "ρ vs USD/TRY", format="%+.4f",
+                        help="Positive = ticker rises with TRY weakness (exporter-flavoured).",
+                    ),
+                },
+            )
+
+        with col_gold:
+            st.markdown("**Top 5 most Gold-sensitive (USD/oz)**")
+            top_gold = (
+                view.sort_values("abs_gold_usd", ascending=False)
+                .head(5)[["ticker", "sector", "corr_gold_usd"]]
+                .reset_index(drop=True)
+            )
+            st.dataframe(
+                top_gold, hide_index=True, use_container_width=True,
+                column_config={
+                    "ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "sector": st.column_config.TextColumn("Sector"),
+                    "corr_gold_usd": st.column_config.NumberColumn(
+                        "ρ vs Gold", format="%+.4f",
+                        help="Positive = ticker rises with gold; defensive / commodity exposure.",
+                    ),
+                },
+            )
+
+        # Rolling sparkline for the #1 ranked ticker in each list — shows how
+        # the sensitivity has shifted over the window (especially around 2022
+        # FX shocks). Live read of the rolling parquet, columns subset.
+        top_try_ticker = top_try.iloc[0]["ticker"] if not top_try.empty else None
+        top_gold_ticker = top_gold.iloc[0]["ticker"] if not top_gold.empty else None
+
+        rolling_try = _load_cross_asset_rolling("bist", "usd_try")
+        rolling_gold = _load_cross_asset_rolling("bist", "gold_usd")
+        if rolling_try.empty and rolling_gold.empty:
+            return
+
+        st.caption(
+            "Rolling 252-day correlation of the #1 most-sensitive ticker for each "
+            "asset. Watch for regime shifts around 2022 (Russia/Ukraine + TRY crisis)."
+        )
+        fig = go.Figure()
+        if top_try_ticker and top_try_ticker in rolling_try.columns:
+            fig.add_trace(go.Scatter(
+                x=rolling_try.index, y=rolling_try[top_try_ticker],
+                mode="lines", name=f"{top_try_ticker} ↔ USD/TRY",
+                line=dict(color=_BIST_COLOR, width=1.8),
+            ))
+        if top_gold_ticker and top_gold_ticker in rolling_gold.columns:
+            fig.add_trace(go.Scatter(
+                x=rolling_gold.index, y=rolling_gold[top_gold_ticker],
+                mode="lines", name=f"{top_gold_ticker} ↔ Gold",
+                line=dict(color="#F4A300", width=1.8),
+            ))
+        fig.add_hline(y=0, line_dash="dot", line_color="#A0A8B8", opacity=0.6)
+        apply_chart_style(
+            fig, height=280,
+            yaxis_title="Rolling ρ (252d)",
+            xaxis_title="Date",
+        )
+        render_chart(
+            fig, chart_id="cm_fx_gold_rolling",
+            filename_base="fx_gold_rolling",
+            title_key="cm_fx_gold_rolling",
+            default_title="FX & Gold sensitivity — rolling 252-day correlation",
+        )
+
+
 def render() -> None:
     # NOTE: importlib.reload(universe_registry) was removed here per the
     # same fix applied to dashboard.py (PR #23), pair_analysis.py (PR #33),
@@ -699,6 +819,9 @@ def render() -> None:
 
     # ── Section 6b: Numéraire sensitivity (Phase 4 mutable-candy) ─────────
     _render_bist_numeraire_section()
+
+    # ── Section 6c: FX & Gold sensitivity (Phase X) ───────────────────────
+    _render_fx_gold_sensitivity_section()
 
     # ── Section 7: Limitations / methodology footnote
     with st.container(border=True):
