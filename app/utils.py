@@ -506,51 +506,52 @@ def inject_custom_css():
         color: #555;
     }
 
-    /* ── PHASE S (S9) — Loading-state polish ───────────────────
-       Replaced the Phase-0 shimmer-sweep with a centered spinner
-       icon. User feedback: "loading animation sucks. maybe there
-       shall be a loading icon". Targets Streamlit 1.41's
-       `stale element` class applied to .element-container during
-       reruns. Two effects layered:
+    /* ── UX polish — Loading-state indicator (single top progress bar)
+       Phase S painted ONE spinner per `.element-container.stale`, which
+       meant a page with 20 widgets showed 20 spinners during a rerun —
+       user reaction: "loading icons are shown like 20 of them looks very
+       weird". Replaced with a single TOP-OF-PAGE thin progress bar that
+       activates whenever ANY element on the page is recomputing. Uses
+       CSS `:has()` to detect stale descendants without JavaScript.
 
-        1. Reduce opacity of stale elements (0.72 — readable while
-           computing, signals "this is recomputing").
-        2. Center a 28 px ring spinner on top of each stale element,
-           pure CSS (no SVG asset). Border-top-color rotates against
-           a faded border so it reads as a classic spinner.
+       Two effects layered:
+        1. Subtle opacity dimming (0.78) on stale elements — tells the
+           user WHICH elements are recomputing, secondary cue only.
+        2. Single 2px progress bar at the top of the viewport with a
+           sliding gradient — primary "page is computing" cue.
 
-       The spinner sits on `.element-container.stale > *:first-child`
-       via a ::before pseudo so it doesn't trigger layout shift on
-       reflow (positioned absolute, pointer-events: none). */
-    .element-container.stale,
-    [data-stale="true"] {
-        opacity: 0.72 !important;
+       `:has()` selector support is universal in modern browsers
+       (Chrome 105+ / Safari 15.4+ / Firefox 121+, all shipping in
+       early-to-mid 2022 onwards). HF Spaces' demo audience is on
+       up-to-date browsers. */
+    .element-container.stale {
+        opacity: 0.78 !important;
         transition: opacity 0.2s ease-in-out;
     }
-    .element-container.stale > *:first-child,
-    [data-stale="true"] > *:first-child {
-        position: relative;
-    }
-    .element-container.stale > *:first-child::before,
-    [data-stale="true"] > *:first-child::before {
+    body:has(.element-container.stale)::after,
+    [data-testid="stAppViewContainer"]:has(.element-container.stale)::after {
         content: "";
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        margin-top: -14px;
-        margin-left: -14px;
-        width: 28px;
-        height: 28px;
-        border: 3px solid rgba(67, 97, 238, 0.18);
-        border-top-color: #4361EE;
-        border-radius: 50%;
-        animation: stonecoal-spin 0.9s linear infinite;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(
+            90deg,
+            rgba(67,97,238,0) 0%,
+            rgba(67,97,238,1.0) 50%,
+            rgba(67,97,238,0) 100%
+        );
+        background-size: 35% 100%;
+        background-repeat: no-repeat;
+        background-position: -35% 0;
+        animation: stonecoal-progress 1.2s linear infinite;
+        z-index: 99999;
         pointer-events: none;
-        z-index: 10;
     }
-    @keyframes stonecoal-spin {
-        0%   { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    @keyframes stonecoal-progress {
+        0%   { background-position: -35% 0; }
+        100% { background-position: 135% 0; }
     }
     </style>
     """, unsafe_allow_html=True)
