@@ -125,11 +125,10 @@ def _compute_corr(_returns: pd.DataFrame, cache_key: str, min_periods: int, meth
     return _returns.corr(method=method, min_periods=min_periods)
 
 
-@st.cache_data(show_spinner=False)
-def _pit_corr(_returns: pd.DataFrame, cache_key: str, end_date_str, window, method):
-    return compute_window_correlation(
-        _returns, pd.Timestamp(end_date_str), window=window, method=method,
-    )
+# UX polish: removed the orphan `_pit_corr` helper — its only caller
+# (`_render_pit_correlation`) was deleted along with the now-dead PIT
+# sub-sub-tab. Time Machine has its own equivalent helper at
+# app/time_machine.py:_pit_correlation_live.
 
 
 @st.cache_data(show_spinner=False)
@@ -219,29 +218,11 @@ def _compute_sector(_returns: pd.DataFrame, cache_key: str, sec_map_items, windo
 #     sub-tab gives marginal win.
 
 
-def _open_pair_analysis_button(ticker_a: str, ticker_b: str, *, key: str) -> None:
-    """Single canonical cross-page nav button to Pair Analysis with
-    (ticker_a, ticker_b) preloaded.
-
-    Used at every callsite (Rolling Pair sub-tab, Pairs & Dislocations
-    Top/Bottom tabs, Dislocation Candidates) so the copy, icon, and
-    session_state plumbing stay consistent. Audit item A3 — before this
-    helper the same action shipped as 4 buttons with 3 different labels.
-
-    `st.rerun(scope="app")` works both inside `@st.fragment` contexts
-    (where the default fragment-scoped rerun would NOT switch pages)
-    and outside them (where it's a plain full-script rerun).
-    """
-    if st.button(
-        f":material/open_in_new:  Analyze {ticker_a} / {ticker_b} in Pair Analysis",
-        key=key,
-        type="secondary",
-        use_container_width=True,
-    ):
-        st.session_state["pa_ticker_a"] = ticker_a
-        st.session_state["pa_ticker_b"] = ticker_b
-        st.session_state["_goto_pair_analysis"] = True
-        st.rerun(scope="app")
+# UX polish: `_open_pair_analysis_button` helper removed — every callsite
+# (Rolling Pair sub-tab, Pairs & Dislocations Top/Bottom, Dislocation
+# Candidates) shipped the same buggy session_state round-trip. Users now
+# navigate to Pair Analysis from the top nav and type the pair directly,
+# which is the canonical path and survives all rerun cycles cleanly.
 
 
 @st.fragment
@@ -310,142 +291,19 @@ def _render_correlation_heatmap() -> None:
             )
 
 
-@st.fragment
-def _render_pit_correlation() -> None:
-    """Point-in-time correlation snapshot. Owns pit_window/pit_method/pit_date.
-    Dragging the date slider used to rerun the whole 1700-line script; now it
-    reruns only this block."""
-    _is_finance_pit = _cap(_active_universe, 'domain', 'finance') == "finance"
-    st.caption(
-        "Pick a date + window to see the correlation matrix at that point in time. "
-        + ("Useful for comparing market structure during crises vs calm periods."
-           if _is_finance_pit else
-           "Useful for tracking how network structure shifts across the recording.")
-    )
-
-    trading_dates = returns.index.tolist()
-    if not trading_dates:
-        st.warning("No data available for this universe.")
-        return
-    _date_min = trading_dates[0].date()
-    _date_max = trading_dates[-1].date()
-
-    pit_c1, pit_c2, pit_c3 = st.columns(3)
-    with pit_c1:
-        _win_label = "Window (days)" if _is_finance_pit else "Window (samples)"
-        # PHASE S (S2): selectbox with the same {60, 120, 252} set Time
-        # Machine and Rolling Analysis use. Removes the freeform number_input
-        # that produced arbitrary cache-missing values and was inconsistent
-        # with the rest of the dashboard.
-        _pit_window_options = [w for w in (60, 120, 252) if w <= len(trading_dates)]
-        if not _pit_window_options:
-            _pit_window_options = [max(20, len(trading_dates) // 2)]
-        pit_window = int(st.selectbox(
-            _win_label,
-            _pit_window_options,
-            index=len(_pit_window_options) - 1,  # default to longest available
-            key="pit_window",
-            help="Trading days in the rolling window used to compute the correlation snapshot.",
-        ))
-    with pit_c2:
-        pit_method = st.selectbox(
-            "Method", ["pearson", "spearman"], key="pit_method",
-        )
-    with pit_c3:
-        # Date picker replaces the select_slider. The slider was good for
-        # exploration but bad for known-date queries ("show me 2020-03-12");
-        # number_input + date_input still re-runs only this fragment, so
-        # interactive scrubbing is preserved at the cost of two clicks
-        # instead of a drag.
-        valid_start = max(0, pit_window - 1)
-        _min_pick = trading_dates[valid_start].date() if valid_start < len(trading_dates) else _date_min
-        _default_pick = _date_max
-        pit_date_picked = st.date_input(
-            "Snapshot date",
-            value=_default_pick,
-            min_value=_min_pick,
-            max_value=_date_max,
-            key="pit_date",
-        )
-
-    # date_input can return a date OR a tuple if range mode is on (we use
-    # single-date mode, so it's always a single date). Coerce to Timestamp
-    # for downstream _pit_corr (which serialises via isoformat()) — and
-    # snap to the NEAREST trading day in case the user picks a weekend
-    # / market holiday.
-    if isinstance(pit_date_picked, tuple):
-        pit_date_picked = pit_date_picked[0] if pit_date_picked else _default_pick
-    _picked_ts = pd.Timestamp(pit_date_picked)
-    _date_idx = returns.index.searchsorted(_picked_ts, side="right") - 1
-    _date_idx = max(0, min(_date_idx, len(returns.index) - 1))
-    pit_date = returns.index[_date_idx]
-    if pit_date.date() != pit_date_picked:
-        st.caption(
-            f":material/info: Snapped to nearest trading day "
-            f"{pit_date.strftime('%Y-%m-%d')} "
-            f"(you picked {pit_date_picked.isoformat()} — weekend/holiday)."
-        )
-
-    # PHASE S (S11): removed `with st.spinner(...)`. `_pit_corr` is cached;
-    # genuine recompute is signaled by the S9 spinner-overlay.
-    pit_corr = _pit_corr(
-        returns, returns_cache_key, pit_date.isoformat(), pit_window, pit_method,
-    )
-    if pit_corr.empty:
-        st.warning("Not enough data for the selected date and window size.")
-        return
-
-    # use_clustering_order and leaf_order used to be script-level globals set
-    # inside `with tab_corr:`. Now that the heatmap is also a fragment, they
-    # aren't visible at module scope — read from session_state + load dendrogram
-    # directly (load_dendrogram_order is @st.cache_data, so it's free).
-    _use_clustering_order = bool(st.session_state.get("mo_corr_reorder", True))
-    _leaf_order = load_dendrogram_order()
-    if _use_clustering_order and _leaf_order is not None:
-        pit_valid = [t for t in _leaf_order if t in pit_corr.columns]
-        pit_display = pit_corr.loc[pit_valid, pit_valid] if pit_valid else pit_corr
-    else:
-        pit_display = pit_corr
-
-    pit_mask = np.triu(np.ones(pit_display.shape, dtype=bool), k=1)
-    pit_vals = pit_display.values[pit_mask]
-    pit_vals = pit_vals[~np.isnan(pit_vals)]
-
-    pm1, pm2, pm3, pm4 = st.columns(4)
-    pm1.metric(
-        f"{_cap(_active_universe, 'items_label', 'Tickers')} in Window",
-        len(pit_display),
-    )
-    pm2.metric("Mean Corr", f"{np.mean(pit_vals):.4f}")
-    pm3.metric("Median Corr", f"{np.median(pit_vals):.4f}")
-    pm4.metric("Std Dev", f"{np.std(pit_vals):.4f}")
-
-    render_matrix_heatmap(
-        pit_display,
-        chart_id="mo_pit_heatmap",
-        filename_base="pit_correlation",
-        title_key="mo_pit_heatmap",
-        default_title="Point-in-Time Correlation",
-        zmin=-1.0, zmax=1.0, diverging=True,
-        height=_heatmap_height(min(len(pit_display), 200)),
-        hover_label="corr",
-        colorbar_title="Corr",
-    )
+# UX polish: removed the orphaned `_render_pit_correlation` fragment
+# (~120 lines). Phase 1 promoted Point-in-Time correlation out to the
+# top-level Time Machine page and removed its callsite from
+# Market Overview > Correlation, but the function definition was left
+# behind as dead code. Time Machine is now the canonical PIT surface.
 
 
 @st.fragment
 def _render_rolling_pair() -> None:
     """Rolling Analysis → Pair Correlation sub-tab. Owns pair_a/pair_b
-    selectors + the cross-page "Open in Pair Analysis" button. The nav
-    button uses `st.rerun(scope="app")` because the default `scope="fragment"`
-    wouldn't actually leave this sub-tab."""
-    # Use the same session_state keys as the Pair Analysis page
-    # (pa_ticker_a / pa_ticker_b). Previously this sub-tab maintained its
-    # own pair_a / pair_b state — two sources of truth for the same
-    # concept, picking a pair here didn't carry over to Pair Analysis.
-    # Audit item A5. Cross-page nav buttons (_open_pair_analysis_button)
-    # also write to pa_ticker_a/b, so picks made in either view are now
-    # always synced.
+    selectors. Shares session_state keys (pa_ticker_a / pa_ticker_b)
+    with the Pair Analysis page so a pick made in either view carries
+    over to the other (audit item A5)."""
     ticker_list = sorted(returns.columns.tolist())
     if (
         "pa_ticker_a" not in st.session_state
@@ -508,8 +366,11 @@ def _render_rolling_pair() -> None:
         render_chart(fig_pair, chart_id="mo_pair_corr", filename_base="pair_correlation",
                      title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
 
-        if _cap(_active_universe, 'has_pair_trading', True):
-            _open_pair_analysis_button(pair_a, pair_b, key="pair_deep_dive")
+        # UX polish: removed the "Analyze X/Y in Pair Analysis" cross-page
+        # nav button here for consistency with the same removal in the
+        # Pairs & Dislocations sub-tab — the button's session_state
+        # round-trip was fragile. Users open the Pair Analysis page from
+        # the top nav and type their pair there directly.
 
         # Two normalized price lines (matches original behaviour).
         if pair_a in prices_window.columns and pair_b in prices_window.columns:
@@ -792,11 +653,11 @@ st.markdown(
 _dataset_key = st.session_state.get("dataset", _BOOT_DATASET)
 _nav_page_key = f"nav_page_{_dataset_key}"
 
-# Handle deferred navigation from cross-page jump buttons.
-if st.session_state.pop("_goto_pair_analysis", False):
-    st.session_state[_nav_page_key] = "Pair Analysis"
-if st.session_state.pop("_goto_cross_market", False):
-    st.session_state[_nav_page_key] = "Cross-Market"
+# UX polish: removed `_goto_pair_analysis` and `_goto_cross_market`
+# session_state consumers. The only writer (`_open_pair_analysis_button`)
+# has been deleted along with all 4 callsites; `_goto_cross_market` had
+# no writers and was already dead code. Cross-page nav now goes through
+# the top segmented_control directly.
 
 # Nav label for the overview page is domain-aware: "Market Overview" reads
 # wrong when the active universe is EEG (no market), so non-finance domains
@@ -914,11 +775,10 @@ if _nav == "Pair Analysis":
     st.stop()
 
 # ── Time Machine route ───────────────────────────────────────────────────────
-# Date-driven correlation/MST/dislocation evolution. Promoted from the
-# Market Overview > Correlation > Point-in-Time Snapshot sub-sub-tab.
-# Uses live `_pit_corr` math via `compute_window_correlation` from
-# `src/rolling_correlation.py` — Phase 3 will swap in precomputed
-# snapshot artifacts for instant slider scrubbing.
+# Date-driven correlation/MST/dislocation evolution. The canonical
+# Point-in-Time surface — promoted to top nav in Phase 1, fast-pathed
+# via precomputed snapshots in Phase 3 (BIST TRY + S&P at w=252) with
+# live-compute fallback for other (universe, window, method) combos.
 if _nav == "Time Machine":
     from time_machine import render as _render_tm
     _render_tm(adj_close, full_returns, min_date, max_date)
@@ -1875,10 +1735,9 @@ with tab_rolling:
                 st.warning("Not enough data for the selected window size.")
 
         # ── Sub-Tab 2: Pair rolling correlation ─────────────────────────────
-        # Body lives in `_render_rolling_pair` fragment (defined at module top).
-        # Changing pair_a / pair_b only reruns the fragment, not the whole
-        # script. The cross-page "Open in Pair Analysis" button uses
-        # st.rerun(scope="app") to escape the fragment scope.
+        # Body lives in `_render_rolling_pair` fragment (defined at module
+        # top). Changing pair_a / pair_b only reruns the fragment, not the
+        # whole script.
         with tab_pair:
             _render_rolling_pair()
 
@@ -1977,34 +1836,17 @@ if tab_pairs is not None:
                   ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
               ].reset_index(drop=True)
 
+              # UX polish: dropped the "Analyze X/Y in Pair Analysis"
+              # cross-page buttons + their selectbox companions. The button
+              # was buggy (cross-page state plumbing through
+              # `_goto_pair_analysis` was fragile across reruns) and the
+              # selectbox added clicks. Users who want to deep-dive a pair
+              # type its name directly in the Pair Analysis page.
               tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
               with tab_top:
                   st.dataframe(top_pairs, use_container_width=True, hide_index=True)
-                  _top_pair_idx = st.selectbox(
-                      "Select pair to analyze",
-                      range(len(top_pairs)),
-                      format_func=lambda i: f"{top_pairs.iloc[i]['ticker_1']} / {top_pairs.iloc[i]['ticker_2']} ({top_pairs.iloc[i]['correlation']:.4f})",
-                      key="top_pair_sel",
-                  )
-                  _open_pair_analysis_button(
-                      top_pairs.iloc[_top_pair_idx]["ticker_1"],
-                      top_pairs.iloc[_top_pair_idx]["ticker_2"],
-                      key="top_pair_btn",
-                  )
-
               with tab_bottom:
                   st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
-                  _bot_pair_idx = st.selectbox(
-                      "Select pair to analyze",
-                      range(len(bottom_pairs)),
-                      format_func=lambda i: f"{bottom_pairs.iloc[i]['ticker_1']} / {bottom_pairs.iloc[i]['ticker_2']} ({bottom_pairs.iloc[i]['correlation']:.4f})",
-                      key="bot_pair_sel",
-                  )
-                  _open_pair_analysis_button(
-                      bottom_pairs.iloc[_bot_pair_idx]["ticker_1"],
-                      bottom_pairs.iloc[_bot_pair_idx]["ticker_2"],
-                      key="bot_pair_btn",
-                  )
 
           with col_dist:
               # `corr` used to be set as a script-level global inside
@@ -2057,6 +1899,11 @@ if tab_pairs is not None:
               ]
               _disp_cands = _candidates[[c for c in _display_cols if c in _candidates.columns]].copy()
 
+              # UX polish: dropped the candidate-pair selectbox + cross-page
+              # "Analyze in Pair Analysis" button (buggy cross-page state).
+              # The dataframe itself is sortable; users pick by sorting the
+              # `rank_score` / `current_zscore` columns and typing the ticker
+              # pair in Pair Analysis directly.
               st.dataframe(
                   _disp_cands,
                   use_container_width=True,
@@ -2068,21 +1915,6 @@ if tab_pairs is not None:
                       "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
                       "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
                   },
-              )
-
-              _cand_idx = st.selectbox(
-                  "Select a candidate pair to analyze",
-                  range(len(_disp_cands)),
-                  format_func=lambda i: (
-                      f"{_disp_cands.iloc[i]['ticker_a']} / {_disp_cands.iloc[i]['ticker_b']}  "
-                      f"(Z={_disp_cands.iloc[i]['current_zscore']:.2f}, HL={_disp_cands.iloc[i]['half_life']:.0f}d)"
-                  ),
-                  key="cand_pair_sel",
-              )
-              _open_pair_analysis_button(
-                  _disp_cands.iloc[_cand_idx]["ticker_a"],
-                  _disp_cands.iloc[_cand_idx]["ticker_b"],
-                  key="cand_pair_btn",
               )
           else:
               st.info(
