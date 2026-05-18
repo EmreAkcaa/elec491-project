@@ -756,17 +756,16 @@ if _cap(_active_universe, 'has_pair_trading', True):
             _nmi = normalized_mutual_info_score(
                 _clusters_clean["sector"], _clusters_clean["cluster_id"]
             )
+            # Sprint 2 PR-K: drop the ARI/NMI metric cards from the hero strip.
+            # Per friend's "Cluster Purity is enough" feedback (PR #34 trail),
+            # per-cluster purity in Clustering & Network is the canonical
+            # validation surface. ARI/NMI are still computed for inline mention
+            # in the hero text below.
+            # Sprint 2 PR-L: 4-sentence academic wall trimmed to a single
+            # sentence. Methodology depth (Ward linkage, Mantegna distance,
+            # n_clusters) lives in the help= tooltip below — hover to see.
             with st.container(border=True):
-                hero_c1, hero_c2, hero_c3 = st.columns([1, 1, 3])
-                hero_c1.metric("Sector ARI", f"{_ari:.2f}",
-                               help="Adjusted Rand Index between Ward clusters and official sectors. 0=random, 1=perfect.")
-                hero_c2.metric("Sector NMI", f"{_nmi:.2f}",
-                               help="Normalized Mutual Information between Ward clusters and official sectors.")
-                # Sprint 2 PR-L: trim the 4-sentence academic wall to a single
-                # sentence. Methodology depth (Ward linkage, Mantegna distance,
-                # n_clusters) lives in the help tooltip below and in
-                # Clustering & Network → per-cluster purity table.
-                hero_c3.markdown(
+                st.markdown(
                     f"Ward clustering on Mantegna correlation distance reproduces the official "
                     f"{_hero_caption_universe} sector partition. Drill into **Clustering & Network** "
                     "for per-cluster purity, dendrogram + MST.",
