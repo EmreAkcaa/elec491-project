@@ -762,12 +762,18 @@ if _cap(_active_universe, 'has_pair_trading', True):
                                help="Adjusted Rand Index between Ward clusters and official sectors. 0=random, 1=perfect.")
                 hero_c2.metric("Sector NMI", f"{_nmi:.2f}",
                                help="Normalized Mutual Information between Ward clusters and official sectors.")
+                # Sprint 2 PR-L: trim the 4-sentence academic wall to a single
+                # sentence. Methodology depth (Ward linkage, Mantegna distance,
+                # n_clusters) lives in the help tooltip below and in
+                # Clustering & Network → per-cluster purity table.
                 hero_c3.markdown(
-                    f"**Statistical clusters extracted from raw price correlations recover the "
-                    f"official {_hero_caption_universe} sector classification with "
-                    f"**ARI = {_ari:.2f}, NMI = {_nmi:.2f}** (Ward linkage on Mantegna distance, "
-                    f"n_clusters = {_clusters_clean['cluster_id'].nunique()}). "
-                    "Open *Clustering & Network* below for the MST and dendrogram."
+                    f"Ward clustering on Mantegna correlation distance reproduces the official "
+                    f"{_hero_caption_universe} sector partition. Drill into **Clustering & Network** "
+                    "for per-cluster purity, dendrogram + MST.",
+                    help=(
+                        f"ARI = {_ari:.2f}, NMI = {_nmi:.2f} · Ward linkage · "
+                        f"n_clusters = {_clusters_clean['cluster_id'].nunique()}"
+                    ),
                 )
     except Exception:
         # Hero strip is decorative — never block the page if it errors.
