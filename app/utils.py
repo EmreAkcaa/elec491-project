@@ -647,6 +647,41 @@ def data_processed(universe: str | None = None) -> Path:
     return PROJECT_ROOT / "data" / (universe or current_universe()) / "processed"
 
 
+# Phase 4: base-asset loader for Pair Analysis "Compare against" FX/Gold.
+# These series live OUTSIDE any universe subtree (they're global financial
+# series, not universe-specific) at `data/raw/base_assets/{asset_key}.parquet`.
+# Schema: Date-indexed parquet with a single price column named after
+# `asset_key` (e.g., `usd_try`, `gold_usd`).
+@st.cache_data(show_spinner="Loading base-asset price series...")
+def _load_base_asset(asset_key: str) -> pd.Series:
+    """Load a base-asset close-price series for cross-asset comparison.
+
+    Returns an empty Series when the file is missing — callers should
+    check ``series.empty`` before using. Cached by ``asset_key`` so the
+    same series is loaded once per session for any number of Pair
+    Analysis sessions that compare against it.
+    """
+    path = PROJECT_ROOT / "data" / "raw" / "base_assets" / f"{asset_key}.parquet"
+    if not path.exists():
+        return pd.Series(dtype=float, name=asset_key)
+    df = pd.read_parquet(path)
+    if asset_key not in df.columns:
+        return pd.Series(dtype=float, name=asset_key)
+    series = df[asset_key].copy()
+    series.name = asset_key
+    if series.index.name is None:
+        series.index.name = "Date"
+    return series
+
+
+def load_base_asset(asset_key: str) -> pd.Series:
+    """Public loader for base-asset price series. Currently supports
+    ``"usd_try"`` and ``"gold_usd"``. Returns an empty Series if the
+    file is missing (graceful degrade — UI shows a friendly notice).
+    """
+    return _load_base_asset(asset_key)
+
+
 def data_results(universe: str | None = None) -> Path:
     return PROJECT_ROOT / "data" / (universe or current_universe()) / "results"
 

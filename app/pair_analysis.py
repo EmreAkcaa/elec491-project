@@ -30,6 +30,7 @@ from utils import (
     load_mst_edges,
     load_mst_metrics,
     load_cluster_assignments,
+    load_base_asset,
     get_colors,
     SECTOR_PALETTE,
     CHART_LAYOUT,
@@ -51,6 +52,54 @@ from src.pair_dislocation import (
 # ══════════════════════════════════════════════════════════════════════════════
 # Cached computation helpers (module-level to avoid Streamlit re-registration)
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── Phase 4: Compare-against (FX/Gold) constants + helpers ───────────────
+# When the user picks a non-stock comparison target, the second leg of the
+# pair is a single price series loaded from `data/raw/base_assets/`.
+# We inject it as a synthetic column into local copies of `full_returns`
+# (log returns) and `adj_close` (close prices), so the downstream math
+# (spread, β, Z-score, dislocation, rolling correlation, volatility,
+# drawdown) treats it identically to a stock leg with NO branching.
+
+_COMPARE_LABEL_TO_ASSET: dict[str, str | None] = {
+    "Another stock":      None,
+    "USD / TRY":          "usd_try",
+    "Gold (USD / oz)":    "gold_usd",
+}
+_ASSET_DISPLAY_LABEL: dict[str, str] = {
+    "usd_try":  "USD/TRY",
+    "gold_usd": "Gold (USD/oz)",
+}
+
+
+def _inject_base_asset(
+    full_returns: pd.DataFrame,
+    adj_close: pd.DataFrame,
+    asset_key: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, bool]:
+    """Augment ``full_returns`` + ``adj_close`` with a base-asset synthetic
+    column so the rest of pair_analysis can treat it as just another ticker.
+
+    Reindexes the base asset to the universe's date axis with forward-fill
+    for small calendar mismatches (BIST trading days differ slightly from
+    FX/commodity trading days). The added column shares the same Date
+    index as `full_returns`.
+
+    Returns ``(returns_aug, adj_close_aug, ok)``. ``ok`` is False if the
+    base-asset parquet was missing or empty — caller should fall back.
+    """
+    series = load_base_asset(asset_key)
+    if series.empty:
+        return full_returns, adj_close, False
+
+    aligned = series.reindex(full_returns.index).ffill()
+    log_returns = np.log(aligned / aligned.shift(1))
+    aligned.name = asset_key
+    log_returns.name = asset_key
+    new_returns = full_returns.assign(**{asset_key: log_returns})
+    new_adj_close = adj_close.assign(**{asset_key: aligned})
+    return new_returns, new_adj_close, True
+
 
 @st.cache_data(show_spinner=False)
 def _pair_corr(_ret: pd.DataFrame, cache_key: str, a, b, win, method, wtype):
@@ -168,31 +217,80 @@ def render(
     if "pa_date_range" not in st.session_state:
         st.session_state["pa_date_range"] = (min_date, max_date)
 
-    # Row 1: Ticker selectors + Compare-against stub + date range
-    # Phase 4 will replace this disabled placeholder with a real "Compare
-    # against" dropdown: [Another stock, USD/TRY, Gold (USD/oz)]. When
-    # non-stock is chosen the second leg comes from
-    # data/raw/base_assets/{usd_try,gold_usd}.parquet via a new
-    # load_cross_asset_corr loader; the downstream math (spread, β,
-    # Z-score, dislocation) works on a pd.Series regardless of source.
+    # Row 1: Ticker A + Compare-against + Ticker B + date range
+    # Phase 4: "Compare against" picker lets the second leg be a base
+    # asset (USD/TRY or Gold) instead of another stock. When non-stock
+    # is chosen the asset series is loaded from
+    # data/raw/base_assets/{asset_key}.parquet, log-returned, and injected
+    # as a synthetic column into local `full_returns` + `adj_close`
+    # copies. All downstream math (spread, β, Z-score, dislocation,
+    # rolling corr, vol, drawdown) treats it identically to a stock leg.
     _c_a, _c_compare, _c_b, _c_date = st.columns([2, 2, 2, 3])
     with _c_a:
         ticker_a = st.selectbox("Ticker A", ticker_list, key="pa_ticker_a")
     with _c_compare:
-        st.selectbox(
+        _compare_label = st.selectbox(
             "Compare against",
-            ["Another stock"],
+            list(_COMPARE_LABEL_TO_ASSET.keys()),
             index=0,
-            disabled=True,
-            key="pa_compare_target_stub",
+            key="pa_compare_target",
             help=(
-                "Phase 4: choose USD/TRY or Gold (USD/oz) as the second "
-                "leg to surface FX/Gold sensitivity per stock. Today only "
-                "stock-vs-stock is wired."
+                "**Another stock** — classic pair trade.\n\n"
+                "**USD/TRY** — FX sensitivity. Exporter stocks (banks excl.) "
+                "tend to be positively correlated with TRY weakening; "
+                "domestic plays negatively.\n\n"
+                "**Gold (USD/oz)** — inflation/risk-off sensitivity. "
+                "Gold-correlated stocks behave as inflation hedges.\n\n"
+                "All downstream math (spread, β, Z-score, dislocation) "
+                "works identically — the base asset is injected as a "
+                "synthetic second-leg ticker."
             ),
         )
-    with _c_b:
-        ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
+    _compare_asset_key = _COMPARE_LABEL_TO_ASSET[_compare_label]
+
+    # _b_disp is the LABEL shown in headers/captions. ticker_b is the
+    # COLUMN KEY used for DataFrame lookups. They diverge only when
+    # ticker_b is a base-asset key (where "usd_try" is the column but
+    # "USD/TRY" is the display).
+    if _compare_asset_key is None:
+        # Stock-vs-stock — existing behavior, existing Ticker B selectbox.
+        with _c_b:
+            ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
+        _b_disp = ticker_b
+        _b_is_base_asset = False
+    else:
+        # Stock-vs-base-asset. Inject the asset as a synthetic column
+        # into our LOCAL copies of full_returns + adj_close. The original
+        # DataFrames passed into render() are unchanged (assign() returns
+        # a new frame).
+        full_returns, adj_close, _ok = _inject_base_asset(
+            full_returns, adj_close, _compare_asset_key,
+        )
+        if not _ok:
+            with _c_b:
+                ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
+            _b_disp = ticker_b
+            _b_is_base_asset = False
+            st.warning(
+                f"Base-asset series for **{_compare_label}** is missing on disk "
+                f"(expected `data/raw/base_assets/{_compare_asset_key}.parquet`). "
+                "Falling back to stock-vs-stock."
+            )
+        else:
+            ticker_b = _compare_asset_key
+            _b_disp = _ASSET_DISPLAY_LABEL[_compare_asset_key]
+            _b_is_base_asset = True
+            with _c_b:
+                # Display-only — Ticker B is fixed to the chosen base asset.
+                # text_input keeps the column-row alignment without rendering
+                # a confusing always-disabled selectbox of irrelevant stocks.
+                st.text_input(
+                    "Ticker B",
+                    value=_b_disp,
+                    disabled=True,
+                    key="pa_ticker_b_baseAsset_display",
+                    help="Auto-set from 'Compare against' choice.",
+                )
     with _c_date:
         date_range = st.date_input(
             "Date range",
@@ -216,7 +314,7 @@ def render(
     st.markdown(
         f"<h1 style='margin-bottom:0;'>Pair Analysis</h1>"
         f"<p style='color:#8D99AE; margin-top:0; font-size:0.95rem;'>"
-        f"Deep-dive comparison of <b>{ticker_a}</b> and <b>{ticker_b}</b></p>",
+        f"Deep-dive comparison of <b>{ticker_a}</b> and <b>{_b_disp}</b></p>",
         unsafe_allow_html=True,
     )
 
@@ -330,7 +428,7 @@ def render(
                         mode="lines", line=dict(color=get_colors()["primary"], width=2.2),
                     ))
                     fig_price.add_trace(go.Scatter(
-                        x=pb.index, y=pb, name=ticker_b,
+                        x=pb.index, y=pb, name=_b_disp,
                         mode="lines", line=dict(color=get_colors()["secondary"], width=2.2),
                     ))
                     draw_event_markers(fig_price, show_defaults, custom_events,
@@ -353,7 +451,7 @@ def render(
                     fig_scat.add_trace(go.Scatter(
                         x=_ra, y=_rb, mode="markers",
                         marker=dict(color=get_colors()["primary"], size=4, opacity=0.4),
-                        hovertemplate=f"{ticker_a}: %{{x:.4f}}<br>{ticker_b}: %{{y:.4f}}<extra></extra>",
+                        hovertemplate=f"{ticker_a}: %{{x:.4f}}<br>{_b_disp}: %{{y:.4f}}<extra></extra>",
                         showlegend=False,
                     ))
                     fig_scat.add_trace(go.Scatter(
@@ -363,7 +461,7 @@ def render(
                     ))
                     apply_chart_style(fig_scat, height=440,
                                       xaxis_title=f"{ticker_a} Return",
-                                      yaxis_title=f"{ticker_b} Return",
+                                      yaxis_title=f"{_b_disp} Return",
                                       title=dict(text=f"rho = {_rho_label:.4f}", font=dict(size=12), x=0.5),
                                       margin=dict(l=0, r=0, t=40, b=0))
                     render_chart(fig_scat, chart_id="pa_scatter", filename_base="return_scatter",
@@ -425,7 +523,7 @@ def render(
                     ))
                     fig_rc.add_trace(go.Scatter(
                         x=pair_corr.index, y=pair_corr.values,
-                        mode="lines", name=f"{ticker_a} / {ticker_b}",
+                        mode="lines", name=f"{ticker_a} / {_b_disp}",
                         line=dict(color=get_colors()["primary"], width=1.8),
                     ))
                     draw_event_markers(fig_rc, show_defaults, custom_events,
@@ -475,7 +573,7 @@ def render(
                         marker_color=get_colors()["primary"], opacity=0.60,
                     ))
                     fig_dist.add_trace(go.Histogram(
-                        x=both[ticker_b], name=ticker_b, nbinsx=70,
+                        x=both[ticker_b], name=_b_disp, nbinsx=70,
                         marker_color=get_colors()["secondary"], opacity=0.60,
                     ))
                     apply_chart_style(fig_dist, height=400,
@@ -510,7 +608,7 @@ def render(
                         mode="lines", line=dict(color=get_colors()["primary"], width=1.8),
                     ))
                     fig_vol.add_trace(go.Scatter(
-                        x=_vol_b.index, y=_vol_b, name=ticker_b,
+                        x=_vol_b.index, y=_vol_b, name=_b_disp,
                         mode="lines", line=dict(color=get_colors()["secondary"], width=1.8),
                     ))
                     draw_event_markers(fig_vol, show_defaults, custom_events,
@@ -543,7 +641,7 @@ def render(
                     fillcolor="rgba(67,97,238,0.15)",
                 ))
                 fig_dd.add_trace(go.Scatter(
-                    x=dd_b.index, y=dd_b, name=ticker_b,
+                    x=dd_b.index, y=dd_b, name=_b_disp,
                     mode="lines", fill="tozeroy",
                     line=dict(color=get_colors()["secondary"], width=1.5),
                     fillcolor="rgba(230,57,70,0.15)",
@@ -596,7 +694,7 @@ def render(
             with st.container(border=True):
                 section_header(
                     "Log-Price Spread",
-                    f"Hedge-ratio-adjusted spread: log({ticker_b}) - beta x log({ticker_a}). "
+                    f"Hedge-ratio-adjusted spread: log({_b_disp}) - beta x log({ticker_a}). "
                     "A stationary spread supports mean-reversion analysis.",
                 )
 
@@ -724,9 +822,25 @@ def render(
         with st.container(border=True):
             section_header(
                 "MST Network Position",
-                f"Where {ticker_a} and {ticker_b} sit in the Minimum Spanning Tree — "
+                f"Where {ticker_a} and {_b_disp} sit in the Minimum Spanning Tree — "
                 "their neighbors, shortest path, and cluster membership.",
             )
+
+            if _b_is_base_asset:
+                # Base assets (USD/TRY, Gold) are NOT in the universe's
+                # MST — the MST is built from the cross-ticker
+                # correlation matrix and these are exogenous series.
+                # Showing "USD/TRY not found in the MST" wording (which
+                # is what the fall-through path produces) would suggest
+                # a bug; the friendlier explanation is that this view
+                # doesn't apply to base-asset comparisons.
+                st.info(
+                    f":material/info: **{_b_disp}** is an exogenous base "
+                    "asset and is not part of the universe's MST. "
+                    "Switch the **Compare against** picker back to "
+                    "*Another stock* to see network position."
+                )
+                return
 
             mst_edges_df = load_mst_edges()
             mst_metrics_df = load_mst_metrics()
@@ -762,7 +876,7 @@ def render(
 
                     _p1, _p2, _p3, _p4 = st.columns(4)
                     _p1.metric(f"{ticker_a} Degree", len(neighbors_a))
-                    _p2.metric(f"{ticker_b} Degree", len(neighbors_b))
+                    _p2.metric(f"{_b_disp} Degree", len(neighbors_b))
                     _p3.metric("MST Path Length", f"{path_length:.4f}" if path else "No path")
                     _p4.metric("Same Cluster?", "Yes" if same_cluster else "No",
                                 delta=f"Clusters {cluster_a} & {cluster_b}" if not same_cluster else f"Cluster {cluster_a}",
