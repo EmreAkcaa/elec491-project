@@ -92,7 +92,7 @@ from utils import (  # noqa: E402
     get_colors, SECTOR_PALETTE, CHART_LAYOUT, apply_chart_style, inject_custom_css,
     section_header, render_chart, render_matrix_heatmap,
 )
-from chart_themes import render_theme_sidebar  # noqa: E402
+from chart_themes import render_theme_popover  # noqa: E402
 
 # HF Spaces rebuilds the container on every deploy, so the stale-module cache
 # problem that motivated importlib.reload on Streamlit Cloud no longer applies.
@@ -577,7 +577,11 @@ with st.sidebar:
         st.markdown(f"**Dataset:** {_AVAIL_UNIVERSES[0].short_label}")
         st.caption(_AVAIL_UNIVERSES[0].description)
         st.markdown("---")
-    render_theme_sidebar()
+    # Sprint 2 PR-M: chart-settings panel hoisted out of the sidebar into a
+    # header-strip popover. The sidebar previously rendered 5 always-visible
+    # expanders (Colors / Typography / Lines & Axes / Layout / Export Defaults)
+    # eating ~280 px the demo audience never touched. Sidebar now only carries
+    # the Dataset selector + per-universe description.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Top Header & Navigation
@@ -678,13 +682,18 @@ if _nav == "Pair Analysis":
 pipe_meta = load_metadata()
 market_summary = pipe_meta.get("market_summary", {})
 
-# Sprint 2 PR-F: lift the date range OUT of the Settings popover and
-# render it directly in the header strip — it's the single most-used
-# filter in the app and was previously two clicks deep. The Settings
-# popover collapses down to its only remaining child (Data Freshness),
-# so we rename it accordingly. m5 (the DATE RANGE metric card) is kept
-# as a visual summary of what's currently loaded.
-_date_col, _freshness_col, m1, m2, m3, m4, m5 = st.columns([1.6, 1.1, 0.95, 0.95, 1.0, 1.0, 1.4])
+# Sprint 2 PR-F + PR-M (merged): header strip carries the date range
+# (PR-F — was 2 clicks deep in a Settings popover), a Theme popover
+# (PR-M — chart-settings hoisted out of the sidebar where it was
+# eating ~280 px), a Freshness popover (PR-F — debug info), and the
+# 5 KPI cards. 8 columns total. The old `_settings_col` was deleted
+# in PR-F when the Settings popover collapsed down to Freshness.
+_date_col, _theme_col, _freshness_col, m1, m2, m3, m4, m5 = st.columns(
+    [1.5, 0.9, 1.1, 0.95, 0.95, 1.0, 1.0, 1.4]
+)
+
+with _theme_col:
+    render_theme_popover()
 
 with _date_col:
     date_range = st.date_input(
