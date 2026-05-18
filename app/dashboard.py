@@ -218,6 +218,32 @@ def _compute_sector(_returns: pd.DataFrame, cache_key: str, sec_map_items, windo
 #   - Rolling Market Stats → widgets are outer (rc_*), fragmenting just this
 #     sub-tab gives marginal win.
 
+
+def _open_pair_analysis_button(ticker_a: str, ticker_b: str, *, key: str) -> None:
+    """Single canonical cross-page nav button to Pair Analysis with
+    (ticker_a, ticker_b) preloaded.
+
+    Used at every callsite (Rolling Pair sub-tab, Pairs & Dislocations
+    Top/Bottom tabs, Dislocation Candidates) so the copy, icon, and
+    session_state plumbing stay consistent. Audit item A3 — before this
+    helper the same action shipped as 4 buttons with 3 different labels.
+
+    `st.rerun(scope="app")` works both inside `@st.fragment` contexts
+    (where the default fragment-scoped rerun would NOT switch pages)
+    and outside them (where it's a plain full-script rerun).
+    """
+    if st.button(
+        f":material/open_in_new:  Analyze {ticker_a} / {ticker_b} in Pair Analysis",
+        key=key,
+        type="secondary",
+        use_container_width=True,
+    ):
+        st.session_state["pa_ticker_a"] = ticker_a
+        st.session_state["pa_ticker_b"] = ticker_b
+        st.session_state["_goto_pair_analysis"] = True
+        st.rerun(scope="app")
+
+
 @st.fragment
 def _render_correlation_heatmap() -> None:
     """Full-period correlation heatmap. Owns heat_method + use_clustering_order
@@ -471,14 +497,7 @@ def _render_rolling_pair() -> None:
                      title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
 
         if _cap(_active_universe, 'has_pair_trading', True):
-            if st.button(f"Open full Pair Analysis for {pair_a} / {pair_b}", key="pair_deep_dive"):
-                st.session_state["pa_ticker_a"] = pair_a
-                st.session_state["pa_ticker_b"] = pair_b
-                st.session_state["_goto_pair_analysis"] = True
-                # scope="app" forces a full script rerun — the default
-                # fragment-scoped rerun would just re-render this sub-tab
-                # without switching to Pair Analysis.
-                st.rerun(scope="app")
+            _open_pair_analysis_button(pair_a, pair_b, key="pair_deep_dive")
 
         # Two normalized price lines (matches original behaviour).
         if pair_a in prices_window.columns and pair_b in prices_window.columns:
@@ -1782,11 +1801,11 @@ if tab_pairs is not None:
                       format_func=lambda i: f"{top_pairs.iloc[i]['ticker_1']} / {top_pairs.iloc[i]['ticker_2']} ({top_pairs.iloc[i]['correlation']:.4f})",
                       key="top_pair_sel",
                   )
-                  if st.button("Open in Pair Analysis", key="top_pair_btn"):
-                      st.session_state["pa_ticker_a"] = top_pairs.iloc[_top_pair_idx]["ticker_1"]
-                      st.session_state["pa_ticker_b"] = top_pairs.iloc[_top_pair_idx]["ticker_2"]
-                      st.session_state["_goto_pair_analysis"] = True
-                      st.rerun()
+                  _open_pair_analysis_button(
+                      top_pairs.iloc[_top_pair_idx]["ticker_1"],
+                      top_pairs.iloc[_top_pair_idx]["ticker_2"],
+                      key="top_pair_btn",
+                  )
 
               with tab_bottom:
                   st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
@@ -1796,11 +1815,11 @@ if tab_pairs is not None:
                       format_func=lambda i: f"{bottom_pairs.iloc[i]['ticker_1']} / {bottom_pairs.iloc[i]['ticker_2']} ({bottom_pairs.iloc[i]['correlation']:.4f})",
                       key="bot_pair_sel",
                   )
-                  if st.button("Open in Pair Analysis", key="bot_pair_btn"):
-                      st.session_state["pa_ticker_a"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_1"]
-                      st.session_state["pa_ticker_b"] = bottom_pairs.iloc[_bot_pair_idx]["ticker_2"]
-                      st.session_state["_goto_pair_analysis"] = True
-                      st.rerun()
+                  _open_pair_analysis_button(
+                      bottom_pairs.iloc[_bot_pair_idx]["ticker_1"],
+                      bottom_pairs.iloc[_bot_pair_idx]["ticker_2"],
+                      key="bot_pair_btn",
+                  )
 
           with col_dist:
               # `corr` used to be set as a script-level global inside
@@ -1875,11 +1894,11 @@ if tab_pairs is not None:
                   ),
                   key="cand_pair_sel",
               )
-              if st.button("Analyze in Pair Analysis", key="cand_pair_btn"):
-                  st.session_state["pa_ticker_a"] = _disp_cands.iloc[_cand_idx]["ticker_a"]
-                  st.session_state["pa_ticker_b"] = _disp_cands.iloc[_cand_idx]["ticker_b"]
-                  st.session_state["_goto_pair_analysis"] = True
-                  st.rerun()
+              _open_pair_analysis_button(
+                  _disp_cands.iloc[_cand_idx]["ticker_a"],
+                  _disp_cands.iloc[_cand_idx]["ticker_b"],
+                  key="cand_pair_btn",
+              )
           else:
               st.info(
                   "No dislocation candidates available. Run the pipeline "
