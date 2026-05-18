@@ -1463,6 +1463,14 @@ with tab_cluster:
                 ))
             render_chart(fig_mst, chart_id="mo_mst", filename_base="mst_network",
                          title_key="mo_mst", default_title="Minimum Spanning Tree")
+            # Sprint 2 PR-I: subtitle disambiguates this MST from the two others
+            # that show up elsewhere in the app (RMT-denoised + per-wavelet-scale).
+            st.caption(
+                "Built from full-period Pearson correlation distance "
+                "d = √(2(1−ρ)). The RMT-denoised version (noise eigenvalues "
+                "replaced) lives under **EEE Analysis → RMT Denoising**; "
+                "per-frequency-band MSTs live under **EEE Analysis → Wavelet Multi-Scale**."
+            )
 
             # Hub table behind an expander — was always-on in the right column
             # of a [3,2] split, now hidden by default to let the MST breathe.
