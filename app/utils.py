@@ -467,6 +467,55 @@ def inject_custom_css():
         height: 3px !important;
     }
 
+    /* ── PHASE Y (Y1) — Sub-tabs as st.segmented_control styled like st.tabs
+       Streamlit's `st.tabs` doesn't expose the active tab to Python, so we
+       can't lazy-render hidden bodies — Methods Lab paid for all 6 sub-tabs
+       on every render. PHASE Y replaces sub-tab st.tabs with st.segmented_
+       control wrapped in a `.subtab-as-tabs` div, then gates the body
+       rendering on the active selection. This CSS keeps the EXISTING
+       underlined-tab visual so the demo audience doesn't see a visual
+       break — user explicit choice (2026-05-19).
+
+       Selectors verified on Streamlit 1.41.1 (same selectors Phase S used
+       for the top-nav segmented_control). When the Streamlit pin moves
+       past 1.45, retest — data-testid names sometimes churn across
+       major bumps. */
+    .subtab-as-tabs {
+        margin-bottom: 0.4rem;
+        border-bottom: 2px solid #e9ecef;
+    }
+    .subtab-as-tabs div[data-testid="stSegmentedControl"] {
+        background: transparent !important;
+        padding: 0 !important;
+        gap: 0 !important;
+    }
+    .subtab-as-tabs button[data-testid="stBaseButton-segmented_control"],
+    .subtab-as-tabs button[data-testid="stBaseButton-segmented_controlActive"] {
+        background: transparent !important;
+        color: #8D99AE !important;
+        font-weight: 600 !important;
+        font-size: 0.88rem !important;
+        border: none !important;
+        border-bottom: 2px solid transparent !important;
+        border-radius: 0 !important;
+        padding: 10px 20px !important;
+        margin-bottom: -2px !important;
+        box-shadow: none !important;
+        transition: all 0.15s ease !important;
+    }
+    .subtab-as-tabs button[data-testid="stBaseButton-segmented_control"]:hover {
+        color: #4361EE !important;
+        background: rgba(67, 97, 238, 0.04) !important;
+        cursor: pointer;
+    }
+    .subtab-as-tabs button[data-testid="stBaseButton-segmented_controlActive"] {
+        color: #4361EE !important;
+        border-bottom: 3px solid #4361EE !important;
+        background: rgba(67, 97, 238, 0.06) !important;
+        font-weight: 700 !important;
+        box-shadow: none !important;
+    }
+
     /* ── Popover panels ──────────────────────────────────────── */
     [data-testid="stPopoverBody"] {
         border: 1px solid #e2e6ee;
@@ -572,6 +621,89 @@ def section_header(title: str, description: str = ""):
     st.subheader(title)
     if description:
         st.caption(description)
+
+
+# ---------------------------------------------------------------------------
+# PHASE Y (Y1) — Sub-tab helper
+# ---------------------------------------------------------------------------
+
+def render_subtabs(
+    page_name: str,
+    options: tuple[str, ...],
+    *,
+    default: str | None = None,
+    label: str = "Sub-tab",
+) -> str:
+    """Render a sub-tab selector styled as `st.tabs` and return the active option.
+
+    Replaces `st.tabs` at callsites where we want to LAZY-render the active
+    sub-tab body. `st.tabs` always executes every body (Streamlit doesn't
+    expose active-tab to Python); this helper exposes the active value so
+    callers can do::
+
+        active = render_subtabs("methods_lab", ("RMT", "GLASSO", "Wavelet"))
+        if active == "RMT":
+            render_rmt()
+        elif active == "GLASSO":
+            render_glasso()
+        # ... only the selected body runs
+
+    Visual: the CSS block `.subtab-as-tabs` (in `inject_custom_css`) styles
+    the underlying `st.segmented_control` to look like `st.tabs` — same
+    underlined-tab vocabulary the demo audience already recognises.
+
+    State key: ``f"{page_name}_subtab_{dataset_key}"`` — namespaced per
+    dataset so switching BIST → S&P → BIST restores each dataset's last
+    active sub-tab independently (matches Phase S #1 pattern for top-nav).
+
+    Pending-stash: when the active option disappears on universe switch
+    (e.g., SNN sub-tab hidden on EEG), the value is stashed on a
+    ``__pending`` key so a flip back restores it.
+    """
+    if not options:
+        raise ValueError("render_subtabs requires at least one option")
+
+    # Per-dataset namespacing. Streamlit's session_state is shared across
+    # widget instances, so we MUST namespace by dataset to keep BIST's
+    # sub-tab choice independent of S&P's.
+    try:
+        _dataset_key = st.session_state.get("dataset", DASHBOARD_UNIVERSE)
+    except Exception:
+        _dataset_key = "bist"
+    state_key = f"{page_name}_subtab_{_dataset_key}"
+    pending_key = f"{state_key}__pending"
+
+    options_tuple = tuple(options)
+    default_value = default if default in options_tuple else options_tuple[0]
+
+    # Clamp + pending restore (mirrors Phase S #1 top-nav logic).
+    stored = st.session_state.get(state_key)
+    if stored not in options_tuple:
+        if stored is not None and stored != default_value:
+            st.session_state[pending_key] = stored
+        st.session_state.pop(state_key, None)
+        st.session_state[state_key] = default_value
+    elif pending_key in st.session_state:
+        pending_value = st.session_state[pending_key]
+        if pending_value in options_tuple and stored == default_value:
+            st.session_state.pop(state_key, None)
+            st.session_state[state_key] = pending_value
+            st.session_state.pop(pending_key, None)
+        elif stored != default_value:
+            st.session_state.pop(pending_key, None)
+
+    # Wrap segmented_control in a div so CSS .subtab-as-tabs targets only
+    # THIS instance, not the top-nav segmented_control (which keeps its
+    # dark pill-button look).
+    st.markdown('<div class="subtab-as-tabs">', unsafe_allow_html=True)
+    active = st.segmented_control(
+        label,
+        options_tuple,
+        key=state_key,
+        label_visibility="collapsed",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+    return active or default_value
 
 
 # ---------------------------------------------------------------------------
@@ -1058,6 +1190,50 @@ def _load_pit_dislocation_snapshot(
 def load_pit_dislocation_snapshot(window: int, date_iso: str) -> pd.DataFrame:
     """Public wrapper: load PIT top dislocations for current universe + date."""
     return _load_pit_dislocation_snapshot(current_universe(), window, date_iso)
+
+
+# ---------------------------------------------------------------------------
+# PHASE Y (Y2) — MST layout loaders
+# ---------------------------------------------------------------------------
+# Read precomputed NetworkX layout positions (written by src/mst_layouts.py)
+# so the dashboard skips the live nx.spring_layout call on every render.
+#
+# Source names match the JSON filenames under data/<universe>/results/layouts/:
+#   - "main_mst"           (from mst_edges.csv — Clustering & Network MST)
+#   - "denoised_mst"       (from denoised_mst_edges.csv — RMT sub-tab)
+#   - "wavelet_mst_scale1" .. "wavelet_mst_scale7" (Wavelet sub-tab)
+#   - "te_network"         (from te_network_edges.csv — TE sub-tab)
+#
+# Returns empty dict when the layout file is missing (renderer should
+# fall back to live `nx.spring_layout`/`nx.kamada_kawai_layout`).
+
+
+@st.cache_data(show_spinner=False)
+def _load_mst_layout(universe: str, source: str) -> dict[str, tuple[float, float]]:
+    """Read one precomputed MST layout JSON. Returns positions dict.
+
+    Cache key: (universe, source). The JSON file is ~25-50 KB so the
+    read itself is ~10 ms; @st.cache_data caps it to one disk hit per
+    (universe, source) per session.
+    """
+    path = data_results(universe) / "layouts" / f"{source}.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            payload = json.load(f)
+    except Exception:  # noqa: BLE001 — log + return empty on malformed JSON
+        return {}
+    positions = payload.get("positions", {})
+    # Coerce list-of-floats → tuple for renderer's expected type.
+    return {str(node): (float(xy[0]), float(xy[1])) for node, xy in positions.items()}
+
+
+def load_mst_layout(source: str) -> dict[str, tuple[float, float]]:
+    """Public wrapper: read the precomputed MST layout for the active
+    universe + given source. Returns empty dict on miss (renderer falls
+    back to live compute)."""
+    return _load_mst_layout(current_universe(), source)
 
 
 # ---------------------------------------------------------------------------

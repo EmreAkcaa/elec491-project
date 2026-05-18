@@ -133,9 +133,23 @@ def _compute_corr(_returns: pd.DataFrame, cache_key: str, min_periods: int, meth
 
 @st.cache_data(show_spinner=False)
 def _mst_layout(_edges: pd.DataFrame, cache_key: str):
+    """Build a layout for the main MST. PHASE Y (Y2): try precomputed JSON
+    layout from `data/<universe>/results/layouts/main_mst.json` FIRST;
+    fall back to live nx.spring_layout / kamada_kawai when missing.
+    Saves ~1-2 s on S&P 485-node MST after first paint."""
+    from utils import load_mst_layout
     _G = nx.Graph()
     for _, r in _edges.iterrows():
         _G.add_edge(r["source"], r["target"], weight=r["distance"])
+
+    # Precomputed-first path (Phase Y / Y2).
+    precomputed = load_mst_layout("main_mst")
+    if precomputed:
+        graph_nodes = set(_G.nodes())
+        pos_filtered = {n: precomputed[n] for n in graph_nodes if n in precomputed}
+        if len(pos_filtered) == len(graph_nodes):
+            return pos_filtered
+
     # Kamada-Kawai is O(N^3) and stalls for ~minute on the 485-node S&P MST.
     # spring_layout (Fruchterman-Reingold) with a fixed iteration count
     # gives a comparable-quality layout on the same MST in ~1 second; we
@@ -535,16 +549,42 @@ if "_prewarm_dispatched" not in st.session_state:
     st.session_state["_prewarm_dispatched"] = True
     try:
         import concurrent.futures as _cf
-        from utils import _load_log_returns, _load_metadata  # noqa: E402
+        # PHASE Y (Y3): two-tier warm. Tier 1 is cheap (log_returns +
+        # metadata for ALL universes) — keeps any dataset switch fast.
+        # Tier 2 deep-warms the active universe with the heavy artifacts
+        # that any page on it will touch (batch_corr, MSTs, cluster
+        # assignments, eigenvalue spectrum, summary stats). Tier 2 only
+        # fires for the active universe so we don't 5× memory on cold
+        # container boot.
+        from utils import (  # noqa: E402
+            _load_log_returns, _load_metadata,
+            _load_batch_corr, _load_mst_edges, _load_mst_metrics,
+            _load_cluster_assignments, _load_dendrogram_order,
+            _load_eigenvalue_spectrum, _load_summary_stats,
+            current_universe,
+        )
         _prewarm_keys = [u.key for u in _AVAIL_UNIVERSES]
-        _prewarm_executor = _cf.ThreadPoolExecutor(max_workers=min(5, len(_prewarm_keys) or 1))
+        _prewarm_executor = _cf.ThreadPoolExecutor(
+            max_workers=min(8, len(_prewarm_keys) * 2 + 6),
+        )
+        # Tier 1 — cheap warm across ALL universes.
         for _k in _prewarm_keys:
             _prewarm_executor.submit(_load_log_returns, _k)
             _prewarm_executor.submit(_load_metadata, _k)
-        # Don't wait — the futures run in the background; the executor
-        # itself is GC'd at function exit but its threads finish their
-        # work. We don't shutdown(wait=True) because that would block
-        # first paint.
+        # Tier 2 — deep warm for the currently active universe only.
+        try:
+            _active_key = current_universe()
+            if _active_key in _prewarm_keys:
+                for _deep_loader in (
+                    _load_batch_corr, _load_mst_edges, _load_mst_metrics,
+                    _load_cluster_assignments, _load_dendrogram_order,
+                    _load_eigenvalue_spectrum, _load_summary_stats,
+                ):
+                    _prewarm_executor.submit(_deep_loader, _active_key)
+        except Exception:  # noqa: BLE001 — deep warm is best-effort
+            pass
+        # Fire-and-forget: don't shutdown(wait=True), which would block
+        # first paint. Threads complete in background; executor GCs.
     except Exception as _prewarm_exc:  # noqa: BLE001 — best-effort warm-up; never crash boot
         # PHASE S (S15): log the failure so silent loader regressions
         # surface in HF Spaces logs. Still never crashes boot.
@@ -857,23 +897,32 @@ returns_cache_key = (
 # (formerly inside Correlation) moved out to the top-level "Time Machine"
 # nav target. Market Overview now hosts ONLY the full-period static
 # analysis lenses.
+#
+# PHASE Y (Y1): replaced `st.tabs(...)` with `render_subtabs(...)` so only
+# the active sub-tab body executes. Each `with tab_X:` block below is now
+# `if _show_tab_X:` — no indentation change on body code; only the gate
+# line flips from a context manager to a conditional.
+from utils import render_subtabs  # noqa: E402 — late import (renders need page context)
 _tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
 if _cap(_active_universe, 'has_pair_trading', True):
     _tab_labels.append("Pairs & Dislocations")
-_tabs = st.tabs(_tab_labels)
-_tab_by_label = dict(zip(_tab_labels, _tabs))
-tab_data    = _tab_by_label["Data & Stats"]
-tab_corr    = _tab_by_label["Correlation"]
-tab_cluster = _tab_by_label["Clustering & Network"]
-tab_rolling = _tab_by_label["Rolling Analysis"]
-tab_pairs   = _tab_by_label.get("Pairs & Dislocations")   # None when EEG
+_active_main_tab = render_subtabs("market_overview", tuple(_tab_labels))
+_show_tab_data    = _active_main_tab == "Data & Stats"
+_show_tab_corr    = _active_main_tab == "Correlation"
+_show_tab_cluster = _active_main_tab == "Clustering & Network"
+_show_tab_rolling = _active_main_tab == "Rolling Analysis"
+# tab_pairs uses a different gating pattern (nested `if tab_pairs is not None: with tab_pairs:`
+# in the body block below) to avoid 100+ lines of indentation churn. Set
+# to a real container when active OR None when inactive — the existing
+# nested-if guard then handles both "EEG hides tab" and "sub-tab not selected".
+tab_pairs = st.container() if (_active_main_tab == "Pairs & Dislocations" and "Pairs & Dislocations" in _tab_labels) else None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Tab 1 — Data & Stats
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tab_data:
+if _show_tab_data:
 
     # ── Section 1: Coverage & Normalized Prices ─────────────────────────────
     with st.container(border=True):
@@ -1297,7 +1346,7 @@ with tab_data:
 # Tab 2 — Correlation
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tab_corr:
+if _show_tab_corr:
     # Phase 1: Point-in-Time Snapshot sub-sub-tab promoted out to the
     # top-level "Time Machine" page. This tab now hosts ONLY the full-
     # period correlation heatmap; the @st.fragment scoping still applies
@@ -1309,7 +1358,7 @@ with tab_corr:
 # Tab 3 — Clustering & Network
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tab_cluster:
+if _show_tab_cluster:
 
     # ── Section 4: Dendrogram & Cluster Assignments ─────────────────────────
     with st.container(border=True):
@@ -1564,7 +1613,7 @@ with tab_cluster:
 # Tab 4 — Rolling Analysis
 # ══════════════════════════════════════════════════════════════════════════════
 
-with tab_rolling:
+if _show_tab_rolling:
 
     _is_finance_rc = _cap(_active_universe, 'domain', 'finance') == "finance"
     _item_rc       = _cap(_active_universe, 'item_label', 'Ticker')
@@ -1644,12 +1693,17 @@ with tab_rolling:
         show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
 
         _ra_market_label = "Market Overview" if _is_finance_rc else "Network Overview"
-        tab_market, tab_pair, tab_sector = st.tabs(
-            [_ra_market_label, "Pair Correlation", f"{_sector_rc} Breakdown"]
-        )
+        # PHASE Y (Y1): render_subtabs replaces st.tabs so only the active
+        # rolling-sub-tab body computes. Was the second-biggest perf cost
+        # after Methods Lab (each tab's body ran every render even if hidden).
+        _rolling_subtabs = (_ra_market_label, "Pair Correlation", f"{_sector_rc} Breakdown")
+        _active_rolling_sub = render_subtabs("rolling_analysis", _rolling_subtabs)
+        _show_rolling_market = _active_rolling_sub == _ra_market_label
+        _show_rolling_pair   = _active_rolling_sub == "Pair Correlation"
+        _show_rolling_sector = _active_rolling_sub == f"{_sector_rc} Breakdown"
 
         # ── Sub-Tab 1: Market correlation over time ─────────────────────────
-        with tab_market:
+        if _show_rolling_market:
             # Try precomputed parquet first (matches windows the pipeline
             # bakes for the demo). Fall back to on-the-fly compute when the
             # user picks parameters outside the precomputed grid.
@@ -1738,11 +1792,11 @@ with tab_rolling:
         # Body lives in `_render_rolling_pair` fragment (defined at module
         # top). Changing pair_a / pair_b only reruns the fragment, not the
         # whole script.
-        with tab_pair:
+        if _show_rolling_pair:
             _render_rolling_pair()
 
         # ── Sub-Tab 3: Sector breakdown ─────────────────────────────────────
-        with tab_sector:
+        if _show_rolling_sector:
             cluster_df_for_sectors = load_cluster_assignments()
             if not cluster_df_for_sectors.empty and "sector" in cluster_df_for_sectors.columns:
                 sec_map = dict(zip(cluster_df_for_sectors["ticker"], cluster_df_for_sectors["sector"]))

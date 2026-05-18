@@ -362,16 +362,28 @@ def render(
     # Sub-Tab Layout
     # ══════════════════════════════════════════════════════════════════════
 
-    tab_ov, tab_corr, tab_risk, tab_disloc, tab_net = st.tabs([
+    # PHASE Y (Y1): render_subtabs replaces st.tabs so only the active
+    # sub-tab body executes. Previously all 5 tabs computed on every load
+    # even though only one was visible — overview's KPI compute + correlation's
+    # rolling rho + risk's vol + dislocation's spread + network's MST layout
+    # all ran in series. Now they're behind `if _active == "X":` gates.
+    from utils import render_subtabs
+    _pa_subtabs = (
         "Overview", "Correlation", "Risk & Volatility",
         "Spread & Dislocation", "Network",
-    ])
+    )
+    _active_pa_sub = render_subtabs("pair_analysis", _pa_subtabs)
+    _show_pa_ov     = _active_pa_sub == "Overview"
+    _show_pa_corr   = _active_pa_sub == "Correlation"
+    _show_pa_risk   = _active_pa_sub == "Risk & Volatility"
+    _show_pa_disloc = _active_pa_sub == "Spread & Dislocation"
+    _show_pa_net    = _active_pa_sub == "Network"
 
     # ══════════════════════════════════════════════════════════════════════
     # Tab 1 — Overview
     # ══════════════════════════════════════════════════════════════════════
 
-    with tab_ov:
+    if _show_pa_ov:
 
         # Key metrics
         with st.container(border=True):
@@ -471,7 +483,7 @@ def render(
     # Tab 2 — Correlation
     # ══════════════════════════════════════════════════════════════════════
 
-    with tab_corr:
+    if _show_pa_corr:
 
         # Rolling Correlation
         with st.container(border=True):
@@ -546,7 +558,7 @@ def render(
     # Tab 3 — Risk & Volatility
     # ══════════════════════════════════════════════════════════════════════
 
-    with tab_risk:
+    if _show_pa_risk:
 
         # Distributions & Rolling Volatility
         with st.container(border=True):
@@ -656,7 +668,7 @@ def render(
     # Tab 4 — Spread & Dislocation
     # ══════════════════════════════════════════════════════════════════════
 
-    with tab_disloc:
+    if _show_pa_disloc:
 
         # Inline dislocation settings
         _dc1, _dc2, _dc3, _dc4 = st.columns(4)
@@ -817,7 +829,7 @@ def render(
     # Tab 5 — Network
     # ══════════════════════════════════════════════════════════════════════
 
-    with tab_net:
+    if _show_pa_net:
 
         with st.container(border=True):
             section_header(
