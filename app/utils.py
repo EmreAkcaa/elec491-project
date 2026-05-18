@@ -233,18 +233,10 @@ def render_matrix_heatmap(
 
     # Large-N static PNG path — preserves full N×N resolution. No client-side
     # plotly bytes; the entire heatmap is server-rendered and shipped as a
-    # ~150–500 KB image.
+    # ~150–500 KB image. Title baked into the PNG via _rasterize_matrix_png.
+    # (The editable title input was removed per audit A1 — see render_chart
+    # docstring; `title_key` arg kept as no-op for back-compat.)
     title_text = default_title
-    if title_key:
-        user_title = st.text_input(
-            "Chart title",
-            value=st.session_state.get(f"_title_{title_key}", default_title),
-            key=f"_title_{title_key}",
-            label_visibility="collapsed",
-            placeholder="Add chart title...",
-        )
-        if user_title.strip():
-            title_text = user_title.strip()
 
     st.caption(
         f":material/info: {n_original}×{n_original} matrix rendered as a static "
@@ -314,33 +306,24 @@ def render_chart(
     if use_container_width is not None:
         width = "stretch" if use_container_width else "content"
 
-    # Per-chart title input — only updates the title, does NOT re-apply full theme.
-    # Scope title_key by the active universe so a custom title set under one
-    # universe doesn't leak into another (e.g. a "Sector Correlation" title
-    # cached under BIST must NOT show up when the user switches to EEG, where
-    # the same chart_id renders an "Anatomical region Correlation" default).
-    if title_key:
-        _u = st.session_state.get("universe", "")
-        _scoped = f"_title_{title_key}__{_u}" if _u else f"_title_{title_key}"
-        user_title = st.text_input(
-            "Chart title",
-            value=st.session_state.get(_scoped, default_title),
-            key=_scoped,
-            label_visibility="collapsed",
-            placeholder="Add chart title...",
+    # Chart title comes from `default_title` and is applied directly to the
+    # Plotly figure. There used to be an editable `st.text_input` here so
+    # users could rename a chart inline — but it shipped on 41 charts as an
+    # always-empty "Add chart title..." input that visually duplicated the
+    # default title above the chart (audit item A1). Removed entirely; the
+    # `title_key` arg is kept as a no-op so callers don't break.
+    if default_title:
+        theme = get_active_theme()
+        cur_margin = dict(fig.layout.margin.to_plotly_json())
+        cur_margin["t"] = max(cur_margin.get("t", 10), 40)
+        fig.update_layout(
+            title=dict(
+                text=default_title,
+                font=dict(size=theme.title_font_size, family=theme.font_family),
+                x=0.01, xanchor="left", yanchor="top",
+            ),
+            margin=cur_margin,
         )
-        if user_title.strip():
-            theme = get_active_theme()
-            cur_margin = dict(fig.layout.margin.to_plotly_json())
-            cur_margin["t"] = max(cur_margin.get("t", 10), 40)
-            fig.update_layout(
-                title=dict(
-                    text=user_title.strip(),
-                    font=dict(size=theme.title_font_size, family=theme.font_family),
-                    x=0.01, xanchor="left", yanchor="top",
-                ),
-                margin=cur_margin,
-            )
 
     config = get_plotly_config(chart_id)
     # NOTE: st.plotly_chart does NOT accept width= in Streamlit 1.41.1 (kwarg
