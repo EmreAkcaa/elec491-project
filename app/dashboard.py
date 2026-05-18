@@ -434,24 +434,31 @@ def _render_rolling_pair() -> None:
     selectors + the cross-page "Open in Pair Analysis" button. The nav
     button uses `st.rerun(scope="app")` because the default `scope="fragment"`
     wouldn't actually leave this sub-tab."""
+    # Use the same session_state keys as the Pair Analysis page
+    # (pa_ticker_a / pa_ticker_b). Previously this sub-tab maintained its
+    # own pair_a / pair_b state — two sources of truth for the same
+    # concept, picking a pair here didn't carry over to Pair Analysis.
+    # Audit item A5. Cross-page nav buttons (_open_pair_analysis_button)
+    # also write to pa_ticker_a/b, so picks made in either view are now
+    # always synced.
     ticker_list = sorted(returns.columns.tolist())
     if (
-        "pair_a" not in st.session_state
-        or st.session_state["pair_a"] not in ticker_list
+        "pa_ticker_a" not in st.session_state
+        or st.session_state["pa_ticker_a"] not in ticker_list
     ):
-        st.session_state["pair_a"] = ticker_list[0] if ticker_list else ""
+        st.session_state["pa_ticker_a"] = ticker_list[0] if ticker_list else ""
     if (
-        "pair_b" not in st.session_state
-        or st.session_state["pair_b"] not in ticker_list
+        "pa_ticker_b" not in st.session_state
+        or st.session_state["pa_ticker_b"] not in ticker_list
     ):
-        st.session_state["pair_b"] = (
+        st.session_state["pa_ticker_b"] = (
             ticker_list[1] if len(ticker_list) > 1 else (ticker_list[0] if ticker_list else "")
         )
     pc1, pc2 = st.columns(2)
     with pc1:
-        pair_a = st.selectbox(f"{_item_rc} A", ticker_list, key="pair_a")
+        pair_a = st.selectbox(f"{_item_rc} A", ticker_list, key="pa_ticker_a")
     with pc2:
-        pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pair_b")
+        pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pa_ticker_b")
 
     if pair_a and pair_b and pair_a != pair_b:
         # When window_type == "ewm", convert α → span (pandas formula:
