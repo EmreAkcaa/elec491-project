@@ -6,6 +6,7 @@ All pages import from here so caches and logic are never duplicated.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -956,7 +957,6 @@ def downsample_matrix_for_display(
     n = df.shape[0]
     if n <= max_dim:
         return df, 1
-    import math
     block = max(2, math.ceil(n / max_dim))
     new_n = n // block
     arr = df.values
@@ -1262,7 +1262,6 @@ def load_rolling_info_theory() -> pd.DataFrame:
 
 @st.cache_data
 def _load_regime_kl(universe: str) -> list:
-    import json
     path = data_results(universe) / "regime_kl.json"
     if path.exists():
         with open(path) as f:
@@ -1276,7 +1275,6 @@ def load_regime_kl() -> list:
 
 @st.cache_data
 def _load_it_summary(universe: str) -> dict:
-    import json
     path = data_results(universe) / "it_summary.json"
     if path.exists():
         with open(path) as f:

@@ -9,8 +9,6 @@ drawdown, and MST position. Data is loaded via the universe-aware loaders in
 
 from __future__ import annotations
 
-import io
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -23,6 +21,7 @@ except ImportError:
     HAS_NETWORKX = False
 
 from utils import (
+    current_universe,
     draw_event_markers,
     event_marker_manager_ui,
     check_ticker_pair_warnings,
@@ -39,31 +38,36 @@ from utils import (
     section_header,
     render_chart,
 )
+from universe_registry import get_universe
+from src.rolling_correlation import compute_rolling_pair_correlation
+from src.pair_dislocation import (
+    compute_spread,
+    compute_zscore,
+    compute_half_life,
+    detect_signals,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Cached computation helpers (module-level to avoid Streamlit re-registration)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data
-def _pair_corr(ret_json, a, b, win, method, wtype):
-    from src.rolling_correlation import compute_rolling_pair_correlation
-    _ret = pd.read_json(io.StringIO(ret_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _pair_corr(_ret: pd.DataFrame, cache_key: str, a, b, win, method, wtype):
+    # `_ret` underscore-prefix → Streamlit skips hashing the DataFrame; cache
+    # is keyed by `cache_key` (universe + date endpoints + shape).
     return compute_rolling_pair_correlation(_ret, a, b, window=win, method=method, window_type=wtype)
 
 
-@st.cache_data
-def _rolling_vol(returns_json, ta, tb, win):
-    _r = pd.read_json(io.StringIO(returns_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _rolling_vol(_r: pd.DataFrame, cache_key: str, ta, tb, win):
     va = _r[ta].rolling(win).std() * np.sqrt(252)
     vb = _r[tb].rolling(win).std() * np.sqrt(252)
     return va, vb
 
 
-@st.cache_data
-def _compute_dislocation(adj_json, ta, tb, lookback, zwin, entry_th, exit_th):
-    from src.pair_dislocation import compute_spread, compute_zscore, compute_half_life, detect_signals
-    _adj = pd.read_json(io.StringIO(adj_json), orient="split")
+@st.cache_data(show_spinner=False)
+def _compute_dislocation(_adj: pd.DataFrame, cache_key: str, ta, tb, lookback, zwin, entry_th, exit_th):
     spread, beta, intercept = compute_spread(_adj, ta, tb, lookback=lookback)
     zscore = compute_zscore(spread, window=zwin)
     half_life = compute_half_life(spread)
@@ -95,13 +99,13 @@ def render(
     nonsensical pair-trading view on non-financial data.
     """
 
-    # Defensive import — force fresh load so a stale module in sys.modules
-    # (Streamlit Cloud caches across deploys) can't strip the Phase I fields.
-    import importlib
-    import universe_registry as _ur
-    importlib.reload(_ur)
-    from universe_registry import get_universe
-    from utils import current_universe
+    # CLAUDE.md: importlib.reload(universe_registry) was removed from
+    # dashboard.py (PR #23) because it churns Universe class identity across
+    # reruns, causing "Tried to use SessionInfo before it was initialized"
+    # warnings AND invalidating downstream @st.cache_data entries keyed by
+    # Universe instances. pair_analysis.py was missed in that pass — fixed
+    # here. HF Spaces rebuilds the container on every deploy, so the stale-
+    # module cache problem the reload was guarding against no longer applies.
     _active = get_universe(current_universe())
     if not getattr(_active, "has_pair_trading", True):
         st.warning(
@@ -210,10 +214,19 @@ def render(
     both = returns[[ticker_a, ticker_b]].dropna()
     show_defaults, custom_events = event_marker_manager_ui("pa", min_date, max_date)
 
-    # ── Pre-serialize data once (avoids repeated JSON encoding per tab) ──
-    _returns_json = returns.to_json(orient="split", date_format="iso")
-    _both_json = both.to_json(orient="split", date_format="iso")
-    _adj_json = adj_close.to_json(orient="split", date_format="iso")
+    # Build cheap deterministic cache keys for the @st.cache_data helpers.
+    # The DataFrames themselves are passed underscore-prefixed (skipped by
+    # Streamlit's hasher); cache identity comes from these strings. Universe
+    # + date endpoints + shape uniquely identifies each slice in this app.
+    _u = current_universe()
+    returns_cache_key = (
+        f"{_u}:{returns.index[0].date().isoformat()}:"
+        f"{returns.index[-1].date().isoformat()}:{returns.shape[0]}x{returns.shape[1]}"
+    )
+    adj_cache_key = (
+        f"{_u}:{adj_close.index[0].date().isoformat()}:"
+        f"{adj_close.index[-1].date().isoformat()}:{adj_close.shape[0]}x{adj_close.shape[1]}"
+    )
 
     # ══════════════════════════════════════════════════════════════════════
     # Sub-Tab Layout
@@ -352,7 +365,7 @@ def render(
             try:
                 with st.status("Computing rolling correlation...", expanded=False) as _status:
                     pair_corr = _pair_corr(
-                        _returns_json,
+                        returns, returns_cache_key,
                         ticker_a, ticker_b, rc_window, rc_method, rc_window_type,
                     )
                     _status.update(label="Rolling correlation ready", state="complete")
@@ -441,8 +454,12 @@ def render(
 
             with col_vol:
                 if not both.empty:
+                    # `both` is returns[[a, b]].dropna(); cache key derives from
+                    # the underlying returns key + the two tickers + post-dropna
+                    # row count (handles ticker-specific missingness).
+                    both_cache_key = f"{returns_cache_key}:{ticker_a}:{ticker_b}:{len(both)}"
                     _vol_a, _vol_b = _rolling_vol(
-                        _both_json,
+                        both, both_cache_key,
                         ticker_a, ticker_b, vol_window,
                     )
 
@@ -535,7 +552,8 @@ def render(
         try:
             with st.status("Computing spread & Z-score...", expanded=False) as _disloc_status:
                 spread, beta, intercept, zscore, half_life, signals_df = _compute_dislocation(
-                    _adj_json, ticker_a, ticker_b, ols_lookback, zscore_window, entry_z, exit_z,
+                    adj_close, adj_cache_key,
+                    ticker_a, ticker_b, ols_lookback, zscore_window, entry_z, exit_z,
                 )
                 _disloc_status.update(label="Spread & Z-score ready", state="complete")
 
