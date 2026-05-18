@@ -412,16 +412,30 @@ def inject_custom_css():
         border: none !important;
         transition: all 0.15s ease;
     }
-    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+    /* Sprint 2 PR-N: amplify active-state visual weight on top-nav
+       (segmented_control). Streamlit 1.41 dropped the aria-checked attr
+       and ships per-state data-testids instead:
+          stBaseButton-segmented_control        → inactive
+          stBaseButton-segmented_controlActive  → active
+       Box-shadow + bold + solid bg make the active state pop; hover bg
+       cues clickability on the inactive ones. */
+    button[data-testid="stBaseButton-segmented_controlActive"] {
         background: #4361EE !important;
         color: #ffffff !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(67, 97, 238, 0.30) !important;
+        border-color: #4361EE !important;
     }
-    div[data-testid="stSegmentedControl"] button:hover:not([aria-checked="true"]) {
-        color: #c8cdd6 !important;
-        background: rgba(67,97,238,0.08) !important;
+    button[data-testid="stBaseButton-segmented_control"]:hover {
+        background: rgba(67, 97, 238, 0.15) !important;
+        color: #4361EE !important;
+        cursor: pointer;
     }
 
-    /* ── Sub-tabs — clean underline style ────────────────────── */
+    /* ── Sub-tabs — clean underline style ──────────────────────
+       Sprint 2 PR-N: thicker underline (3px) + subtle background tint
+       on the active tab so first-time graders can spot the active
+       sub-tab without squinting. */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0;
         border-bottom: 2px solid #e9ecef;
@@ -433,13 +447,22 @@ def inject_custom_css():
         border-bottom: 2px solid transparent;
         padding: 10px 20px;
         margin-bottom: -2px;
+        transition: all 0.15s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) {
+        color: #4361EE;
+        background: rgba(67, 97, 238, 0.04);
+        cursor: pointer;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         color: #4361EE;
-        border-bottom-color: #4361EE;
+        border-bottom: 3px solid #4361EE;
+        background: rgba(67, 97, 238, 0.06);
+        font-weight: 700;
     }
     .stTabs [data-baseweb="tab-highlight"] {
         background-color: #4361EE !important;
+        height: 3px !important;
     }
 
     /* ── Popover panels ──────────────────────────────────────── */
