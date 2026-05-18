@@ -756,13 +756,13 @@ if _cap(_active_universe, 'has_pair_trading', True):
             _nmi = normalized_mutual_info_score(
                 _clusters_clean["sector"], _clusters_clean["cluster_id"]
             )
+            # Sprint 2 PR-K: drop the ARI/NMI metric cards from the hero strip.
+            # Per friend's "Cluster Purity is enough" feedback (PR #34 trail),
+            # per-cluster purity in Clustering & Network is the canonical
+            # validation surface. ARI/NMI are still computed for inline mention
+            # in the hero text below.
             with st.container(border=True):
-                hero_c1, hero_c2, hero_c3 = st.columns([1, 1, 3])
-                hero_c1.metric("Sector ARI", f"{_ari:.2f}",
-                               help="Adjusted Rand Index between Ward clusters and official sectors. 0=random, 1=perfect.")
-                hero_c2.metric("Sector NMI", f"{_nmi:.2f}",
-                               help="Normalized Mutual Information between Ward clusters and official sectors.")
-                hero_c3.markdown(
+                st.markdown(
                     f"**Statistical clusters extracted from raw price correlations recover the "
                     f"official {_hero_caption_universe} sector classification with "
                     f"**ARI = {_ari:.2f}, NMI = {_nmi:.2f}** (Ward linkage on Mantegna distance, "
