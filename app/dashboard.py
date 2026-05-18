@@ -678,36 +678,41 @@ if _nav == "Pair Analysis":
 pipe_meta = load_metadata()
 market_summary = pipe_meta.get("market_summary", {})
 
-_settings_col, m1, m2, m3, m4, m5 = st.columns([1, 1, 1, 1, 1, 1.5])
+# Sprint 2 PR-F: lift the date range OUT of the Settings popover and
+# render it directly in the header strip — it's the single most-used
+# filter in the app and was previously two clicks deep. The Settings
+# popover collapses down to its only remaining child (Data Freshness),
+# so we rename it accordingly. m5 (the DATE RANGE metric card) is kept
+# as a visual summary of what's currently loaded.
+_date_col, _freshness_col, m1, m2, m3, m4, m5 = st.columns([1.6, 1.1, 0.95, 0.95, 1.0, 1.0, 1.4])
 
-with _settings_col:
+with _date_col:
+    date_range = st.date_input(
+        "Date range",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+    )
+
+with _freshness_col:
+    # Data Freshness is debug info — low-traffic, fine behind a popover.
     # NOTE: st.popover does NOT accept width= in Streamlit 1.41.1 (kwarg
     # landed in ~1.42+). use_container_width=True still works (with a
     # deprecation warning) and is the only valid spelling for this pin.
-    with st.popover("Settings", icon=":material/settings:", use_container_width=True):
-        date_range = st.date_input(
-            "Date range",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
-        )
-        # Streamlit 1.41+ rejects popovers nested inside other popovers
-        # (StreamlitAPIException). Use st.expander here — visually similar,
-        # nestable inside popovers.
-        with st.expander("Data Freshness", icon=":material/info:"):
-            fetch_meta = load_fetch_metadata()
-            if fetch_meta:
-                st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
-                st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
-                st.write(f"**{_cap(_active_universe, 'items_label', 'Tickers')}:** {fetch_meta.get('ticker_count', 'N/A')}")
-                if fetch_meta.get("failures"):
-                    st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-            if _cap(_active_universe, 'has_validation_report', True):
-                val_path = data_processed() / "validation_report.csv"
-                if val_path.exists():
-                    val_df = pd.read_csv(val_path)
-                    n_pass = (val_df["status"] == "PASS").sum()
-                    st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
+    with st.popover("Freshness", icon=":material/info:", use_container_width=True):
+        fetch_meta = load_fetch_metadata()
+        if fetch_meta:
+            st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
+            st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
+            st.write(f"**{_cap(_active_universe, 'items_label', 'Tickers')}:** {fetch_meta.get('ticker_count', 'N/A')}")
+            if fetch_meta.get("failures"):
+                st.write(f"**Failures:** {len(fetch_meta['failures'])}")
+        if _cap(_active_universe, 'has_validation_report', True):
+            val_path = data_processed() / "validation_report.csv"
+            if val_path.exists():
+                val_df = pd.read_csv(val_path)
+                n_pass = (val_df["status"] == "PASS").sum()
+                st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
 
 if len(date_range) == 2:
     start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
