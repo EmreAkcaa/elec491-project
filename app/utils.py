@@ -611,7 +611,7 @@ def _downsample_if_oversize(df: pd.DataFrame, max_rows: int = _DASHBOARD_MAX_ROW
     return df.iloc[::stride].copy()
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading prices (first time only)…")
 def _load_adj_close(universe: str) -> pd.DataFrame:
     df = pd.read_parquet(data_processed(universe) / "adj_close.parquet")
     df = _ensure_datetime_index(df)
@@ -622,7 +622,7 @@ def load_adj_close() -> pd.DataFrame:
     return _load_adj_close(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading log returns (first time only)…")
 def _load_log_returns(universe: str) -> pd.DataFrame:
     df = pd.read_parquet(data_processed(universe) / "log_returns.parquet")
     df = _ensure_datetime_index(df)
@@ -810,7 +810,7 @@ def load_eigenvalue_spectrum() -> pd.DataFrame:
     return _load_eigenvalue_spectrum(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading RMT-denoised correlation matrix…")
 def _load_denoised_corr(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "denoised_corr.parquet"
     if path.exists():
@@ -834,7 +834,7 @@ def load_denoised_mst_edges() -> pd.DataFrame:
     return _load_denoised_mst_edges(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading partial correlation matrix…")
 def _load_partial_corr(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "partial_corr.parquet"
     if path.exists():
@@ -846,7 +846,7 @@ def load_partial_corr() -> pd.DataFrame:
     return _load_partial_corr(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading precision matrix…")
 def _load_precision_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "precision_matrix.parquet"
     if path.exists():
@@ -984,7 +984,7 @@ def load_te_node_roles() -> pd.DataFrame:
     return _load_te_node_roles(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading transfer entropy matrix…")
 def _load_te_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "transfer_entropy_matrix.parquet"
     if path.exists():
@@ -996,7 +996,7 @@ def load_te_matrix() -> pd.DataFrame:
     return _load_te_matrix(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading raw TE matrix…")
 def _load_te_matrix_raw(universe: str) -> pd.DataFrame:
     """Pre-FDR TE values — useful for ranking edges by magnitude even when
     the FDR-corrected mask is sparse (the common case at 100-shuffle
@@ -1013,7 +1013,7 @@ def load_te_matrix_raw() -> pd.DataFrame:
     return _load_te_matrix_raw(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading net TE matrix…")
 def _load_net_te_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "net_transfer_entropy_matrix.parquet"
     if path.exists():
@@ -1180,7 +1180,7 @@ def load_snn_membrane_sample() -> pd.DataFrame:
 # Information-theory layer (Phase 3 mutable-candy)
 # ---------------------------------------------------------------------------
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading mutual information matrix…")
 def _load_mi_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "mi_matrix.parquet"
     if path.exists():
