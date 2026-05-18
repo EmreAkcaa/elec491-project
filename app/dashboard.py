@@ -1508,28 +1508,21 @@ with tab_rolling:
         st.caption(
             ":material/info: Configure window / step / method, then click "
             "**Recompute** to refresh charts. Precomputed combos "
-            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly."
+            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly. "
+            "**EWM α** only applies when *Window type = ewm*; otherwise ignored."
         )
-        # Read the last-submitted window_type from session_state to decide
-        # whether to render the EWM-α input. Inside a form, widget values
-        # don't propagate until submit, so this reflects the previous submit
-        # (NOT the current in-form selection) — slightly clunky but the
-        # documented Streamlit pattern. Default to "rolling" so first paint
-        # doesn't show α.
-        _last_wtype = st.session_state.get("rc_wtype", "rolling")
-        _show_alpha = _last_wtype == "ewm"
 
         with st.form("rolling_params", border=False):
-            _form_cols = st.columns(
-                [2, 2, 2, 2, 2, 1.2] if _show_alpha else [2, 2, 2, 2, 1.2]
-            )
+            # All 5 widgets always render. Earlier version conditionally
+            # showed EWM α only AFTER a Recompute with window_type=ewm —
+            # a two-click trap, because Streamlit forms don't propagate
+            # in-form widget changes until submit (so the disabled-trick
+            # doesn't work either). Always-visible α with clear `help=`
+            # copy is cleaner: harmless to touch when not in ewm mode
+            # (value is just ignored by the rolling/expanding paths).
+            # Audit item A4.
+            _form_cols = st.columns([2, 2, 2, 2, 2, 1.2])
             with _form_cols[0]:
-                # Number input replaces the 4-option selectbox so users
-                # can pick any window in [20, 504]. The downstream
-                # `_use_precomputed_market` check (rc_window in {60, 120,
-                # 252}) still works for those three values; everything
-                # else falls into the slow on-the-fly compute path, which
-                # is now gated by the Recompute submit button.
                 rc_window = int(st.number_input(
                     "Window (days)" if _is_finance_rc else "Window (samples)",
                     min_value=20, max_value=504, value=252, step=10,
@@ -1545,18 +1538,13 @@ with tab_rolling:
                 rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
             with _form_cols[3]:
                 rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
-            if _show_alpha:
-                with _form_cols[4]:
-                    rc_ewm_alpha = float(st.number_input(
-                        "EWM α", min_value=0.01, max_value=0.5,
-                        value=0.05, step=0.01, key="rc_ewm_alpha",
-                        help="Exponential weighting decay. α=0.05 ≈ span 39 days; α=0.1 ≈ span 19 days. Only applies to the Pair Correlation sub-tab (market & sector stats use the rolling window).",
-                    ))
-                _btn_col_idx = 5
-            else:
-                rc_ewm_alpha = float(st.session_state.get("rc_ewm_alpha", 0.05))
-                _btn_col_idx = 4
-            with _form_cols[_btn_col_idx]:
+            with _form_cols[4]:
+                rc_ewm_alpha = float(st.number_input(
+                    "EWM α", min_value=0.01, max_value=0.5,
+                    value=0.05, step=0.01, key="rc_ewm_alpha",
+                    help="Exponential weighting decay (Pair Correlation sub-tab only, when Window type = ewm). α=0.05 ≈ span 39 days; α=0.1 ≈ span 19 days. Ignored for rolling/expanding.",
+                ))
+            with _form_cols[5]:
                 # Vertical alignment hack: empty markdown matches the label
                 # height of the selectboxes so the button aligns to their
                 # input row, not their label row.
