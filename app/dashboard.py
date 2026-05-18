@@ -527,25 +527,55 @@ def _render_rolling_pair() -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Universe initialisation MUST run before st.set_page_config so the
-# browser tab title reflects the active universe on first paint. We seed
-# session_state from the DASHBOARD_UNIVERSE env var (falling back to bist),
-# clamped to whichever universes have populated artifacts on disk.
+# browser tab title reflects the active universe on first paint.
+#
+# Phase 1 split: the sidebar now exposes (dataset, bist_basis) instead of
+# a single flat universe key. `current_universe()` (in app/utils.py) is the
+# resolver. Seed both keys from the legacy DASHBOARD_UNIVERSE env var so
+# existing deploy configs keep working.
 _AVAIL_UNIVERSES = available_universes()
 _AVAIL_KEYS      = [u.key for u in _AVAIL_UNIVERSES] or ["bist"]
-_BOOT_KEY        = os.environ.get("DASHBOARD_UNIVERSE", "bist")
-if _BOOT_KEY not in _AVAIL_KEYS:
-    _BOOT_KEY = _AVAIL_KEYS[0]
+_LEGACY_ENV      = os.environ.get("DASHBOARD_UNIVERSE", "bist")
+
+# Map a legacy single-key env var to the (dataset, bist_basis) pair.
+_LEGACY_TO_PAIR = {
+    "bist":      ("bist", "try"),
+    "bist_usd":  ("bist", "usd"),
+    "bist_gold": ("bist", "gold"),
+}
+if _LEGACY_ENV in _LEGACY_TO_PAIR:
+    _BOOT_DATASET, _BOOT_BASIS = _LEGACY_TO_PAIR[_LEGACY_ENV]
+elif _LEGACY_ENV in _AVAIL_KEYS:
+    _BOOT_DATASET, _BOOT_BASIS = _LEGACY_ENV, "try"
+else:
+    # Pick the first available dataset (could be sp500 or eeg if BIST absent).
+    _BOOT_DATASET = _AVAIL_KEYS[0] if not _AVAIL_KEYS[0].startswith("bist") else "bist"
+    _BOOT_BASIS = "try"
+
 # Defensive: HF Spaces health-probes and reconnecting browser tabs can invoke
 # this script before Streamlit has a full session context. Touching
 # session_state then raises "Tried to use SessionInfo before it was
-# initialized". Fall back to the boot key without crashing — the user's real
+# initialized". Fall back to the boot pair without crashing — the user's real
 # request will re-run the script with a proper session attached.
 try:
-    if "universe" not in st.session_state or st.session_state["universe"] not in _AVAIL_KEYS:
-        st.session_state["universe"] = _BOOT_KEY
-    _active_universe_key = st.session_state["universe"]
+    if "dataset" not in st.session_state:
+        st.session_state["dataset"] = _BOOT_DATASET
+    if "bist_basis" not in st.session_state:
+        st.session_state["bist_basis"] = _BOOT_BASIS
+    # Validate dataset against on-disk availability.
+    _disk_datasets = set()
+    for _k in _AVAIL_KEYS:
+        _disk_datasets.add("bist" if _k.startswith("bist") else _k)
+    if st.session_state["dataset"] not in _disk_datasets:
+        st.session_state["dataset"] = _BOOT_DATASET
+    _active_universe_key = current_universe()
+    # Final fallback: if the resolved key isn't on disk, fall back.
+    if _active_universe_key not in _AVAIL_KEYS:
+        _active_universe_key = _AVAIL_KEYS[0]
 except Exception:  # noqa: BLE001 — SessionInfo not yet initialised
-    _active_universe_key = _BOOT_KEY
+    _active_universe_key = (
+        _LEGACY_ENV if _LEGACY_ENV in _AVAIL_KEYS else _AVAIL_KEYS[0]
+    )
 
 _active_universe = get_universe(_active_universe_key)
 
@@ -594,31 +624,85 @@ if "_prewarm_dispatched" not in st.session_state:
         pass
 
 
-# ── Sidebar: dataset selector (top) + theme controls (existing)
+# ── Sidebar: 3-dataset selector + BIST numéraire sub-switcher ────────────
+# Phase 1: replace the flat 5-key universe selectbox with two controls.
+# Primary "Dataset" radio (BIST 100 / S&P 500 / EEG) + a secondary
+# "Base currency" segmented_control (TRY / USD / Gold) that only appears
+# when Dataset == BIST. The three BIST numéraire variants are the same
+# 73 tickers re-expressed in different bases; surfacing them as a
+# sub-switcher (instead of three sibling universes flat in the same list)
+# mirrors how an analyst thinks about them and lets the demo move
+# "flip the basis to remove the TRY noise" with one click.
+#
+# Tab-state preservation: switching `bist_basis` doesn't reset `nav_page`
+# because the BIST family shares ONE namespace (the three keys all map to
+# the same `nav_page_bist`). Switching `dataset` between BIST / S&P / EEG
+# reads the corresponding `nav_page_{dataset}` so each dataset remembers
+# its own last-active top-nav target.
+_DATASET_LABELS = {
+    "bist":                "BIST 100 — Türkiye",
+    "sp500":               "S&P 500 — United States",
+    "eeg_motor_left_right": "EEG Motor Imagery — PhysioNet",
+}
+_BASIS_LABELS = {"try": "TRY", "usd": "USD", "gold": "Gold"}
+
+# Derive which TOP-LEVEL datasets are present on disk. BIST family
+# (bist / bist_usd / bist_gold) collapses to a single "bist" dataset
+# selector entry; other keys appear verbatim.
+_dataset_options: list[str] = []
+if any(k.startswith("bist") for k in _AVAIL_KEYS):
+    _dataset_options.append("bist")
+if "sp500" in _AVAIL_KEYS:
+    _dataset_options.append("sp500")
+if "eeg_motor_left_right" in _AVAIL_KEYS:
+    _dataset_options.append("eeg_motor_left_right")
+# Fallback so something always renders even if AVAIL_KEYS is empty.
+if not _dataset_options:
+    _dataset_options = ["bist"]
+
 with st.sidebar:
-    if len(_AVAIL_UNIVERSES) > 1:
+    if len(_dataset_options) > 1:
         st.markdown("**Dataset**")
         st.selectbox(
-            "Universe",
-            _AVAIL_KEYS,
-            format_func=lambda k: get_universe(k).label,
-            key="universe",  # bound directly to session_state; Streamlit reruns on change
+            "Dataset",
+            _dataset_options,
+            format_func=lambda k: _DATASET_LABELS.get(k, k),
+            key="dataset",
             label_visibility="collapsed",
         )
-        # Re-read after the selectbox in case the user just changed it.
-        _active_universe = get_universe(st.session_state["universe"])
-        st.caption(_cap(_active_universe, 'description', ''))
-        st.markdown("---")
-    elif _AVAIL_UNIVERSES:
-        # Single universe present — show as a static caption, no selector clutter.
-        st.markdown(f"**Dataset:** {_AVAIL_UNIVERSES[0].short_label}")
-        st.caption(_AVAIL_UNIVERSES[0].description)
-        st.markdown("---")
+    elif _dataset_options:
+        # Only one top-level dataset present; static caption.
+        _only = _dataset_options[0]
+        st.markdown(f"**Dataset:** {_DATASET_LABELS.get(_only, _only)}")
+
+    # BIST sub-switcher (only when the BIST family is the active dataset
+    # AND at least one alternative basis exists on disk).
+    if st.session_state.get("dataset") == "bist":
+        _basis_options = ["try"]
+        if "bist_usd" in _AVAIL_KEYS:
+            _basis_options.append("usd")
+        if "bist_gold" in _AVAIL_KEYS:
+            _basis_options.append("gold")
+        if len(_basis_options) > 1:
+            st.markdown("**Base currency**")
+            st.segmented_control(
+                "Base currency",
+                _basis_options,
+                format_func=lambda b: _BASIS_LABELS.get(b, b),
+                key="bist_basis",
+                label_visibility="collapsed",
+            )
+
+    # Re-read the active universe AFTER both controls so the description
+    # caption + downstream loaders use the resolved key.
+    _active_universe = get_universe(current_universe())
+    st.caption(_cap(_active_universe, 'description', ''))
+    st.markdown("---")
     # Sprint 2 PR-M: chart-settings panel hoisted out of the sidebar into a
     # header-strip popover. The sidebar previously rendered 5 always-visible
     # expanders (Colors / Typography / Lines & Axes / Layout / Export Defaults)
     # eating ~280 px the demo audience never touched. Sidebar now only carries
-    # the Dataset selector + per-universe description.
+    # the Dataset selector + Base currency sub-switcher + description.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Top Header & Navigation
@@ -633,11 +717,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Handle deferred navigation from cross-page jump buttons
+# Phase 1: per-dataset nav_page namespacing. Each top-level dataset
+# (bist / sp500 / eeg_motor_left_right) keeps its OWN last-active
+# top-nav target in `nav_page_{dataset}` — so switching BIST → S&P and
+# back returns the user to whichever nav they had on BIST. The three
+# BIST numéraire variants (try/usd/gold) share one `nav_page_bist`
+# because they have identical capability flags.
+_dataset_key = st.session_state.get("dataset", _BOOT_DATASET)
+_nav_page_key = f"nav_page_{_dataset_key}"
+
+# Handle deferred navigation from cross-page jump buttons.
 if st.session_state.pop("_goto_pair_analysis", False):
-    st.session_state["nav_page"] = "Pair Analysis"
+    st.session_state[_nav_page_key] = "Pair Analysis"
 if st.session_state.pop("_goto_cross_market", False):
-    st.session_state["nav_page"] = "Cross-Market"
+    st.session_state[_nav_page_key] = "Cross-Market"
 
 # Nav label for the overview page is domain-aware: "Market Overview" reads
 # wrong when the active universe is EEG (no market), so non-finance domains
@@ -649,42 +742,37 @@ _overview_label = (
     else "Network Overview"
 )
 
-# Nav order (Phase 2 mutable-candy): foreground the project's strongest
-# existing content — the cross-market BIST↔S&P comparison — as the FIRST
-# nav option for finance universes. Demo and grading first-60-seconds land
-# on this page rather than a coverage chart.
-# EEG keeps its single-page Network Overview (no Cross-Market, no pair trading).
+# Phase 1 top-nav: five lenses for finance, three for EEG.
+#   Cross-Market    — BIST vs S&P comparison (finance only)
+#   Market Overview — full-period static analysis
+#   Time Machine    — date-driven correlation/MST/dislocation evolution
+#   Pair Analysis   — two-leg deep-dive (finance only)
+#   Methods Lab     — RMT / GLASSO / Wavelet / TE / IT / SNN depth
+# EEG keeps Market Overview + Time Machine + Methods Lab; the others
+# are gated by `eligible_for_cross_market` / `has_pair_trading`.
 _eligible_for_cross_market = _cap(_active_universe, 'eligible_for_cross_market', True)
 _nav_options: list[str] = []
 if _eligible_for_cross_market:
     _nav_options.append("Cross-Market")
 _nav_options.append(_overview_label)
+_nav_options.append("Time Machine")
 if _cap(_active_universe, 'has_pair_trading', True):
     _nav_options.append("Pair Analysis")
+_nav_options.append("Methods Lab")
 
 # Default landing: Cross-Market for finance, the overview otherwise.
 _default_nav = "Cross-Market" if _eligible_for_cross_market else _overview_label
 
-# Clamp stored nav_page to options the current universe supports (otherwise
-# Streamlit would render the segmented_control with an out-of-set default and
-# raise StreamlitValueAssignmentNotAllowedError). Also catches the case where
-# the user switches universe — their old nav_page (e.g. "Market Overview"
-# under BIST) won't be in the new universe's options ("Network Overview"
-# under EEG), so it resets to the domain-appropriate default.
-if st.session_state.get("nav_page") not in _nav_options:
-    st.session_state["nav_page"] = _default_nav
+# Clamp stored nav_page to options the current universe supports.
+if st.session_state.get(_nav_page_key) not in _nav_options:
+    st.session_state[_nav_page_key] = _default_nav
 
-# Sprint 2 PR-P: dropped `default=_default_nav` from this call. Streamlit
-# emits a warning when a widget has BOTH `key=` (binding session_state)
-# AND `default=` (passing a default) — the two can collide. The guard
-# block above already sets `st.session_state["nav_page"]` to a valid
-# option on fresh-session AND when the active universe changes, so the
-# `default=` here was redundant and tripped the warning banner on every
-# first paint.
+# Sprint 2 PR-P: no `default=` here (would conflict with key= binding to
+# session_state). The clamp block above guarantees a valid value exists.
 _nav = st.segmented_control(
     "Navigate",
     _nav_options,
-    key="nav_page",
+    key=_nav_page_key,
     label_visibility="collapsed",
 )
 
@@ -694,6 +782,16 @@ _nav = st.segmented_control(
 if _nav == "Cross-Market":
     from cross_market import render as _render_xmarket
     _render_xmarket()
+    st.stop()
+
+# ── Methods Lab route ────────────────────────────────────────────────────────
+# Promoted from a Market Overview sub-tab. Thin wrapper around
+# eee_analysis.render() (which loads its own cluster_assignments etc.).
+# Routes BEFORE the shared data load because eee_analysis manages its
+# own loaders.
+if _nav == "Methods Lab":
+    from methods_lab import render as _render_methods
+    _render_methods()
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -710,6 +808,17 @@ if _nav == "Pair Analysis":
     coverage_df = load_coverage()
     from pair_analysis import render as _render_pair
     _render_pair(adj_close, full_returns, coverage_df, min_date, max_date)
+    st.stop()
+
+# ── Time Machine route ───────────────────────────────────────────────────────
+# Date-driven correlation/MST/dislocation evolution. Promoted from the
+# Market Overview > Correlation > Point-in-Time Snapshot sub-sub-tab.
+# Uses live `_pit_corr` math via `compute_window_correlation` from
+# `src/rolling_correlation.py` — Phase 3 will swap in precomputed
+# snapshot artifacts for instant slider scrubbing.
+if _nav == "Time Machine":
+    from time_machine import render as _render_tm
+    _render_tm(adj_close, full_returns, min_date, max_date)
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -840,10 +949,14 @@ if _cap(_active_universe, 'has_pair_trading', True):
 # Market Overview — Sub-Tab Layout (Pairs & Dislocations gated by capability)
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Phase 1: EEE Analysis sub-tab promoted out of Market Overview to the
+# top-level "Methods Lab" nav target. Point-in-Time Snapshot sub-sub-tab
+# (formerly inside Correlation) moved out to the top-level "Time Machine"
+# nav target. Market Overview now hosts ONLY the full-period static
+# analysis lenses.
 _tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
 if _cap(_active_universe, 'has_pair_trading', True):
     _tab_labels.append("Pairs & Dislocations")
-_tab_labels.append("EEE Analysis")
 _tabs = st.tabs(_tab_labels)
 _tab_by_label = dict(zip(_tab_labels, _tabs))
 tab_data    = _tab_by_label["Data & Stats"]
@@ -851,7 +964,6 @@ tab_corr    = _tab_by_label["Correlation"]
 tab_cluster = _tab_by_label["Clustering & Network"]
 tab_rolling = _tab_by_label["Rolling Analysis"]
 tab_pairs   = _tab_by_label.get("Pairs & Dislocations")   # None when EEG
-tab_eee     = _tab_by_label["EEE Analysis"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1283,17 +1395,11 @@ with tab_data:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_corr:
-    # Both sub-tabs are @st.fragment-scoped. Widget changes inside one
-    # sub-tab (heat_method, pit_window, pit_date, etc.) only re-run that
-    # fragment — the other sub-tab, the other top-level tabs, and the
-    # rest of the script are skipped. Cross-tab state (heat_method,
-    # use_clustering_order) flows via st.session_state.
-    _corr_heatmap_tab, _corr_pit_tab = st.tabs(["Heatmap", "Point-in-Time Snapshot"])
-    with _corr_heatmap_tab:
-        _render_correlation_heatmap()
-    with _corr_pit_tab:
-        with st.container(border=True):
-            _render_pit_correlation()
+    # Phase 1: Point-in-Time Snapshot sub-sub-tab promoted out to the
+    # top-level "Time Machine" page. This tab now hosts ONLY the full-
+    # period correlation heatmap; the @st.fragment scoping still applies
+    # because `_render_correlation_heatmap()` is fragment-decorated.
+    _render_correlation_heatmap()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1983,9 +2089,8 @@ if tab_pairs is not None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tab 6 — EEE Analysis (RMT, GLASSO, Wavelets, Transfer Entropy)
+# Phase 1 note: EEE Analysis used to live here as a sub-tab. It was
+# promoted to the top-level "Methods Lab" nav target so methodology
+# depth (RMT / GLASSO / Wavelet / TE / IT / SNN) reads as a first-class
+# lens to graders. Routing now happens in the top-nav block above.
 # ══════════════════════════════════════════════════════════════════════════════
-
-with tab_eee:
-    from eee_analysis import render as _render_eee
-    _render_eee()
