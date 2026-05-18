@@ -462,12 +462,15 @@ def _render_bist_numeraire_section() -> None:
 
 
 def render() -> None:
-    # Defensive import — force fresh load so a stale module in sys.modules
-    # (Streamlit Cloud caches across deploys) can't strip the Phase I fields.
-    import importlib
-    import universe_registry as _ur
-    importlib.reload(_ur)
-
+    # NOTE: importlib.reload(universe_registry) was removed here per the
+    # same fix applied to dashboard.py (PR #23), pair_analysis.py (PR #33),
+    # and eee_analysis.py. Churned Universe class identity across reruns,
+    # invalidating downstream @st.cache_data entries that hash by Universe
+    # instance, and contributed to "Tried to use SessionInfo before it was
+    # initialized" warnings. HF Spaces rebuilds the container on every
+    # deploy, so the stale-sys.modules problem the reload guarded against
+    # no longer applies. cross_market.py was the last remaining holder of
+    # this anti-pattern. Audit item A2.
     inject_custom_css()
     page_header(
         "Cross-Market Comparison",
