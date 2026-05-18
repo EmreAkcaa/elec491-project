@@ -168,10 +168,29 @@ def render(
     if "pa_date_range" not in st.session_state:
         st.session_state["pa_date_range"] = (min_date, max_date)
 
-    # Row 1: Ticker selectors + date range
-    _c_a, _c_b, _c_date = st.columns([2, 2, 3])
+    # Row 1: Ticker selectors + Compare-against stub + date range
+    # Phase 4 will replace this disabled placeholder with a real "Compare
+    # against" dropdown: [Another stock, USD/TRY, Gold (USD/oz)]. When
+    # non-stock is chosen the second leg comes from
+    # data/raw/base_assets/{usd_try,gold_usd}.parquet via a new
+    # load_cross_asset_corr loader; the downstream math (spread, β,
+    # Z-score, dislocation) works on a pd.Series regardless of source.
+    _c_a, _c_compare, _c_b, _c_date = st.columns([2, 2, 2, 3])
     with _c_a:
         ticker_a = st.selectbox("Ticker A", ticker_list, key="pa_ticker_a")
+    with _c_compare:
+        st.selectbox(
+            "Compare against",
+            ["Another stock"],
+            index=0,
+            disabled=True,
+            key="pa_compare_target_stub",
+            help=(
+                "Phase 4: choose USD/TRY or Gold (USD/oz) as the second "
+                "leg to surface FX/Gold sensitivity per stock. Today only "
+                "stock-vs-stock is wired."
+            ),
+        )
     with _c_b:
         ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
     with _c_date:

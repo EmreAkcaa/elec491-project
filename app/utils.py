@@ -589,14 +589,54 @@ for _p in (str(PROJECT_ROOT), str(APP_DIR)):
 DASHBOARD_UNIVERSE = os.environ.get("DASHBOARD_UNIVERSE", "bist")
 
 
+# BIST family numéraire mapping. The sidebar exposes (dataset, bist_basis)
+# as two controls; this dict resolves the (dataset="bist", bist_basis=…)
+# pair to the on-disk universe key. Other datasets (sp500, eeg_*) are used
+# verbatim and ignore bist_basis.
+_BIST_BASIS_TO_KEY = {
+    "try":  "bist",       # default — TRY-denominated original
+    "usd":  "bist_usd",   # numéraire-converted via USD/TRY
+    "gold": "bist_gold",  # numéraire-converted via gold spot
+}
+
+
 def current_universe() -> str:
-    """Return the active universe key (session_state, fall back to env var)."""
+    """Resolve (dataset, bist_basis) from session_state → universe key.
+
+    The Phase 1 sidebar exposes two controls instead of one:
+      * Dataset:       BIST 100 / S&P 500 / EEG Motor Imagery
+      * Base currency: TRY / USD / Gold     (BIST only)
+
+    This function is the SINGLE chokepoint that maps the (dataset,
+    bist_basis) pair to one of the five on-disk universe keys:
+    ``bist`` / ``bist_usd`` / ``bist_gold`` / ``sp500`` /
+    ``eeg_motor_left_right``. Every ``@st.cache_data`` loader takes the
+    universe key as a positional argument, so changing the resolution
+    here auto-rekeys all dependent caches — callers don't change.
+
+    Backward-compat: if Phase-1 keys aren't in session_state yet (e.g.,
+    a smoke import outside Streamlit), falls back to the legacy
+    ``st.session_state["universe"]`` and ultimately ``DASHBOARD_UNIVERSE``
+    env var so nothing pre-Phase-1 breaks during the migration.
+    """
     try:
-        return st.session_state.get("universe", DASHBOARD_UNIVERSE)
+        dataset = st.session_state.get("dataset")
+        bist_basis = st.session_state.get("bist_basis", "try")
     except Exception:
-        # st.session_state can raise if called outside a Streamlit script
-        # context (e.g., bare `python -c "import utils"` smoke imports).
-        return DASHBOARD_UNIVERSE
+        # Outside Streamlit script context (bare import / smoke test).
+        dataset = None
+        bist_basis = "try"
+
+    if dataset is None:
+        # Legacy fallback — pre-Phase-1 session or non-Streamlit context.
+        try:
+            return st.session_state.get("universe", DASHBOARD_UNIVERSE)
+        except Exception:
+            return DASHBOARD_UNIVERSE
+
+    if dataset == "bist":
+        return _BIST_BASIS_TO_KEY.get(bist_basis, "bist")
+    return dataset
 
 
 def data_raw(universe: str | None = None) -> Path:
