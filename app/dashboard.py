@@ -761,13 +761,18 @@ if _cap(_active_universe, 'has_pair_trading', True):
             # per-cluster purity in Clustering & Network is the canonical
             # validation surface. ARI/NMI are still computed for inline mention
             # in the hero text below.
+            # Sprint 2 PR-L: 4-sentence academic wall trimmed to a single
+            # sentence. Methodology depth (Ward linkage, Mantegna distance,
+            # n_clusters) lives in the help= tooltip below — hover to see.
             with st.container(border=True):
                 st.markdown(
-                    f"**Statistical clusters extracted from raw price correlations recover the "
-                    f"official {_hero_caption_universe} sector classification with "
-                    f"**ARI = {_ari:.2f}, NMI = {_nmi:.2f}** (Ward linkage on Mantegna distance, "
-                    f"n_clusters = {_clusters_clean['cluster_id'].nunique()}). "
-                    "Open *Clustering & Network* below for the MST and dendrogram."
+                    f"Ward clustering on Mantegna correlation distance reproduces the official "
+                    f"{_hero_caption_universe} sector partition. Drill into **Clustering & Network** "
+                    "for per-cluster purity, dendrogram + MST.",
+                    help=(
+                        f"ARI = {_ari:.2f}, NMI = {_nmi:.2f} · Ward linkage · "
+                        f"n_clusters = {_clusters_clean['cluster_id'].nunique()}"
+                    ),
                 )
     except Exception:
         # Hero strip is decorative — never block the page if it errors.
