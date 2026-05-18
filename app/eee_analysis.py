@@ -394,6 +394,27 @@ def render_rmt(sector_map: dict, *, u=None):
             render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
                          title_key="rmt_mst",
                          default_title=f"MST Network ({mst_choice}, nodes sized by betweenness)")
+            # Sprint 2 PR-I: subtitle clarifies what this MST is vs the
+            # Clustering & Network tab's raw MST and the Wavelet per-scale MSTs.
+            if mst_choice == "Raw":
+                st.caption(
+                    "Raw MST on Pearson correlation distance — same metric as "
+                    "**Clustering & Network → MST**. Toggle 'Denoised' to see "
+                    "the RMT-cleaned version."
+                )
+            elif mst_choice == "Denoised":
+                st.caption(
+                    "Built on the **denoised** correlation matrix — noise "
+                    "eigenvalues (inside the Marchenko–Pastur band) replaced "
+                    "by their mean before reconstruction. Signal-only network "
+                    "backbone."
+                )
+            else:  # "Both (overlay)"
+                st.caption(
+                    "Raw and Denoised MSTs overlaid on the same Kamada-Kawai "
+                    "layout — edges that survive denoising are the structurally "
+                    "meaningful ones."
+                )
 
         # Denoised correlation heatmap (full width)
         st.markdown("**Denoised Correlation Matrix** — eigenvalues outside the MP band reconstructed; noise eigenvalues replaced with their mean.")
@@ -573,6 +594,14 @@ def _render_wavelet_for_scale(
             f"MST at {scale_label} "
             f"(Σdistance: {total_weight:.1f}, nodes sized by betweenness)"
         ),
+    )
+    # Sprint 2 PR-I: subtitle clarifies this MST is computed on a single
+    # wavelet frequency band only, contrasting with the full-period MSTs
+    # elsewhere in the app.
+    st.caption(
+        f"Built on DWT detail coefficients at scale {scale_level} "
+        f"({scale_label}) — isolates co-movement at this frequency band only. "
+        "Contrasts with the full-period MST in **Clustering & Network**."
     )
 
 
