@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None):
     from src.clustering import run_clustering
     from src.rolling_correlation import run_rolling_analysis
     from src.pair_dislocation import run_pair_dislocation
+    from src.pit_snapshots import run_pit_snapshots
     from src.rmt_denoising import run_rmt_denoising
     from src.partial_correlation import run_partial_correlation
     from src.wavelet_analysis import run_wavelet_analysis
@@ -37,6 +38,15 @@ def main(argv: list[str] | None = None):
         "--config",
         default=None,
         help="Path to a settings YAML (default: config/settings.yaml).",
+    )
+    parser.add_argument(
+        "--skip-pit",
+        action="store_true",
+        help=(
+            "Skip the PIT snapshot grid stage (Phase 3 slim). "
+            "Useful for dev iterations where you don't need to refresh "
+            "Time Machine's instant-scrubbing cache."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -58,6 +68,14 @@ def main(argv: list[str] | None = None):
     run_clustering(config)
     run_rolling_analysis(config)
     run_pair_dislocation(config)
+
+    # --- Phase 3 (slim) — PIT snapshot grid for Time Machine ---
+    # Gated to bist + sp500 only (other markets skip silently).
+    # Skip via --skip-pit for dev iterations.
+    if not args.skip_pit:
+        run_pit_snapshots(config)
+    else:
+        logger.info("PIT snapshots skipped via --skip-pit flag")
 
     # --- EEE Analysis Methods ---
     run_rmt_denoising(config)

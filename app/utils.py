@@ -942,6 +942,124 @@ def load_dislocation_candidates() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Phase 3 (slim) — PIT snapshot loaders
+# ---------------------------------------------------------------------------
+# These read precomputed snapshot files written by
+# ``src/pit_snapshots.py:run_pit_snapshots``. Snapshots only exist for
+# the universes in ``_PRECOMPUTE_MARKETS`` (bist + sp500) at window=252;
+# loaders return empty DataFrames otherwise, letting Time Machine fall
+# back to live compute transparently.
+#
+# Date semantics: user-picked dates are snapped to the NEAREST stored
+# snapshot by scanning the directory once (cached per session). The
+# Time Machine page shows a caption when the snap differs from the
+# user's pick by more than 1 trading day, so the demo audience always
+# knows which date the visualization is for.
+
+_PIT_DIR_MAP = {
+    "corr": "pit_corr",
+    "mst": "pit_mst",
+    "dislocation": "pit_dislocation",
+}
+
+
+@st.cache_data
+def _pit_snapshot_dates(universe: str, window: int, kind: str) -> list[str]:
+    """List the ISO-formatted dates available in a snapshot directory.
+
+    Cached because the directory enumeration costs ~10 ms but is hit on
+    every Time Machine slider drag (via _snap_to_nearest_snapshot).
+    Cache key includes (universe, window, kind) so the cache invalidates
+    correctly when the user flips dataset or window.
+    """
+    subdir = _PIT_DIR_MAP[kind]
+    d = data_results(universe) / subdir / f"w{window}"
+    if not d.exists():
+        return []
+    # File names are "YYYY-MM-DD.parquet" or "YYYY-MM-DD.csv" — strip
+    # the extension to recover the date string.
+    out: list[str] = []
+    for p in sorted(d.iterdir()):
+        stem = p.stem  # filename without extension
+        # Defensive: skip non-date filenames if someone drops trash here
+        if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
+            out.append(stem)
+    return out
+
+
+def pit_snapshot_dates(window: int = 252, kind: str = "corr") -> list[str]:
+    """Public wrapper: dates available in the current universe's grid."""
+    return _pit_snapshot_dates(current_universe(), window, kind)
+
+
+def snap_to_nearest_snapshot(
+    requested_date: "pd.Timestamp", *, window: int = 252, kind: str = "corr",
+) -> Optional[str]:
+    """Return the ISO date string of the snapshot nearest the requested date.
+
+    Returns None if no snapshots exist for the current (universe, window, kind).
+    Snap distance is signed (we want the nearest, regardless of past/future)
+    so the user gets the best-matching snapshot for whatever date they pick.
+    """
+    dates_iso = pit_snapshot_dates(window=window, kind=kind)
+    if not dates_iso:
+        return None
+    requested_ts = pd.Timestamp(requested_date)
+    # Convert all snapshot dates to timestamps once; pick min |diff|.
+    diffs = [(abs((pd.Timestamp(d) - requested_ts).days), d) for d in dates_iso]
+    diffs.sort(key=lambda x: x[0])
+    return diffs[0][1]
+
+
+@st.cache_data(show_spinner="Loading PIT correlation snapshot…")
+def _load_pit_snapshot(universe: str, window: int, date_iso: str) -> pd.DataFrame:
+    """Read one PIT correlation matrix from disk. Returns empty on miss.
+
+    Universe + window + date together form the unique cache key, so
+    repeat drags to the same date hit memory.
+    """
+    path = data_results(universe) / "pit_corr" / f"w{window}" / f"{date_iso}.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
+def load_pit_snapshot(window: int, date_iso: str) -> pd.DataFrame:
+    """Public wrapper: load PIT corr for the current universe + given date."""
+    return _load_pit_snapshot(current_universe(), window, date_iso)
+
+
+@st.cache_data(show_spinner=False)
+def _load_pit_mst_snapshot(universe: str, window: int, date_iso: str) -> pd.DataFrame:
+    """Read one PIT MST edges CSV. Returns empty on miss."""
+    path = data_results(universe) / "pit_mst" / f"w{window}" / f"{date_iso}.csv"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path)
+
+
+def load_pit_mst_snapshot(window: int, date_iso: str) -> pd.DataFrame:
+    """Public wrapper: load PIT MST edges for the current universe + date."""
+    return _load_pit_mst_snapshot(current_universe(), window, date_iso)
+
+
+@st.cache_data(show_spinner=False)
+def _load_pit_dislocation_snapshot(
+    universe: str, window: int, date_iso: str,
+) -> pd.DataFrame:
+    """Read one PIT top-dislocation table. Returns empty on miss."""
+    path = data_results(universe) / "pit_dislocation" / f"w{window}" / f"{date_iso}.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
+def load_pit_dislocation_snapshot(window: int, date_iso: str) -> pd.DataFrame:
+    """Public wrapper: load PIT top dislocations for current universe + date."""
+    return _load_pit_dislocation_snapshot(current_universe(), window, date_iso)
+
+
+# ---------------------------------------------------------------------------
 # EEE Analysis loaders
 # ---------------------------------------------------------------------------
 

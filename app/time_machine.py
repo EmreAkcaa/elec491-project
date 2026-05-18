@@ -5,17 +5,18 @@ correlation matrix, the MST derived from it, and the most
 "dislocated" pairs (lowest pairwise correlation) AT that point in
 time.
 
-Phase 1 implementation uses LIVE compute via
+Phase 1 implementation used LIVE compute via
 ``compute_window_correlation`` (src/rolling_correlation.py:452) per
-slider drag. Cost is ~50-500 ms per drag on S&P-500; wrapped in
+slider drag. Cost was ~50-500 ms per drag on S&P-500; wrapped in
 ``@st.fragment`` so the dashboard prologue + other top-nav pages do
 NOT re-execute when the date changes — only this page does.
 
-Phase 3 will replace the live computes with reads from a
-precomputed snapshot grid (every 5 trading days), bringing per-drag
-cost down to <200 ms on S&P-500. Until then, all loaders here live
-in this file; nothing in the broader codebase needs to change when
-that swap happens.
+PHASE 3 (slim) — flagship universes (BIST TRY + S&P) now read from
+a precomputed snapshot grid via ``utils.load_pit_*_snapshot``. Slider
+drag is now ~10-30 ms (file I/O only) at window=252. Universes /
+windows outside the precomputed set (BIST USD/Gold, EEG, w∈{60,120})
+fall back to live compute transparently — a caption indicates the
+mode so the user understands the performance difference.
 
 Per-universe gating:
   - Section 3 (Top dislocations) is hidden when the active universe
@@ -45,29 +46,51 @@ from utils import (
     get_colors,
     load_dendrogram_order,
     load_mst_edges,
+    load_pit_dislocation_snapshot,
+    load_pit_mst_snapshot,
+    load_pit_snapshot,
     render_chart,
     render_matrix_heatmap,
     section_header,
+    snap_to_nearest_snapshot,
 )
 from universe_registry import get_universe
 
 
+# Universes for which we precompute PIT snapshots in
+# ``src/pit_snapshots.py``. Time Machine fast-paths through the loader
+# for these + window=252; everything else falls back to live compute.
+_PRECOMPUTED_MARKETS: set[str] = {"bist", "sp500"}
+_PRECOMPUTED_WINDOW = 252
+_PRECOMPUTED_METHOD = "pearson"
+
+
+def _is_precomputed_path(universe_key: str, window: int, method: str) -> bool:
+    """Return True iff the (universe, window, method) tuple has snapshots
+    on disk per PHASE 3 (slim)."""
+    return (
+        universe_key in _PRECOMPUTED_MARKETS
+        and window == _PRECOMPUTED_WINDOW
+        and method == _PRECOMPUTED_METHOD
+    )
+
+
 # ── Cached helpers (scoped to this page) ────────────────────────────────
 
-@st.cache_data(show_spinner="Computing snapshot correlation...")
-def _pit_correlation_cached(
+@st.cache_data(show_spinner=False)
+def _pit_correlation_live(
     _returns: pd.DataFrame,
     cache_key: str,
     end_date_iso: str,
     window: int,
     method: str,
 ) -> pd.DataFrame:
-    """Wrap compute_window_correlation with the project's cache pattern.
+    """Live compute via compute_window_correlation. Used as fallback when
+    the (universe, window, method) tuple isn't in the precomputed grid
+    (BIST USD/Gold, EEG, or non-default windows/methods).
 
     Underscored ``_returns`` is excluded from Streamlit's hash; the
-    explicit ``cache_key`` string drives identity. Same pattern as
-    ``app/dashboard.py:_pit_corr``; duplicated here so Time Machine
-    is self-contained.
+    explicit ``cache_key`` string drives identity.
     """
     return compute_window_correlation(
         _returns, pd.Timestamp(end_date_iso), window=window, method=method,
@@ -81,9 +104,10 @@ def _pit_mst_cached(
 ) -> tuple[list[tuple[str, str, float]], dict[str, tuple[float, float]]]:
     """Build an MST + layout from a correlation matrix. Returns (edges, pos).
 
-    Edges are (source, target, distance) tuples. ``pos`` is the layout
-    dict. Caches both because the layout (kamada-kawai for small graphs,
-    spring for large) is the expensive step.
+    Live-compute fallback when no precomputed PIT MST edges exist for the
+    (universe, date, window) tuple. Edges are (source, target, distance)
+    tuples; ``pos`` is the layout dict. Caches both because the layout
+    (kamada-kawai for small graphs, spring for large) is the expensive step.
     """
     if not HAS_NETWORKX or _corr.empty:
         return [], {}
@@ -105,6 +129,33 @@ def _pit_mst_cached(
     else:
         pos = nx.kamada_kawai_layout(mst, weight="weight")
     edges = [(u, v, float(mst[u][v]["weight"])) for u, v in mst.edges()]
+    return edges, pos
+
+
+@st.cache_data(show_spinner=False)
+def _pit_mst_from_edges_cached(
+    _edges_df: pd.DataFrame,
+    cache_key: str,
+) -> tuple[list[tuple[str, str, float]], dict[str, tuple[float, float]]]:
+    """Layout-only path: precomputed MST edges → live layout.
+
+    PHASE 3 (slim) skips MST CONSTRUCTION (Kruskal over ~117K candidate
+    edges for S&P) by reading the precomputed edges CSV. We still need to
+    LAYOUT the MST live since position-only layout dicts don't compress
+    well + bias future flexibility on the layout algorithm.
+    """
+    if not HAS_NETWORKX or _edges_df.empty:
+        return [], {}
+    G = nx.Graph()
+    for _, r in _edges_df.iterrows():
+        G.add_edge(str(r["source"]), str(r["target"]), weight=float(r["distance"]))
+    if G.number_of_edges() == 0:
+        return [], {}
+    if G.number_of_nodes() > 200:
+        pos = nx.spring_layout(G, weight="weight", iterations=80, seed=42)
+    else:
+        pos = nx.kamada_kawai_layout(G, weight="weight")
+    edges = [(u, v, float(G[u][v]["weight"])) for u, v in G.edges()]
     return edges, pos
 
 
@@ -205,9 +256,7 @@ def render(
         "Pick a date to see the correlation network as it stood that day. "
         "Drag through crisis dates "
         "(2020-03-12 COVID, 2022-02-24 Ukraine, 2023-02-15 earthquake) "
-        "and watch correlations spike + the MST collapse to a star. "
-        "All compute is live in this phase (~50-500 ms per drag); "
-        "Phase 3 will swap to precomputed snapshots for instant scrubbing."
+        "and watch correlations spike + the MST collapse to a star."
     )
 
     # ── Master controls ─────────────────────────────────────────────────
@@ -248,16 +297,57 @@ def render(
             f"{picked_date.isoformat()} — weekend or market holiday)."
         )
 
-    # Cache key — same pattern as the rest of the codebase.
-    _cache_key = (
-        f"{_u_key}:{trading_dates[0].date().isoformat()}:"
-        f"{trading_dates[-1].date().isoformat()}:"
-        f"{full_returns.shape[0]}x{full_returns.shape[1]}"
-    )
+    # PHASE 3 (slim): try the precomputed snapshot grid FIRST when the
+    # active universe + window + method match the pipeline output. On
+    # cache hit (BIST TRY / S&P at w=252 pearson) the slider drag is
+    # ~10-30 ms. Otherwise fall through to live compute.
+    pit_corr = pd.DataFrame()
+    snap_actual_iso: str | None = None
+    used_precomputed = False
+    if _is_precomputed_path(_u_key, window, method):
+        snap_actual_iso = snap_to_nearest_snapshot(
+            snap_date, window=window, kind="corr",
+        )
+        if snap_actual_iso is not None:
+            pit_corr = load_pit_snapshot(window, snap_actual_iso)
+            if not pit_corr.empty:
+                used_precomputed = True
+                # If the snapshot-grid date differs from the user's
+                # snapped trading-day by more than 1 day, surface it.
+                snap_ts = pd.Timestamp(snap_actual_iso)
+                if abs((snap_ts - snap_date).days) >= 1:
+                    st.caption(
+                        f":material/bolt: Snapping to precomputed snapshot "
+                        f"**{snap_actual_iso}** (closest in the "
+                        f"{_PRECOMPUTED_WINDOW}-day grid). Live compute "
+                        f"available for exact dates — toggle to use it."
+                    )
+                # Display date matches the precomputed snapshot.
+                snap_date = snap_ts
 
-    pit_corr = _pit_correlation_cached(
-        full_returns, _cache_key, snap_date.isoformat(), window, method,
-    )
+    if pit_corr.empty:
+        # Cache key — same pattern as the rest of the codebase.
+        _cache_key = (
+            f"{_u_key}:{trading_dates[0].date().isoformat()}:"
+            f"{trading_dates[-1].date().isoformat()}:"
+            f"{full_returns.shape[0]}x{full_returns.shape[1]}"
+        )
+        pit_corr = _pit_correlation_live(
+            full_returns, _cache_key, snap_date.isoformat(), window, method,
+        )
+        if _u_key in _PRECOMPUTED_MARKETS and window != _PRECOMPUTED_WINDOW:
+            # User chose w=60/120 — let them know why this is slower.
+            st.caption(
+                f":material/info: Computing live (precomputed grid only "
+                f"covers window={_PRECOMPUTED_WINDOW}). Pick window=252 for "
+                f"instant scrubbing."
+            )
+        elif _u_key not in _PRECOMPUTED_MARKETS:
+            st.caption(
+                f":material/info: Computing live (precomputed grid covers "
+                f"BIST TRY + S&P at window=252 only)."
+            )
+
     if pit_corr.empty:
         st.warning(
             f"Not enough data at {snap_date.strftime('%Y-%m-%d')} for a "
@@ -337,10 +427,23 @@ def render(
         )
 
         if build_pit_mst:
+            # PHASE 3 (slim): try precomputed MST edges from disk first;
+            # we still need to LAYOUT the MST live (kamada_kawai / spring
+            # don't precompute well because they're position-only and
+            # don't compress meaningfully). So the precomputed path saves
+            # only the MST CONSTRUCTION (Kruskal over 117K candidate
+            # edges for S&P), not the layout.
+            edges_df = pd.DataFrame()
+            if used_precomputed and snap_actual_iso is not None:
+                edges_df = load_pit_mst_snapshot(window, snap_actual_iso)
+
             _mst_cache_key = (
                 f"{_u_key}:pitmst:{snap_date.isoformat()}:{window}:{method}"
             )
-            edges, pos = _pit_mst_cached(pit_corr, _mst_cache_key)
+            if not edges_df.empty:
+                edges, pos = _pit_mst_from_edges_cached(edges_df, _mst_cache_key)
+            else:
+                edges, pos = _pit_mst_cached(pit_corr, _mst_cache_key)
             _render_mst(
                 edges, pos,
                 chart_id="tm_pit_mst",
@@ -398,33 +501,47 @@ def render(
             f"Top dislocations at {snap_date.strftime('%Y-%m-%d')}",
             "The 20 pairs with the lowest pairwise correlation in this "
             f"{window}-day window. Negatively-correlated pairs are mean-"
-            "reversion candidates. Phase 3 will replace this list with "
-            "PIT spread Z-score from precomputed snapshots.",
+            "reversion candidates.",
         )
 
-        idx = list(pit_corr.columns)
-        records = []
-        for i in range(len(idx)):
-            for j in range(i + 1, len(idx)):
-                r = float(pit_corr.iloc[i, j])
-                if np.isfinite(r):
-                    records.append((idx[i], idx[j], r))
-        if not records:
-            st.info("No pairs available for dislocation ranking.")
-            return
+        # PHASE 3 (slim): try precomputed top-20 dislocations table first.
+        # Falls back to live ranking from the in-memory corr matrix.
+        dis_df = pd.DataFrame()
+        if used_precomputed and snap_actual_iso is not None:
+            dis_df = load_pit_dislocation_snapshot(window, snap_actual_iso)
+            if not dis_df.empty:
+                # Relabel to match the live-compute output schema.
+                dis_df = dis_df.rename(columns={
+                    "ticker_a": _active.item_label + " A",
+                    "ticker_b": _active.item_label + " B",
+                    "correlation": "Correlation",
+                })
 
-        df = (
-            pd.DataFrame(records, columns=[
-                _active.item_label + " A",
-                _active.item_label + " B",
-                "Correlation",
-            ])
-            .sort_values("Correlation", ascending=True)
-            .head(20)
-            .reset_index(drop=True)
-        )
+        if dis_df.empty:
+            # Live fallback — same logic as the prior Phase 1 implementation.
+            idx = list(pit_corr.columns)
+            records = []
+            for i in range(len(idx)):
+                for j in range(i + 1, len(idx)):
+                    r = float(pit_corr.iloc[i, j])
+                    if np.isfinite(r):
+                        records.append((idx[i], idx[j], r))
+            if not records:
+                st.info("No pairs available for dislocation ranking.")
+                return
+            dis_df = (
+                pd.DataFrame(records, columns=[
+                    _active.item_label + " A",
+                    _active.item_label + " B",
+                    "Correlation",
+                ])
+                .sort_values("Correlation", ascending=True)
+                .head(20)
+                .reset_index(drop=True)
+            )
+
         st.dataframe(
-            df, use_container_width=True, hide_index=True,
+            dis_df, use_container_width=True, hide_index=True,
             column_config={
                 "Correlation": st.column_config.NumberColumn(
                     format="%.4f",
