@@ -1537,72 +1537,84 @@ with tab_rolling:
             ),
         )
 
-        # st.form gates the 4 outer rolling widgets behind an explicit
-        # "Recompute" submit button. Off-grid params (e.g. step=1, spearman,
-        # window=504) cost up to 12 s on S&P; without the form, the user
-        # paid that cost on every intermediate selectbox change. With the
-        # form, widget changes accumulate locally, then a single submit
-        # triggers one script rerun. Precomputed combos (window ∈ {60,120,
-        # 252}, step=5, pearson, rolling) still load instantly because the
-        # downstream `_use_precomputed_market` check hits the parquet cache.
-        # Sprint 2 PR-H: caption refined to spell out the configure-then-apply
-        # affordance + give cost estimate for off-grid params. Original copy
-        # implied the form was a continuous control; in fact it's a batch one.
+        # Default visible row: just window + Recompute. All three windows
+        # (60 / 120 / 252) load from the precomputed parquet — instant.
+        # Power-user parameters (step / method / window_type / EWM α) live
+        # in the Advanced expander below, default-collapsed, so the 95%
+        # of sessions that never touch them aren't shown the knobs.
+        #
+        # Design principle: "default is the demo; advanced is the
+        # configuration." Each visible widget is a demo-time touch point;
+        # everything else is a power-user concern. The Advanced section is
+        # one fold-out, not one perma-visible knob each.
         st.caption(
-            ":material/touch_app: Configure window / step / method, then click "
-            "**Recompute** to apply. Precomputed combos "
-            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly; "
-            "off-grid params take ~10–15 s on S&P. "
-            "**EWM α** only applies when *Window type = ewm*."
+            ":material/touch_app: Pick a window and click **Recompute**. "
+            "All three windows load from the precomputed parquet (instant). "
+            "Step / method / window-type / EWM α live in **Advanced parameters** below."
         )
 
         with st.form("rolling_params", border=False):
-            # All 5 widgets always render. Earlier version conditionally
-            # showed EWM α only AFTER a Recompute with window_type=ewm —
-            # a two-click trap, because Streamlit forms don't propagate
-            # in-form widget changes until submit (so the disabled-trick
-            # doesn't work either). Always-visible α with clear `help=`
-            # copy is cleaner: harmless to touch when not in ewm mode
-            # (value is just ignored by the rolling/expanding paths).
-            # Audit item A4.
-            _form_cols = st.columns([2, 2, 2, 2, 2, 1.2])
-            with _form_cols[0]:
-                rc_window = int(st.number_input(
+            _main_c1, _main_c2 = st.columns([3, 1])
+            with _main_c1:
+                rc_window = int(st.selectbox(
                     "Window (days)" if _is_finance_rc else "Window (samples)",
-                    min_value=20, max_value=504, value=252, step=10,
-                    key="rc_win",
-                    help="Trading days in each rolling window. {60, 120, 252} hit the precomputed parquet (instant); other values compute on the fly.",
+                    [60, 120, 252], index=2, key="rc_win",
+                    help=(
+                        "Trading-day window for each rolling snapshot. "
+                        "All three values hit the precomputed parquet — "
+                        "instant load on every Recompute."
+                    ),
                 ))
-            with _form_cols[1]:
-                rc_step = st.selectbox(
-                    "Step", [1, 5, 21], index=1, key="rc_step",
-                    format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(x, str(x)),
-                )
-            with _form_cols[2]:
-                rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
-            with _form_cols[3]:
-                rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
-            with _form_cols[4]:
-                rc_ewm_alpha = float(st.number_input(
-                    "EWM α", min_value=0.01, max_value=0.5,
-                    value=0.05, step=0.01, key="rc_ewm_alpha",
-                    help="Exponential weighting decay (Pair Correlation sub-tab only, when Window type = ewm). α=0.05 ≈ span 39 days; α=0.1 ≈ span 19 days. Ignored for rolling/expanding.",
-                ))
-            with _form_cols[5]:
+            with _main_c2:
                 # Vertical alignment hack: empty markdown matches the label
-                # height of the selectboxes so the button aligns to their
-                # input row, not their label row.
+                # height of the selectbox so the button aligns to its input
+                # row, not its label row.
                 st.markdown("&nbsp;", unsafe_allow_html=True)
-                # Sprint 2 PR-H: dropped `type="primary"` (loud-blue) → default
-                # `secondary` (subtle gray). Streamlit forms don't expose
-                # widget-change events before submit (so a true "dirty state"
-                # cue is not feasible in pure-Python Streamlit), and a
-                # permanently-loud button trained users to ignore it. Gray
-                # button + clarified caption above tell the same story without
-                # the constant visual demand.
+                # Sprint 2 PR-H: secondary (gray) — no `type="primary"`. A
+                # permanently-loud button trains users to ignore it.
                 st.form_submit_button(
                     "Recompute", use_container_width=True,
                 )
+
+            with st.expander("Advanced parameters", expanded=False):
+                st.caption(
+                    ":material/info: Off-grid combinations (step ≠ 5, "
+                    "method = spearman, window type ∈ {expanding, ewm}) "
+                    "compute on the fly — ~2 s on S&P-500 after PR #53's "
+                    "incremental-Pearson vectorisation. Defaults below "
+                    "(step=5 / pearson / rolling) match the precomputed parquet."
+                )
+                _adv_c1, _adv_c2, _adv_c3, _adv_c4 = st.columns(4)
+                with _adv_c1:
+                    rc_step = st.selectbox(
+                        "Step", [1, 5, 21], index=1, key="rc_step",
+                        format_func=lambda x: {
+                            1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)",
+                        }.get(x, str(x)),
+                    )
+                with _adv_c2:
+                    rc_method = st.selectbox(
+                        "Method", ["pearson", "spearman"], key="rc_method",
+                    )
+                with _adv_c3:
+                    rc_window_type = st.selectbox(
+                        "Window type", ["rolling", "expanding", "ewm"], key="rc_wtype",
+                    )
+                with _adv_c4:
+                    # Always visible inside the Advanced expander (kept
+                    # this way per Sprint 2 ux(D)'s fix to the two-click
+                    # trap). The widget's `help=` clarifies the "only
+                    # applies when Window type = ewm" caveat.
+                    rc_ewm_alpha = float(st.number_input(
+                        "EWM α", min_value=0.01, max_value=0.5,
+                        value=0.05, step=0.01, key="rc_ewm_alpha",
+                        help=(
+                            "Exponential weighting decay (Pair Correlation "
+                            "sub-tab only, when Window type = ewm). "
+                            "α=0.05 ≈ span 39 days; α=0.1 ≈ span 19 days. "
+                            "Ignored for rolling/expanding."
+                        ),
+                    ))
 
         rc_expanding = rc_window_type == "expanding"
         # Event Markers popover lives OUTSIDE the form — popovers + forms
