@@ -306,24 +306,26 @@ def render_chart(
     if use_container_width is not None:
         width = "stretch" if use_container_width else "content"
 
-    # Chart title comes from `default_title` and is applied directly to the
-    # Plotly figure. There used to be an editable `st.text_input` here so
-    # users could rename a chart inline — but it shipped on 41 charts as an
-    # always-empty "Add chart title..." input that visually duplicated the
-    # default title above the chart (audit item A1). Removed entirely; the
-    # `title_key` arg is kept as a no-op so callers don't break.
+    # PHASE S (S7): chart titles render as bold markdown ABOVE the chart,
+    # NOT inside the Plotly figure. The previous in-figure title path
+    # (`fig.update_layout(title=...)`) painted text in the top-left corner
+    # of the chart canvas where it overlapped axis labels, legends, and MST
+    # node labels on dense plots — user complaint "graph names inside graphs
+    # are almost always blocking something behind". Single-place fix that
+    # cleans up ~28 callsites across dashboard / pair_analysis / time_machine /
+    # cross_market / eee_analysis without touching them.
+    # Also actively strip any title left by upstream calls (apply_chart_style
+    # injects via the legacy path when callers pass `title=` there).
     if default_title:
-        theme = get_active_theme()
+        st.markdown(f"**{default_title}**")
+    try:
+        # Defensive: shrink top margin + clear any pre-existing layout title.
         cur_margin = dict(fig.layout.margin.to_plotly_json())
-        cur_margin["t"] = max(cur_margin.get("t", 10), 40)
-        fig.update_layout(
-            title=dict(
-                text=default_title,
-                font=dict(size=theme.title_font_size, family=theme.font_family),
-                x=0.01, xanchor="left", yanchor="top",
-            ),
-            margin=cur_margin,
-        )
+        cur_margin["t"] = 10
+        fig.update_layout(title=None, margin=cur_margin)
+    except Exception:
+        # Plotly version drift safety — never block a chart on margin fiddling.
+        pass
 
     config = get_plotly_config(chart_id)
     # NOTE: st.plotly_chart does NOT accept width= in Streamlit 1.41.1 (kwarg
@@ -504,20 +506,22 @@ def inject_custom_css():
         color: #555;
     }
 
-    /* ── PHASE 0 — Loading-state polish ────────────────────────
-       Soften Streamlit's default gray-fade during script reruns.
-       Replace the opaque overlay with a subtle shimmer that conveys
-       "working" without erasing the prior content. Targets Streamlit
-       1.41's `stale element` class applied to .element-container
-       during reruns (selector verified by reading the bundled JS).
+    /* ── PHASE S (S9) — Loading-state polish ───────────────────
+       Replaced the Phase-0 shimmer-sweep with a centered spinner
+       icon. User feedback: "loading animation sucks. maybe there
+       shall be a loading icon". Targets Streamlit 1.41's
+       `stale element` class applied to .element-container during
+       reruns. Two effects layered:
 
-       Two effects layered:
-        1. Reduce opacity of stale elements less aggressively
-           (was ~0.5; now 0.72 — readable while computing)
-        2. Add a subtle shimmer keyframe that signals activity
-           without the eye-grabbing pulse of a full spinner.
-       Apply only to top-level elements (not nested) to avoid
-       double-animation overhead. */
+        1. Reduce opacity of stale elements (0.72 — readable while
+           computing, signals "this is recomputing").
+        2. Center a 28 px ring spinner on top of each stale element,
+           pure CSS (no SVG asset). Border-top-color rotates against
+           a faded border so it reads as a classic spinner.
+
+       The spinner sits on `.element-container.stale > *:first-child`
+       via a ::before pseudo so it doesn't trigger layout shift on
+       reflow (positioned absolute, pointer-events: none). */
     .element-container.stale,
     [data-stale="true"] {
         opacity: 0.72 !important;
@@ -526,26 +530,27 @@ def inject_custom_css():
     .element-container.stale > *:first-child,
     [data-stale="true"] > *:first-child {
         position: relative;
-        overflow: hidden;
     }
-    .element-container.stale > *:first-child::after,
-    [data-stale="true"] > *:first-child::after {
+    .element-container.stale > *:first-child::before,
+    [data-stale="true"] > *:first-child::before {
         content: "";
         position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: linear-gradient(
-            100deg,
-            rgba(255,255,255,0) 0%,
-            rgba(67,97,238,0.06) 50%,
-            rgba(255,255,255,0) 100%
-        );
-        background-size: 200% 100%;
-        animation: stonecoal-shimmer 1.4s ease-in-out infinite;
+        top: 50%;
+        left: 50%;
+        margin-top: -14px;
+        margin-left: -14px;
+        width: 28px;
+        height: 28px;
+        border: 3px solid rgba(67, 97, 238, 0.18);
+        border-top-color: #4361EE;
+        border-radius: 50%;
+        animation: stonecoal-spin 0.9s linear infinite;
         pointer-events: none;
+        z-index: 10;
     }
-    @keyframes stonecoal-shimmer {
-        0%   { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
+    @keyframes stonecoal-spin {
+        0%   { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
     </style>
     """, unsafe_allow_html=True)

@@ -263,8 +263,10 @@ def _render_correlation_heatmap() -> None:
             "Reorder by hierarchical clustering", value=True, key="mo_corr_reorder",
         )
 
-    with st.spinner("Computing correlation matrix..."):
-        corr = _compute_corr(returns, returns_cache_key, dynamic_min_periods, heat_method)
+    # PHASE S (S11): removed `with st.spinner(...)`. `_compute_corr` is
+    # @st.cache_data so 95% of calls hit cache (<10 ms). The new S9
+    # spinner-overlay handles genuine slow paths via .stale class.
+    corr = _compute_corr(returns, returns_cache_key, dynamic_min_periods, heat_method)
     leaf_order = load_dendrogram_order()
 
     if use_clustering_order and leaf_order is not None:
@@ -331,15 +333,17 @@ def _render_pit_correlation() -> None:
     pit_c1, pit_c2, pit_c3 = st.columns(3)
     with pit_c1:
         _win_label = "Window (days)" if _is_finance_pit else "Window (samples)"
-        # Number input replaces the 3-option selectbox. Bounded so the user
-        # can't pick a window larger than the data window itself; default 252
-        # matches the prior selectbox default.
-        pit_window = int(st.number_input(
+        # PHASE S (S2): selectbox with the same {60, 120, 252} set Time
+        # Machine and Rolling Analysis use. Removes the freeform number_input
+        # that produced arbitrary cache-missing values and was inconsistent
+        # with the rest of the dashboard.
+        _pit_window_options = [w for w in (60, 120, 252) if w <= len(trading_dates)]
+        if not _pit_window_options:
+            _pit_window_options = [max(20, len(trading_dates) // 2)]
+        pit_window = int(st.selectbox(
             _win_label,
-            min_value=20,
-            max_value=min(504, max(20, len(trading_dates))),
-            value=252 if 252 <= len(trading_dates) else max(20, len(trading_dates) // 2),
-            step=10,
+            _pit_window_options,
+            index=len(_pit_window_options) - 1,  # default to longest available
             key="pit_window",
             help="Trading days in the rolling window used to compute the correlation snapshot.",
         ))
@@ -382,10 +386,11 @@ def _render_pit_correlation() -> None:
             f"(you picked {pit_date_picked.isoformat()} — weekend/holiday)."
         )
 
-    with st.spinner("Computing snapshot correlation..."):
-        pit_corr = _pit_corr(
-            returns, returns_cache_key, pit_date.isoformat(), pit_window, pit_method,
-        )
+    # PHASE S (S11): removed `with st.spinner(...)`. `_pit_corr` is cached;
+    # genuine recompute is signaled by the S9 spinner-overlay.
+    pit_corr = _pit_corr(
+        returns, returns_cache_key, pit_date.isoformat(), pit_window, pit_method,
+    )
     if pit_corr.empty:
         st.warning("Not enough data for the selected date and window size.")
         return
@@ -523,6 +528,65 @@ def _render_rolling_pair() -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PHASE S (S8) — fragment-scoped toggle helpers
+# ══════════════════════════════════════════════════════════════════════════════
+# These wrap the min/max envelope toggle and the per-sector breakdown toggle.
+# The toggles previously triggered a FULL script rerun (with the gray-fade
+# overlay + scroll position loss + sporadic top-nav reset reports). By
+# placing each toggle + its conditional chart inside `@st.fragment`, the
+# toggle scopes its rerun to the fragment, leaving the rest of the page
+# untouched. Caller passes the precomputed stats DataFrame in.
+
+@st.fragment
+def _render_minmax_envelope_block(market_stats, rc_method_label: str) -> None:
+    """Min/max envelope toggle + chart. Fragment-scoped so toggling doesn't
+    cause a full script rerun (and therefore doesn't bump scroll position
+    or trigger the cascade of side-effects that earlier produced sporadic
+    nav-state weirdness)."""
+    if not st.toggle("Show min/max envelope", key="mo_minmax_toggle"):
+        return
+    fig_mm = go.Figure()
+    fig_mm.add_trace(go.Scatter(
+        x=market_stats.index, y=market_stats["max_corr"],
+        mode="lines", line=dict(width=0), showlegend=False,
+    ))
+    fig_mm.add_trace(go.Scatter(
+        x=market_stats.index, y=market_stats["min_corr"],
+        mode="lines", line=dict(width=0), fill="tonexty",
+        fillcolor="rgba(255,159,28,0.12)", name="Min-Max Range",
+    ))
+    fig_mm.add_trace(go.Scatter(
+        x=market_stats.index, y=market_stats["avg_corr"],
+        mode="lines", name="Mean",
+        line=dict(color=get_colors()["primary"], width=1.5),
+    ))
+    apply_chart_style(fig_mm, height=350, yaxis_title="Correlation")
+    render_chart(fig_mm, chart_id="mo_minmax", filename_base="minmax_range",
+                 title_key="mo_minmax", default_title="Min-Max Correlation Range")
+
+
+@st.fragment
+def _render_per_sector_breakdown_block(sector_stats, intra_cols, sector_label: str) -> None:
+    """Per-sector breakdown toggle + chart. Fragment-scoped — same rationale
+    as `_render_minmax_envelope_block`."""
+    if not st.toggle(f"Show per-{sector_label.lower()} breakdown", key="mo_per_sector_toggle"):
+        return
+    fig_per = go.Figure()
+    for i, col in enumerate(intra_cols):
+        sector_name = col.replace("intra_", "")
+        fig_per.add_trace(go.Scatter(
+            x=sector_stats.index, y=sector_stats[col],
+            mode="lines", name=sector_name,
+            line=dict(color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)], width=1.5),
+        ))
+    apply_chart_style(fig_per, height=420,
+                      yaxis_title=f"Intra-{sector_label} Correlation")
+    render_chart(fig_per, chart_id="mo_per_sector", filename_base="per_sector_corr",
+                 title_key="mo_per_sector",
+                 default_title=f"Per-{sector_label} Correlation")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Page config & global styling
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -620,8 +684,10 @@ if "_prewarm_dispatched" not in st.session_state:
         # itself is GC'd at function exit but its threads finish their
         # work. We don't shutdown(wait=True) because that would block
         # first paint.
-    except Exception:  # noqa: BLE001 — best-effort warm-up; never crash boot
-        pass
+    except Exception as _prewarm_exc:  # noqa: BLE001 — best-effort warm-up; never crash boot
+        # PHASE S (S15): log the failure so silent loader regressions
+        # surface in HF Spaces logs. Still never crashes boot.
+        print(f"[prewarm] background warm-up failed: {_prewarm_exc!r}")
 
 
 # ── Sidebar: 3-dataset selector + BIST numéraire sub-switcher ────────────
@@ -751,21 +817,58 @@ _overview_label = (
 # EEG keeps Market Overview + Time Machine + Methods Lab; the others
 # are gated by `eligible_for_cross_market` / `has_pair_trading`.
 _eligible_for_cross_market = _cap(_active_universe, 'eligible_for_cross_market', True)
-_nav_options: list[str] = []
+_nav_options_list: list[str] = []
 if _eligible_for_cross_market:
-    _nav_options.append("Cross-Market")
-_nav_options.append(_overview_label)
-_nav_options.append("Time Machine")
+    _nav_options_list.append("Cross-Market")
+_nav_options_list.append(_overview_label)
+_nav_options_list.append("Time Machine")
 if _cap(_active_universe, 'has_pair_trading', True):
-    _nav_options.append("Pair Analysis")
-_nav_options.append("Methods Lab")
+    _nav_options_list.append("Pair Analysis")
+_nav_options_list.append("Methods Lab")
+# PHASE S (S1): tuple for identity stability. Streamlit's segmented_control
+# may treat a fresh list-instance as a widget-shape change and reset its
+# selected value even when content is identical across reruns — a tuple
+# avoids the identity churn.
+_nav_options = tuple(_nav_options_list)
 
 # Default landing: Cross-Market for finance, the overview otherwise.
 _default_nav = "Cross-Market" if _eligible_for_cross_market else _overview_label
 
-# Clamp stored nav_page to options the current universe supports.
-if st.session_state.get(_nav_page_key) not in _nav_options:
+# PHASE S (S1) — nav-state preservation on basis flip.
+# User complaint: "choosing a base currency resets the top navbar navigation."
+# Root cause: bist_usd / bist_gold have eligible_for_cross_market=False, so
+# flipping TRY → USD removes "Cross-Market" from `_nav_options`, the clamp
+# below fires, and the user gets snapped to Market Overview. Same pattern
+# bites the EEG transition (no Pair Analysis).
+#
+# Fix: when we clamp a lost nav target, stash it on a `__pending` key. On a
+# subsequent rerun where the stashed target IS in the new options AND the
+# user hasn't navigated elsewhere since (still on _default_nav), restore it.
+# Net effect: TRY → USD → TRY round-trip preserves the user's Cross-Market
+# selection. EEG → BIST round-trip preserves the user's Pair Analysis pick.
+_pending_key = f"{_nav_page_key}__pending"
+_stored = st.session_state.get(_nav_page_key)
+if _stored not in _nav_options:
+    if _stored is not None and _stored != _default_nav:
+        st.session_state[_pending_key] = _stored
+    # Pop FIRST to fully clear the widget's prior state, THEN set the new
+    # value. Plain overwrite (`session_state[k] = v`) sometimes leaves a
+    # stale widget-internal cache around in Streamlit's segmented_control,
+    # which AppTest surfaces as a "value not in options" ValueError. Pop
+    # forces re-initialisation.
+    st.session_state.pop(_nav_page_key, None)
     st.session_state[_nav_page_key] = _default_nav
+elif _pending_key in st.session_state:
+    _pending_value = st.session_state[_pending_key]
+    if _pending_value in _nav_options and _stored == _default_nav:
+        # User round-tripped: restore stashed target. Same pop-then-set
+        # pattern for the same widget-cache reason.
+        st.session_state.pop(_nav_page_key, None)
+        st.session_state[_nav_page_key] = _pending_value
+        st.session_state.pop(_pending_key, None)
+    elif _stored != _default_nav:
+        # User navigated away from the default; drop stash (intent changed).
+        st.session_state.pop(_pending_key, None)
 
 # Sprint 2 PR-P: no `default=` here (would conflict with key= binding to
 # session_state). The clamp block above guarantees a valid value exists.
@@ -828,14 +931,12 @@ if _nav == "Time Machine":
 pipe_meta = load_metadata()
 market_summary = pipe_meta.get("market_summary", {})
 
-# Sprint 2 PR-F + PR-M (merged): header strip carries the date range
-# (PR-F — was 2 clicks deep in a Settings popover), a Theme popover
-# (PR-M — chart-settings hoisted out of the sidebar where it was
-# eating ~280 px), a Freshness popover (PR-F — debug info), and the
-# 5 KPI cards. 8 columns total. The old `_settings_col` was deleted
-# in PR-F when the Settings popover collapsed down to Freshness.
-_date_col, _theme_col, _freshness_col, m1, m2, m3, m4, m5 = st.columns(
-    [1.5, 0.9, 1.1, 0.95, 0.95, 1.0, 1.0, 1.4]
+# PHASE S (S5): Freshness popover removed per user direction. The
+# fetch-metadata is still on disk at data/<universe>/results/
+# pipeline_metadata.json + fetch_metadata.json if anyone needs it.
+# Header strip now: date range | theme | 5 KPI cards (7 columns).
+_date_col, _theme_col, m1, m2, m3, m4, m5 = st.columns(
+    [1.5, 0.9, 1.05, 1.05, 1.1, 1.1, 1.5]
 )
 
 with _theme_col:
@@ -848,26 +949,6 @@ with _date_col:
         min_value=min_date,
         max_value=max_date,
     )
-
-with _freshness_col:
-    # Data Freshness is debug info — low-traffic, fine behind a popover.
-    # NOTE: st.popover does NOT accept width= in Streamlit 1.41.1 (kwarg
-    # landed in ~1.42+). use_container_width=True still works (with a
-    # deprecation warning) and is the only valid spelling for this pin.
-    with st.popover("Freshness", icon=":material/info:", use_container_width=True):
-        fetch_meta = load_fetch_metadata()
-        if fetch_meta:
-            st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
-            st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
-            st.write(f"**{_cap(_active_universe, 'items_label', 'Tickers')}:** {fetch_meta.get('ticker_count', 'N/A')}")
-            if fetch_meta.get("failures"):
-                st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-        if _cap(_active_universe, 'has_validation_report', True):
-            val_path = data_processed() / "validation_report.csv"
-            if val_path.exists():
-                val_df = pd.read_csv(val_path)
-                n_pass = (val_df["status"] == "PASS").sum()
-                st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
 
 if len(date_range) == 2:
     start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
@@ -900,49 +981,11 @@ returns_cache_key = (
 )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Hero strip — sector-recovery validation (Phase 2.4 mutable-candy)
-# ══════════════════════════════════════════════════════════════════════════════
-# The proposal's primary validation criterion was "the MST recovers known
-# economic sectors." Show that result UP FRONT (above the coverage charts),
-# so the demo grader sees it in the first second on this page.
-
-if _cap(_active_universe, 'has_pair_trading', True):
-    try:
-        from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
-        _clusters_df = load_cluster_assignments()
-        _hero_caption_universe = (
-            "Borsa Istanbul" if _active_universe.key == "bist"
-            else "S&P 500" if _active_universe.key == "sp500"
-            else _active_universe.label
-        )
-        if not _clusters_df.empty and "sector" in _clusters_df.columns:
-            _clusters_clean = _clusters_df.dropna(subset=["sector", "cluster_id"])
-            _ari = adjusted_rand_score(_clusters_clean["sector"], _clusters_clean["cluster_id"])
-            _nmi = normalized_mutual_info_score(
-                _clusters_clean["sector"], _clusters_clean["cluster_id"]
-            )
-            # Sprint 2 PR-K: drop the ARI/NMI metric cards from the hero strip.
-            # Per friend's "Cluster Purity is enough" feedback (PR #34 trail),
-            # per-cluster purity in Clustering & Network is the canonical
-            # validation surface. ARI/NMI are still computed for inline mention
-            # in the hero text below.
-            # Sprint 2 PR-L: 4-sentence academic wall trimmed to a single
-            # sentence. Methodology depth (Ward linkage, Mantegna distance,
-            # n_clusters) lives in the help= tooltip below — hover to see.
-            with st.container(border=True):
-                st.markdown(
-                    f"Ward clustering on Mantegna correlation distance reproduces the official "
-                    f"{_hero_caption_universe} sector partition. Drill into **Clustering & Network** "
-                    "for per-cluster purity, dendrogram + MST.",
-                    help=(
-                        f"ARI = {_ari:.2f}, NMI = {_nmi:.2f} · Ward linkage · "
-                        f"n_clusters = {_clusters_clean['cluster_id'].nunique()}"
-                    ),
-                )
-    except Exception:
-        # Hero strip is decorative — never block the page if it errors.
-        pass
+# PHASE S (S6): hero strip removed per user direction. The "Ward
+# clustering on Mantegna correlation distance reproduces…" callout
+# was analyst narration ("reproduces", "Drill into"), not a useful
+# UI affordance. ARI/NMI are still computed and displayed inside the
+# Clustering & Network sub-tab itself — that's the canonical surface.
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1536,9 +1579,7 @@ with tab_cluster:
         _bridge_scope = "across the market" if _domain_mst == "finance" else "across the network"
         section_header(
             "Minimum Spanning Tree",
-            f"The MST reveals the backbone correlation structure. Nodes are colored by "
-            f"{_sector_mst.lower()} and sized by degree. Hub {_items_mst.lower()} act as bridges "
-            f"{_bridge_scope}.",
+            f"Nodes colored by {_sector_mst.lower()}, sized by degree.",
         )
 
         mst_edges = load_mst_edges()
@@ -1680,41 +1721,38 @@ with tab_rolling:
             ),
         )
 
-        # st.form gates the 4 outer rolling widgets behind an explicit
-        # "Recompute" submit button. Off-grid params (e.g. step=1, spearman,
-        # window=504) cost up to 12 s on S&P; without the form, the user
-        # paid that cost on every intermediate selectbox change. With the
-        # form, widget changes accumulate locally, then a single submit
-        # triggers one script rerun. Precomputed combos (window ∈ {60,120,
-        # 252}, step=5, pearson, rolling) still load instantly because the
-        # downstream `_use_precomputed_market` check hits the parquet cache.
-        # Sprint 2 PR-H: caption refined to spell out the configure-then-apply
-        # affordance + give cost estimate for off-grid params. Original copy
-        # implied the form was a continuous control; in fact it's a batch one.
+        # st.form gates the rolling widgets behind an explicit "Recompute"
+        # submit button. Off-grid params (e.g. step=1, spearman, expanding)
+        # cost up to 12 s on S&P; without the form, the user paid that cost
+        # on every intermediate selectbox change. With the form, widget
+        # changes accumulate locally, then a single submit triggers one
+        # script rerun. Precomputed combos (window ∈ {60, 120, 252}, step=5,
+        # pearson, rolling) still load instantly because the downstream
+        # `_use_precomputed_market` check hits the parquet cache.
+        # PHASE S (S2): window selector standardised to {60, 120, 252}
+        # matching Time Machine. Removes the freeform 20–504 number_input
+        # that was producing arbitrary cache-missing values.
         st.caption(
             ":material/touch_app: Configure window / step / method, then click "
-            "**Recompute** to apply. Precomputed combos "
-            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly; "
-            "off-grid params take ~10–15 s on S&P. "
+            "**Recompute** to apply. Default combo (window=252, step=5, pearson, "
+            "rolling) loads instantly; off-grid params take ~10–15 s on S&P. "
             "**EWM α** only applies when *Window type = ewm*."
         )
 
         with st.form("rolling_params", border=False):
-            # All 5 widgets always render. Earlier version conditionally
-            # showed EWM α only AFTER a Recompute with window_type=ewm —
-            # a two-click trap, because Streamlit forms don't propagate
-            # in-form widget changes until submit (so the disabled-trick
-            # doesn't work either). Always-visible α with clear `help=`
-            # copy is cleaner: harmless to touch when not in ewm mode
-            # (value is just ignored by the rolling/expanding paths).
-            # Audit item A4.
-            _form_cols = st.columns([2, 2, 2, 2, 2, 1.2])
+            # PHASE S (S3): widgets in one row, Recompute button in its own
+            # row below, horizontally centered. Previous layout crammed the
+            # button into a 6th column and used a `&nbsp;` markdown hack to
+            # force vertical alignment — brittle and ugly. New layout uses
+            # natural form flow.
+            _form_cols = st.columns(5)
             with _form_cols[0]:
-                rc_window = int(st.number_input(
+                rc_window = int(st.selectbox(
                     "Window (days)" if _is_finance_rc else "Window (samples)",
-                    min_value=20, max_value=504, value=252, step=10,
+                    [60, 120, 252],
+                    index=2,
                     key="rc_win",
-                    help="Trading days in each rolling window. {60, 120, 252} hit the precomputed parquet (instant); other values compute on the fly.",
+                    help="Trading days in each rolling window. All values hit the precomputed parquet (instant); standardised to match Time Machine.",
                 ))
             with _form_cols[1]:
                 rc_step = st.selectbox(
@@ -1731,18 +1769,10 @@ with tab_rolling:
                     value=0.05, step=0.01, key="rc_ewm_alpha",
                     help="Exponential weighting decay (Pair Correlation sub-tab only, when Window type = ewm). α=0.05 ≈ span 39 days; α=0.1 ≈ span 19 days. Ignored for rolling/expanding.",
                 ))
-            with _form_cols[5]:
-                # Vertical alignment hack: empty markdown matches the label
-                # height of the selectboxes so the button aligns to their
-                # input row, not their label row.
-                st.markdown("&nbsp;", unsafe_allow_html=True)
-                # Sprint 2 PR-H: dropped `type="primary"` (loud-blue) → default
-                # `secondary` (subtle gray). Streamlit forms don't expose
-                # widget-change events before submit (so a true "dirty state"
-                # cue is not feasible in pure-Python Streamlit), and a
-                # permanently-loud button trained users to ignore it. Gray
-                # button + clarified caption above tell the same story without
-                # the constant visual demand.
+
+            # Recompute button in its own centered row.
+            _btn_cols = st.columns([3, 2, 3])
+            with _btn_cols[1]:
                 st.form_submit_button(
                     "Recompute", use_container_width=True,
                 )
@@ -1837,25 +1867,10 @@ with tab_rolling:
                 render_chart(fig_rc, chart_id="mo_rolling_corr", filename_base="rolling_correlation",
                              title_key="mo_rolling_corr", default_title="Rolling Correlation Stats")
 
-                if st.toggle("Show min/max envelope", key="mo_minmax_toggle"):
-                    fig_mm = go.Figure()
-                    fig_mm.add_trace(go.Scatter(
-                        x=market_stats.index, y=market_stats["max_corr"],
-                        mode="lines", line=dict(width=0), showlegend=False,
-                    ))
-                    fig_mm.add_trace(go.Scatter(
-                        x=market_stats.index, y=market_stats["min_corr"],
-                        mode="lines", line=dict(width=0), fill="tonexty",
-                        fillcolor="rgba(255,159,28,0.12)", name="Min-Max Range",
-                    ))
-                    fig_mm.add_trace(go.Scatter(
-                        x=market_stats.index, y=market_stats["avg_corr"],
-                        mode="lines", name="Mean",
-                        line=dict(color=get_colors()["primary"], width=1.5),
-                    ))
-                    apply_chart_style(fig_mm, height=350, yaxis_title="Correlation")
-                    render_chart(fig_mm, chart_id="mo_minmax", filename_base="minmax_range",
-                                 title_key="mo_minmax", default_title="Min-Max Correlation Range")
+                # PHASE S (S8): fragment-scoped toggle so flipping the envelope
+                # doesn't trigger a full script rerun (which was causing scroll
+                # jumps + sporadic nav weirdness).
+                _render_minmax_envelope_block(market_stats, rc_method)
             else:
                 st.warning("Not enough data for the selected window size.")
 
@@ -1926,20 +1941,8 @@ with tab_rolling:
                     intra_cols = [c for c in sector_stats.columns
                                   if c.startswith("intra_") and c != "intra_sector_avg"]
                     if intra_cols:
-                        if st.toggle(f"Show per-{_sector_rc.lower()} breakdown", key="mo_per_sector_toggle"):
-                            fig_per = go.Figure()
-                            for i, col in enumerate(intra_cols):
-                                sector_name = col.replace("intra_", "")
-                                fig_per.add_trace(go.Scatter(
-                                    x=sector_stats.index, y=sector_stats[col],
-                                    mode="lines", name=sector_name,
-                                    line=dict(color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)], width=1.5),
-                                ))
-                            apply_chart_style(fig_per, height=420,
-                                              yaxis_title=f"Intra-{_sector_rc} Correlation")
-                            render_chart(fig_per, chart_id="mo_per_sector", filename_base="per_sector_corr",
-                                         title_key="mo_per_sector",
-                                         default_title=f"Per-{_sector_rc} Correlation")
+                        # PHASE S (S8): fragment-scoped toggle.
+                        _render_per_sector_breakdown_block(sector_stats, intra_cols, _sector_rc)
                 else:
                     st.warning(f"Not enough data for {_sector_rc.lower()} stats with this window.")
             else:

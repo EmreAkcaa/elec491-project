@@ -437,27 +437,31 @@ def _render_bist_numeraire_section() -> None:
                     use_container_width=True,
                 )
 
-        # Honest interpretation paragraph
+        # PHASE S (S10): trimmed from a 20-sentence "Reading." wall to a
+        # 3-sentence punchline + numbers. Long-form interpretation moved to
+        # the section header's `help=` tooltip (hover for full explanation).
+        _bist_top_pct = bist_data['eig']['eigenvalue'].max() / bist_data['eig']['eigenvalue'].sum() * 100
+        _usd_top_pct = usd_data['eig']['eigenvalue'].max() / usd_data['eig']['eigenvalue'].sum() * 100
+        _gold_top_pct = gold_data['eig']['eigenvalue'].max() / gold_data['eig']['eigenvalue'].sum() * 100
         st.markdown(
-            "**Reading.** The naïve hypothesis was that stripping the TRY leg "
-            "(re-expressing returns in USD or gold) should remove a market-wide "
-            "common factor and reduce the top eigenvalue's variance share. The "
-            "experiment shows the **opposite** direction: the share rises from "
-            f"**{bist_data['eig']['eigenvalue'].max() / bist_data['eig']['eigenvalue'].sum() * 100:.1f}%** (TRY) "
-            f"→ **{usd_data['eig']['eigenvalue'].max() / usd_data['eig']['eigenvalue'].sum() * 100:.1f}%** (USD) "
-            f"→ **{gold_data['eig']['eigenvalue'].max() / gold_data['eig']['eigenvalue'].sum() * 100:.1f}%** (gold), "
-            "and effective dimensionality drops from "
-            f"**{bist_data['summary']['d_eff']:.2f}** to **{gold_data['summary']['d_eff']:.2f}**. "
-            "Interpretation: TRY volatility is a *dispersion source* for BIST "
-            "equities — exporters and importers respond oppositely to TRY moves, "
-            "so removing the currency leg amplifies the residual global-equity-risk "
-            "common factor. The decomposition above shows the secondary effect: "
-            "mode #2 of BIST's correlation matrix is a **pure banking factor** under "
-            "every numéraire (5 of 73 tickers carry ~60% of its variance vs a 9.6% "
-            "population baseline), and its variance share itself weakens 22% under "
-            "USD/Gold — the bank-vs-market spread is largely TRY-rate-driven. "
-            "Numéraire choice is a substantive modelling decision, not a "
-            "noise-removal step."
+            f"**Top-eigenvalue share:** TRY **{_bist_top_pct:.1f}%** → "
+            f"USD **{_usd_top_pct:.1f}%** → Gold **{_gold_top_pct:.1f}%**. "
+            f"Effective dimensionality drops from "
+            f"**{bist_data['summary']['d_eff']:.2f}** to "
+            f"**{gold_data['summary']['d_eff']:.2f}**. "
+            "TRY volatility is a dispersion source — removing the currency leg "
+            "concentrates rather than diffuses the common factor.",
+            help=(
+                "Naïve hypothesis: stripping the TRY leg removes a market-wide "
+                "common factor and reduces the top eigenvalue's share. Result: "
+                "the OPPOSITE — exporters and importers respond oppositely to "
+                "TRY moves, so removing the currency amplifies the residual "
+                "global-equity-risk common factor. Mode #2 of BIST's correlation "
+                "matrix is a pure banking factor under every numéraire; its share "
+                "weakens 22% under USD/Gold, telling us the bank-vs-market spread "
+                "is largely TRY-rate-driven. Numéraire choice is a substantive "
+                "modelling decision, not a noise-removal step."
+            ),
         )
 
 
