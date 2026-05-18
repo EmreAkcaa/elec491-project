@@ -92,7 +92,7 @@ from utils import (  # noqa: E402
     get_colors, SECTOR_PALETTE, CHART_LAYOUT, apply_chart_style, inject_custom_css,
     section_header, render_chart, render_matrix_heatmap,
 )
-from chart_themes import render_theme_sidebar  # noqa: E402
+from chart_themes import render_theme_popover  # noqa: E402
 
 # HF Spaces rebuilds the container on every deploy, so the stale-module cache
 # problem that motivated importlib.reload on Streamlit Cloud no longer applies.
@@ -577,7 +577,11 @@ with st.sidebar:
         st.markdown(f"**Dataset:** {_AVAIL_UNIVERSES[0].short_label}")
         st.caption(_AVAIL_UNIVERSES[0].description)
         st.markdown("---")
-    render_theme_sidebar()
+    # Sprint 2 PR-M: chart-settings panel hoisted out of the sidebar into a
+    # header-strip popover. The sidebar previously rendered 5 always-visible
+    # expanders (Colors / Typography / Lines & Axes / Layout / Export Defaults)
+    # eating ~280 px the demo audience never touched. Sidebar now only carries
+    # the Dataset selector + per-universe description.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Top Header & Navigation
@@ -672,7 +676,13 @@ if _nav == "Pair Analysis":
 pipe_meta = load_metadata()
 market_summary = pipe_meta.get("market_summary", {})
 
-_settings_col, m1, m2, m3, m4, m5 = st.columns([1, 1, 1, 1, 1, 1.5])
+# Sprint 2 PR-M: added _theme_col so the Chart-Settings popover sits in
+# the header strip next to the Settings popover (was previously taking
+# 280 px of always-visible sidebar real estate).
+_settings_col, _theme_col, m1, m2, m3, m4, m5 = st.columns([0.9, 0.9, 1, 1, 1, 1, 1.4])
+
+with _theme_col:
+    render_theme_popover()
 
 with _settings_col:
     # NOTE: st.popover does NOT accept width= in Streamlit 1.41.1 (kwarg

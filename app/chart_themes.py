@@ -269,10 +269,31 @@ _BG_OPTIONS = {
 }
 
 
-def render_theme_sidebar() -> None:
-    """Render the full chart-settings panel inside st.sidebar."""
-    st.markdown("### Chart Settings")
+def render_theme_popover() -> None:
+    """Render the chart-settings panel inside a header-strip popover.
 
+    Sprint 2 PR-M: hoisted out of the sidebar (where 5 always-visible
+    expanders ate ~280 px the demo audience never touched) into a
+    single popover discoverable from the header strip.
+
+    The function body is identical to the legacy render_theme_sidebar();
+    only the chrome (popover container instead of inline) and the dropped
+    '### Chart Settings' markdown header (the popover label serves) differ.
+    """
+    with st.popover(
+        "Theme",
+        icon=":material/palette:",
+        use_container_width=True,
+    ):
+        _render_theme_controls()
+
+
+def _render_theme_controls() -> None:
+    """The actual widgets that build / mutate the active ChartTheme.
+
+    Extracted out of render_theme_popover so future surfaces (e.g. a
+    settings page) can reuse it without copying the implementation.
+    """
     theme = get_active_theme()
 
     # ── Preset selector ──────────────────────────────────────────────────
