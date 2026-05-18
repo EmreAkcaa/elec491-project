@@ -1536,11 +1536,15 @@ with tab_rolling:
         # triggers one script rerun. Precomputed combos (window ∈ {60,120,
         # 252}, step=5, pearson, rolling) still load instantly because the
         # downstream `_use_precomputed_market` check hits the parquet cache.
+        # Sprint 2 PR-H: caption refined to spell out the configure-then-apply
+        # affordance + give cost estimate for off-grid params. Original copy
+        # implied the form was a continuous control; in fact it's a batch one.
         st.caption(
-            ":material/info: Configure window / step / method, then click "
-            "**Recompute** to refresh charts. Precomputed combos "
-            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly. "
-            "**EWM α** only applies when *Window type = ewm*; otherwise ignored."
+            ":material/touch_app: Configure window / step / method, then click "
+            "**Recompute** to apply. Precomputed combos "
+            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly; "
+            "off-grid params take ~10–15 s on S&P. "
+            "**EWM α** only applies when *Window type = ewm*."
         )
 
         with st.form("rolling_params", border=False):
@@ -1580,8 +1584,15 @@ with tab_rolling:
                 # height of the selectboxes so the button aligns to their
                 # input row, not their label row.
                 st.markdown("&nbsp;", unsafe_allow_html=True)
+                # Sprint 2 PR-H: dropped `type="primary"` (loud-blue) → default
+                # `secondary` (subtle gray). Streamlit forms don't expose
+                # widget-change events before submit (so a true "dirty state"
+                # cue is not feasible in pure-Python Streamlit), and a
+                # permanently-loud button trained users to ignore it. Gray
+                # button + clarified caption above tell the same story without
+                # the constant visual demand.
                 st.form_submit_button(
-                    "Recompute", type="primary", use_container_width=True,
+                    "Recompute", use_container_width=True,
                 )
 
         rc_expanding = rc_window_type == "expanding"
