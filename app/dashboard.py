@@ -637,11 +637,17 @@ _default_nav = "Cross-Market" if _eligible_for_cross_market else _overview_label
 if st.session_state.get("nav_page") not in _nav_options:
     st.session_state["nav_page"] = _default_nav
 
+# Sprint 2 PR-P: dropped `default=_default_nav` from this call. Streamlit
+# emits a warning when a widget has BOTH `key=` (binding session_state)
+# AND `default=` (passing a default) — the two can collide. The guard
+# block above already sets `st.session_state["nav_page"]` to a valid
+# option on fresh-session AND when the active universe changes, so the
+# `default=` here was redundant and tripped the warning banner on every
+# first paint.
 _nav = st.segmented_control(
     "Navigate",
     _nav_options,
     key="nav_page",
-    default=_default_nav,
     label_visibility="collapsed",
 )
 
@@ -676,42 +682,46 @@ if _nav == "Pair Analysis":
 pipe_meta = load_metadata()
 market_summary = pipe_meta.get("market_summary", {})
 
-# Sprint 2 PR-M: added _theme_col so the Chart-Settings popover sits in
-# the header strip next to the Settings popover (was previously taking
-# 280 px of always-visible sidebar real estate).
-_settings_col, _theme_col, m1, m2, m3, m4, m5 = st.columns([0.9, 0.9, 1, 1, 1, 1, 1.4])
+# Sprint 2 PR-F + PR-M (merged): header strip carries the date range
+# (PR-F — was 2 clicks deep in a Settings popover), a Theme popover
+# (PR-M — chart-settings hoisted out of the sidebar where it was
+# eating ~280 px), a Freshness popover (PR-F — debug info), and the
+# 5 KPI cards. 8 columns total. The old `_settings_col` was deleted
+# in PR-F when the Settings popover collapsed down to Freshness.
+_date_col, _theme_col, _freshness_col, m1, m2, m3, m4, m5 = st.columns(
+    [1.5, 0.9, 1.1, 0.95, 0.95, 1.0, 1.0, 1.4]
+)
 
 with _theme_col:
     render_theme_popover()
 
-with _settings_col:
+with _date_col:
+    date_range = st.date_input(
+        "Date range",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+    )
+
+with _freshness_col:
+    # Data Freshness is debug info — low-traffic, fine behind a popover.
     # NOTE: st.popover does NOT accept width= in Streamlit 1.41.1 (kwarg
     # landed in ~1.42+). use_container_width=True still works (with a
     # deprecation warning) and is the only valid spelling for this pin.
-    with st.popover("Settings", icon=":material/settings:", use_container_width=True):
-        date_range = st.date_input(
-            "Date range",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
-        )
-        # Streamlit 1.41+ rejects popovers nested inside other popovers
-        # (StreamlitAPIException). Use st.expander here — visually similar,
-        # nestable inside popovers.
-        with st.expander("Data Freshness", icon=":material/info:"):
-            fetch_meta = load_fetch_metadata()
-            if fetch_meta:
-                st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
-                st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
-                st.write(f"**{_cap(_active_universe, 'items_label', 'Tickers')}:** {fetch_meta.get('ticker_count', 'N/A')}")
-                if fetch_meta.get("failures"):
-                    st.write(f"**Failures:** {len(fetch_meta['failures'])}")
-            if _cap(_active_universe, 'has_validation_report', True):
-                val_path = data_processed() / "validation_report.csv"
-                if val_path.exists():
-                    val_df = pd.read_csv(val_path)
-                    n_pass = (val_df["status"] == "PASS").sum()
-                    st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
+    with st.popover("Freshness", icon=":material/info:", use_container_width=True):
+        fetch_meta = load_fetch_metadata()
+        if fetch_meta:
+            st.write(f"**Fetch:** {fetch_meta.get('timestamp', 'N/A')[:16]}")
+            st.write(f"**Source:** {fetch_meta.get('source', 'N/A')}")
+            st.write(f"**{_cap(_active_universe, 'items_label', 'Tickers')}:** {fetch_meta.get('ticker_count', 'N/A')}")
+            if fetch_meta.get("failures"):
+                st.write(f"**Failures:** {len(fetch_meta['failures'])}")
+        if _cap(_active_universe, 'has_validation_report', True):
+            val_path = data_processed() / "validation_report.csv"
+            if val_path.exists():
+                val_df = pd.read_csv(val_path)
+                n_pass = (val_df["status"] == "PASS").sum()
+                st.write(f"**Validation:** {n_pass}/{len(val_df)} passed")
 
 if len(date_range) == 2:
     start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
@@ -766,18 +776,23 @@ if _cap(_active_universe, 'has_pair_trading', True):
             _nmi = normalized_mutual_info_score(
                 _clusters_clean["sector"], _clusters_clean["cluster_id"]
             )
+            # Sprint 2 PR-K: drop the ARI/NMI metric cards from the hero strip.
+            # Per friend's "Cluster Purity is enough" feedback (PR #34 trail),
+            # per-cluster purity in Clustering & Network is the canonical
+            # validation surface. ARI/NMI are still computed for inline mention
+            # in the hero text below.
+            # Sprint 2 PR-L: 4-sentence academic wall trimmed to a single
+            # sentence. Methodology depth (Ward linkage, Mantegna distance,
+            # n_clusters) lives in the help= tooltip below — hover to see.
             with st.container(border=True):
-                hero_c1, hero_c2, hero_c3 = st.columns([1, 1, 3])
-                hero_c1.metric("Sector ARI", f"{_ari:.2f}",
-                               help="Adjusted Rand Index between Ward clusters and official sectors. 0=random, 1=perfect.")
-                hero_c2.metric("Sector NMI", f"{_nmi:.2f}",
-                               help="Normalized Mutual Information between Ward clusters and official sectors.")
-                hero_c3.markdown(
-                    f"**Statistical clusters extracted from raw price correlations recover the "
-                    f"official {_hero_caption_universe} sector classification with "
-                    f"**ARI = {_ari:.2f}, NMI = {_nmi:.2f}** (Ward linkage on Mantegna distance, "
-                    f"n_clusters = {_clusters_clean['cluster_id'].nunique()}). "
-                    "Open *Clustering & Network* below for the MST and dendrogram."
+                st.markdown(
+                    f"Ward clustering on Mantegna correlation distance reproduces the official "
+                    f"{_hero_caption_universe} sector partition. Drill into **Clustering & Network** "
+                    "for per-cluster purity, dendrogram + MST.",
+                    help=(
+                        f"ARI = {_ari:.2f}, NMI = {_nmi:.2f} · Ward linkage · "
+                        f"n_clusters = {_clusters_clean['cluster_id'].nunique()}"
+                    ),
                 )
     except Exception:
         # Hero strip is decorative — never block the page if it errors.
@@ -1468,6 +1483,14 @@ with tab_cluster:
                 ))
             render_chart(fig_mst, chart_id="mo_mst", filename_base="mst_network",
                          title_key="mo_mst", default_title="Minimum Spanning Tree")
+            # Sprint 2 PR-I: subtitle disambiguates this MST from the two others
+            # that show up elsewhere in the app (RMT-denoised + per-wavelet-scale).
+            st.caption(
+                "Built from full-period Pearson correlation distance "
+                "d = √(2(1−ρ)). The RMT-denoised version (noise eigenvalues "
+                "replaced) lives under **EEE Analysis → RMT Denoising**; "
+                "per-frequency-band MSTs live under **EEE Analysis → Wavelet Multi-Scale**."
+            )
 
             # Hub table behind an expander — was always-on in the right column
             # of a [3,2] split, now hidden by default to let the MST breathe.
@@ -1522,11 +1545,15 @@ with tab_rolling:
         # triggers one script rerun. Precomputed combos (window ∈ {60,120,
         # 252}, step=5, pearson, rolling) still load instantly because the
         # downstream `_use_precomputed_market` check hits the parquet cache.
+        # Sprint 2 PR-H: caption refined to spell out the configure-then-apply
+        # affordance + give cost estimate for off-grid params. Original copy
+        # implied the form was a continuous control; in fact it's a batch one.
         st.caption(
-            ":material/info: Configure window / step / method, then click "
-            "**Recompute** to refresh charts. Precomputed combos "
-            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly. "
-            "**EWM α** only applies when *Window type = ewm*; otherwise ignored."
+            ":material/touch_app: Configure window / step / method, then click "
+            "**Recompute** to apply. Precomputed combos "
+            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly; "
+            "off-grid params take ~10–15 s on S&P. "
+            "**EWM α** only applies when *Window type = ewm*."
         )
 
         with st.form("rolling_params", border=False):
@@ -1566,8 +1593,15 @@ with tab_rolling:
                 # height of the selectboxes so the button aligns to their
                 # input row, not their label row.
                 st.markdown("&nbsp;", unsafe_allow_html=True)
+                # Sprint 2 PR-H: dropped `type="primary"` (loud-blue) → default
+                # `secondary` (subtle gray). Streamlit forms don't expose
+                # widget-change events before submit (so a true "dirty state"
+                # cue is not feasible in pure-Python Streamlit), and a
+                # permanently-loud button trained users to ignore it. Gray
+                # button + clarified caption above tell the same story without
+                # the constant visual demand.
                 st.form_submit_button(
-                    "Recompute", type="primary", use_container_width=True,
+                    "Recompute", use_container_width=True,
                 )
 
         rc_expanding = rc_window_type == "expanding"

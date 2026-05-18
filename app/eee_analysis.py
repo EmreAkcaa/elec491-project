@@ -394,6 +394,27 @@ def render_rmt(sector_map: dict, *, u=None):
             render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
                          title_key="rmt_mst",
                          default_title=f"MST Network ({mst_choice}, nodes sized by betweenness)")
+            # Sprint 2 PR-I: subtitle clarifies what this MST is vs the
+            # Clustering & Network tab's raw MST and the Wavelet per-scale MSTs.
+            if mst_choice == "Raw":
+                st.caption(
+                    "Raw MST on Pearson correlation distance — same metric as "
+                    "**Clustering & Network → MST**. Toggle 'Denoised' to see "
+                    "the RMT-cleaned version."
+                )
+            elif mst_choice == "Denoised":
+                st.caption(
+                    "Built on the **denoised** correlation matrix — noise "
+                    "eigenvalues (inside the Marchenko–Pastur band) replaced "
+                    "by their mean before reconstruction. Signal-only network "
+                    "backbone."
+                )
+            else:  # "Both (overlay)"
+                st.caption(
+                    "Raw and Denoised MSTs overlaid on the same Kamada-Kawai "
+                    "layout — edges that survive denoising are the structurally "
+                    "meaningful ones."
+                )
 
         # Denoised correlation heatmap (full width)
         st.markdown("**Denoised Correlation Matrix** — eigenvalues outside the MP band reconstructed; noise eigenvalues replaced with their mean.")
@@ -574,6 +595,14 @@ def _render_wavelet_for_scale(
             f"(Σdistance: {total_weight:.1f}, nodes sized by betweenness)"
         ),
     )
+    # Sprint 2 PR-I: subtitle clarifies this MST is computed on a single
+    # wavelet frequency band only, contrasting with the full-period MSTs
+    # elsewhere in the app.
+    st.caption(
+        f"Built on DWT detail coefficients at scale {scale_level} "
+        f"({scale_label}) — isolates co-movement at this frequency band only. "
+        "Contrasts with the full-period MST in **Clustering & Network**."
+    )
 
 
 def render_wavelets(sector_map: dict, *, u=None):
@@ -615,34 +644,40 @@ def render_wavelets(sector_map: dict, *, u=None):
         # already covers that view.
         _render_wavelet_for_scale(sector_map, scales, _sector_label(u))
 
-        # Scale comparison summary
-        st.markdown("**Cross-Scale Summary**")
-        summary_rows = []
-        for lvl_str, label in scales.items():
-            lvl = int(lvl_str)
-            c = load_wavelet_corr(lvl)
-            if not c.empty:
-                m = np.triu(np.ones(c.shape, dtype=bool), k=1)
-                vals = c.values[m]
-                vals = vals[np.isfinite(vals)]
-                e = load_wavelet_mst_edges(lvl)
-                metrics = load_wavelet_mst_metrics(lvl)
-                row = {
-                    "Scale": lvl,
-                    "Label": label,
-                    "Avg Correlation": round(float(np.mean(vals)), 4),
-                    "Std Correlation": round(float(np.std(vals)), 4),
-                    "MST Total Weight": round(float(e["distance"].sum()), 1) if not e.empty else None,
-                    "MST Edges": int(len(e)) if not e.empty else None,
-                }
-                if not metrics.empty and "betweenness_centrality" in metrics.columns:
-                    bc = metrics["betweenness_centrality"].astype(float)
-                    deg = metrics["degree"].astype(float) if "degree" in metrics.columns else pd.Series(dtype=float)
-                    row["Max Betweenness"] = round(float(bc.max()), 4)
-                    row["Avg Degree"] = round(float(deg.mean()), 2) if not deg.empty else None
-                summary_rows.append(row)
-        if summary_rows:
-            st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+        # Scale comparison summary — wrapped in expander (collapsed by default)
+        # so the per-scale MST above is the primary view. Grader / cross-scale
+        # comparison can pop the expander to see all 7 rows side-by-side.
+        # Build cost is the same either way (st.expander only hides children,
+        # doesn't skip execution); this is pure visual decluttering.
+        with st.expander("Cross-scale comparison (all 7 scales)", expanded=False):
+            summary_rows = []
+            for lvl_str, label in scales.items():
+                lvl = int(lvl_str)
+                c = load_wavelet_corr(lvl)
+                if not c.empty:
+                    m = np.triu(np.ones(c.shape, dtype=bool), k=1)
+                    vals = c.values[m]
+                    vals = vals[np.isfinite(vals)]
+                    e = load_wavelet_mst_edges(lvl)
+                    metrics = load_wavelet_mst_metrics(lvl)
+                    row = {
+                        "Scale": lvl,
+                        "Label": label,
+                        "Avg Correlation": round(float(np.mean(vals)), 4),
+                        "Std Correlation": round(float(np.std(vals)), 4),
+                        "MST Total Weight": round(float(e["distance"].sum()), 1) if not e.empty else None,
+                        "MST Edges": int(len(e)) if not e.empty else None,
+                    }
+                    if not metrics.empty and "betweenness_centrality" in metrics.columns:
+                        bc = metrics["betweenness_centrality"].astype(float)
+                        deg = metrics["degree"].astype(float) if "degree" in metrics.columns else pd.Series(dtype=float)
+                        row["Max Betweenness"] = round(float(bc.max()), 4)
+                        row["Avg Degree"] = round(float(deg.mean()), 2) if not deg.empty else None
+                    summary_rows.append(row)
+            if summary_rows:
+                st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+            else:
+                st.caption("No wavelet scale results found.")
 
 
 def render_transfer_entropy(sector_map: dict, *, u=None):

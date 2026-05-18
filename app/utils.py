@@ -412,16 +412,30 @@ def inject_custom_css():
         border: none !important;
         transition: all 0.15s ease;
     }
-    div[data-testid="stSegmentedControl"] button[aria-checked="true"] {
+    /* Sprint 2 PR-N: amplify active-state visual weight on top-nav
+       (segmented_control). Streamlit 1.41 dropped the aria-checked attr
+       and ships per-state data-testids instead:
+          stBaseButton-segmented_control        → inactive
+          stBaseButton-segmented_controlActive  → active
+       Box-shadow + bold + solid bg make the active state pop; hover bg
+       cues clickability on the inactive ones. */
+    button[data-testid="stBaseButton-segmented_controlActive"] {
         background: #4361EE !important;
         color: #ffffff !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(67, 97, 238, 0.30) !important;
+        border-color: #4361EE !important;
     }
-    div[data-testid="stSegmentedControl"] button:hover:not([aria-checked="true"]) {
-        color: #c8cdd6 !important;
-        background: rgba(67,97,238,0.08) !important;
+    button[data-testid="stBaseButton-segmented_control"]:hover {
+        background: rgba(67, 97, 238, 0.15) !important;
+        color: #4361EE !important;
+        cursor: pointer;
     }
 
-    /* ── Sub-tabs — clean underline style ────────────────────── */
+    /* ── Sub-tabs — clean underline style ──────────────────────
+       Sprint 2 PR-N: thicker underline (3px) + subtle background tint
+       on the active tab so first-time graders can spot the active
+       sub-tab without squinting. */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0;
         border-bottom: 2px solid #e9ecef;
@@ -433,13 +447,22 @@ def inject_custom_css():
         border-bottom: 2px solid transparent;
         padding: 10px 20px;
         margin-bottom: -2px;
+        transition: all 0.15s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) {
+        color: #4361EE;
+        background: rgba(67, 97, 238, 0.04);
+        cursor: pointer;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         color: #4361EE;
-        border-bottom-color: #4361EE;
+        border-bottom: 3px solid #4361EE;
+        background: rgba(67, 97, 238, 0.06);
+        font-weight: 700;
     }
     .stTabs [data-baseweb="tab-highlight"] {
         background-color: #4361EE !important;
+        height: 3px !important;
     }
 
     /* ── Popover panels ──────────────────────────────────────── */
@@ -611,7 +634,7 @@ def _downsample_if_oversize(df: pd.DataFrame, max_rows: int = _DASHBOARD_MAX_ROW
     return df.iloc[::stride].copy()
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading prices (first time only)…")
 def _load_adj_close(universe: str) -> pd.DataFrame:
     df = pd.read_parquet(data_processed(universe) / "adj_close.parquet")
     df = _ensure_datetime_index(df)
@@ -622,7 +645,7 @@ def load_adj_close() -> pd.DataFrame:
     return _load_adj_close(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading log returns (first time only)…")
 def _load_log_returns(universe: str) -> pd.DataFrame:
     df = pd.read_parquet(data_processed(universe) / "log_returns.parquet")
     df = _ensure_datetime_index(df)
@@ -810,7 +833,7 @@ def load_eigenvalue_spectrum() -> pd.DataFrame:
     return _load_eigenvalue_spectrum(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading RMT-denoised correlation matrix…")
 def _load_denoised_corr(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "denoised_corr.parquet"
     if path.exists():
@@ -834,7 +857,7 @@ def load_denoised_mst_edges() -> pd.DataFrame:
     return _load_denoised_mst_edges(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading partial correlation matrix…")
 def _load_partial_corr(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "partial_corr.parquet"
     if path.exists():
@@ -846,7 +869,7 @@ def load_partial_corr() -> pd.DataFrame:
     return _load_partial_corr(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading precision matrix…")
 def _load_precision_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "precision_matrix.parquet"
     if path.exists():
@@ -984,7 +1007,7 @@ def load_te_node_roles() -> pd.DataFrame:
     return _load_te_node_roles(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading transfer entropy matrix…")
 def _load_te_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "transfer_entropy_matrix.parquet"
     if path.exists():
@@ -996,7 +1019,7 @@ def load_te_matrix() -> pd.DataFrame:
     return _load_te_matrix(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading raw TE matrix…")
 def _load_te_matrix_raw(universe: str) -> pd.DataFrame:
     """Pre-FDR TE values — useful for ranking edges by magnitude even when
     the FDR-corrected mask is sparse (the common case at 100-shuffle
@@ -1013,7 +1036,7 @@ def load_te_matrix_raw() -> pd.DataFrame:
     return _load_te_matrix_raw(current_universe())
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading net TE matrix…")
 def _load_net_te_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "net_transfer_entropy_matrix.parquet"
     if path.exists():
@@ -1180,7 +1203,7 @@ def load_snn_membrane_sample() -> pd.DataFrame:
 # Information-theory layer (Phase 3 mutable-candy)
 # ---------------------------------------------------------------------------
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading mutual information matrix…")
 def _load_mi_matrix(universe: str) -> pd.DataFrame:
     path = data_results(universe) / "mi_matrix.parquet"
     if path.exists():
