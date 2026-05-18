@@ -521,6 +521,61 @@ def render_glasso(sector_map: dict, *, u=None):
                 st.info("Run the pipeline to generate the precision matrix.")
 
 
+@st.fragment
+def _render_wavelet_for_scale(
+    sector_map: dict, scales: dict, sector_node_label: str,
+) -> None:
+    """Scale-selector + per-scale MST render for the Wavelet section.
+
+    Owns the `wavelet_scale` selectbox. Wrapped in @st.fragment so changing
+    the scale only re-runs this block — not the entire EEE Analysis tab.
+    The cross-scale summary table downstream stays untouched.
+
+    Per-scale `title_key=f"wav_mst_{scale_level}"` ensures user-typed custom
+    titles don't bleed across scale switches (the original `title_key="wav_mst"`
+    was shared, so a custom title set on Scale 3 would persist when switching
+    to Scale 5).
+    """
+    n_scales = len(scales)
+    if n_scales == 0:
+        st.info("No wavelet scales available.")
+        return
+
+    # Selectbox with physical-interpretation labels instead of bare "Scale 4".
+    scale_options = [
+        f"Scale {n} — {scales.get(str(n), '')}" for n in range(1, n_scales + 1)
+    ]
+    _default_idx = min(3, n_scales - 1)  # mirrors old slider's value=4
+    scale_choice = st.selectbox(
+        "Wavelet Scale", scale_options, index=_default_idx, key="wavelet_scale",
+    )
+    scale_level = int(scale_choice.split(" ")[1])
+    scale_label = scales.get(str(scale_level), f"Scale {scale_level}")
+
+    edges = load_wavelet_mst_edges(scale_level)
+    scale_metrics = load_wavelet_mst_metrics(scale_level)
+    if edges.empty:
+        st.info("No MST data for this scale.")
+        return
+
+    fig = _plot_network(
+        edges, sector_map, edge_weight_col="distance",
+        node_metrics=scale_metrics,
+        sector_node_label=sector_node_label,
+    )
+    total_weight = edges["distance"].sum()
+    render_chart(
+        fig,
+        chart_id=f"wav_mst_{scale_level}",
+        filename_base="wavelet_mst",
+        title_key=f"wav_mst_{scale_level}",
+        default_title=(
+            f"MST at {scale_label} "
+            f"(Σdistance: {total_weight:.1f}, nodes sized by betweenness)"
+        ),
+    )
+
+
 def render_wavelets(sector_map: dict, *, u=None):
     """Render Wavelet multi-scale analysis section."""
     with st.container(border=True):
@@ -551,59 +606,14 @@ def render_wavelets(sector_map: dict, *, u=None):
             return
 
         scales = meta.get("scales", {})
-        n_scales = len(scales)
 
-        # Scale selector
-        scale_level = st.slider(
-            "Wavelet Scale",
-            min_value=1, max_value=n_scales, value=4,
-            format="Scale %d",
-            key="wavelet_scale",
-        )
-        scale_label = scales.get(str(scale_level), f"Scale {scale_level}")
-        st.caption(f"**Scale {scale_level}** ({scale_label})")
-
-        col_mst, col_corr = st.columns([3, 2])
-
-        with col_mst:
-            edges = load_wavelet_mst_edges(scale_level)
-            scale_metrics = load_wavelet_mst_metrics(scale_level)
-            if not edges.empty:
-                fig = _plot_network(
-                    edges, sector_map, edge_weight_col="distance",
-                    node_metrics=scale_metrics,
-                    sector_node_label=_sector_label(u),
-                )
-                total_weight = edges["distance"].sum()
-                render_chart(fig, chart_id=f"wav_mst_{scale_level}", filename_base="wavelet_mst",
-                             title_key="wav_mst",
-                             default_title=f"MST at {scale_label} (Σdistance: {total_weight:.1f}, nodes sized by betweenness)")
-            else:
-                st.info("No MST data for this scale.")
-
-        with col_corr:
-            corr = load_wavelet_corr(scale_level)
-            if not corr.empty:
-                # Correlation distribution at this scale
-                mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
-                upper_vals = corr.values[mask]
-                upper_vals = upper_vals[np.isfinite(upper_vals)]
-
-                fig_hist = go.Figure()
-                fig_hist.add_trace(go.Histogram(
-                    x=upper_vals, nbinsx=60,
-                    marker_color=get_colors()["primary"], opacity=0.75,
-                ))
-                avg_corr = float(np.mean(upper_vals))
-                fig_hist.add_vline(x=avg_corr, line_dash="dash", line_color=get_colors()["secondary"],
-                                   annotation_text=f"Mean: {avg_corr:.3f}", annotation_font_size=10)
-                apply_chart_style(fig_hist, height=420,
-                                  xaxis_title="Pairwise Correlation",
-                                  yaxis_title="Frequency", showlegend=False)
-                render_chart(fig_hist, chart_id=f"wav_hist_{scale_level}",
-                             filename_base="wavelet_corr_dist",
-                             title_key="wav_hist",
-                             default_title=f"Correlation Distribution at {scale_label}")
+        # Per-scale MST render lives in `_render_wavelet_for_scale` fragment
+        # (defined at module top). Changing the scale selectbox only re-runs
+        # that fragment, not the whole EEE Analysis tab. The per-scale corr
+        # distribution histogram that used to live in `col_corr` is removed —
+        # the full-period distribution on the Pairs & Dislocations tab
+        # already covers that view.
+        _render_wavelet_for_scale(sector_map, scales, _sector_label(u))
 
         # Scale comparison summary
         st.markdown("**Cross-Scale Summary**")

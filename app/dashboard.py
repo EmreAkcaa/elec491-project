@@ -862,21 +862,90 @@ with tab_data:
                 ]
                 float4_cols = ["min_return", "max_return"]
             display_df = summary[[c for c in display_cols if c in summary.columns]].copy()
+
+            # Sort selector — user-controlled. Default mirrors the upstream
+            # `compute_descriptive_stats` order (annualized_vol DESC for
+            # finance / count DESC otherwise). Sort BEFORE float-formatting
+            # so the ordering uses raw numeric values, not lexical strings.
+            _sort_label_map = {
+                "ticker":            _item_label,
+                "count":             "Trading days",
+                "annualized_return": "Annualized return",
+                "annualized_vol":    "Annualized volatility",
+                "skewness":          "Skewness",
+                "kurtosis":          "Excess kurtosis",
+                "min_return":        "Worst daily log return",
+                "max_return":        "Best daily log return",
+            }
+            _sort_cols = list(display_df.columns)
+            _default_sort_key = "annualized_vol" if "annualized_vol" in _sort_cols else "count"
+            _sort_default_idx = _sort_cols.index(_default_sort_key) if _default_sort_key in _sort_cols else 0
+            _sc1, _sc2 = st.columns([3, 1])
+            with _sc1:
+                _sort_col = st.selectbox(
+                    "Sort by", _sort_cols,
+                    index=_sort_default_idx,
+                    format_func=lambda c: _sort_label_map.get(c, c),
+                    key="mo_stats_sort_col",
+                )
+            with _sc2:
+                _sort_dir = st.selectbox(
+                    "Order", ["Descending", "Ascending"], index=0, key="mo_stats_sort_dir",
+                )
+            display_df = display_df.sort_values(
+                _sort_col, ascending=(_sort_dir == "Ascending"),
+            ).reset_index(drop=True)
+
+            # Format floats AFTER sorting so the sort itself uses raw numerics.
             for c in float4_cols:
                 if c in display_df.columns:
                     display_df[c] = display_df[c].map(lambda x: f"{x:.4f}")
             for c in ["skewness", "kurtosis"]:
                 if c in display_df.columns:
                     display_df[c] = display_df[c].map(lambda x: f"{x:.2f}")
-            # Rename column headers to the active universe's vocabulary.
-            _rename = {"ticker": _item_label}
-            if not _is_finance:
-                _rename.update({
-                    "min_return": f"min ({_series_units})" if _series_units else "min",
-                    "max_return": f"max ({_series_units})" if _series_units else "max",
-                })
-            display_df = display_df.rename(columns=_rename)
-            st.dataframe(display_df, use_container_width=True, height=420)
+
+            # column_config: descriptive display names + help tooltips. Keeps
+            # the internal raw column keys ("annualized_vol" etc.) so the
+            # sort selector still works against the underlying DataFrame.
+            _min_label = "Worst daily log return"
+            _max_label = "Best daily log return"
+            if not _is_finance and _series_units:
+                _min_label += f" ({_series_units})"
+                _max_label += f" ({_series_units})"
+            st.dataframe(
+                display_df, use_container_width=True, height=420, hide_index=True,
+                column_config={
+                    "ticker":            st.column_config.TextColumn(_item_label),
+                    "count":             st.column_config.NumberColumn(
+                        "Trading days",
+                        help="Non-NaN observations in the date window",
+                    ),
+                    "annualized_return": st.column_config.TextColumn(
+                        "Annualized return",
+                        help="Daily mean × 252",
+                    ),
+                    "annualized_vol":    st.column_config.TextColumn(
+                        "Annualized volatility",
+                        help="Daily std × √252",
+                    ),
+                    "skewness":          st.column_config.TextColumn(
+                        "Skewness",
+                        help="Distribution asymmetry. >0 = right tail (occasional large positive returns)",
+                    ),
+                    "kurtosis":          st.column_config.TextColumn(
+                        "Excess kurtosis",
+                        help="Fat-tail measure. >0 = heavier tails than a normal distribution",
+                    ),
+                    "min_return":        st.column_config.TextColumn(
+                        _min_label,
+                        help="Largest single-day decline (log scale)",
+                    ),
+                    "max_return":        st.column_config.TextColumn(
+                        _max_label,
+                        help="Largest single-day gain (log scale)",
+                    ),
+                },
+            )
 
         with col_hist:
             selected_ticker = st.selectbox(
@@ -1141,102 +1210,65 @@ with tab_cluster:
                 n_clusters = cluster_df["cluster_id"].nunique()
                 st.metric("Clusters Found", n_clusters)
 
-                display_clusters = cluster_df.sort_values(["cluster_id", "ticker"]).reset_index(drop=True)
-                st.dataframe(
-                    display_clusters, use_container_width=True, height=350, hide_index=True,
-                    column_config={
-                        "cluster_id": st.column_config.NumberColumn("Cluster"),
-                        "ticker":     st.column_config.TextColumn(_item_cl),
-                        "sector":     st.column_config.TextColumn(_sector_cl),
-                    },
-                )
-
+                # Friend's UX feedback (this round): the raw cluster
+                # assignments table (cluster_id × ticker × sector), the
+                # cluster-vs-sector crosstab, and the ARI/NMI/Sectors
+                # metric strip were all visual clutter. "Cluster Purity
+                # is enough" — keep just (1) the universe-appropriate
+                # sanity-check banners (one-line green/yellow status) and
+                # (2) the per-cluster purity table below them.
                 if "sector" in cluster_df.columns:
-                    st.markdown(f"**Cluster vs {_sector_cl}**")
-                    crosstab = pd.crosstab(cluster_df["cluster_id"], cluster_df["sector"])
-                    crosstab.index.name = "Cluster"
-                    st.dataframe(crosstab, use_container_width=True)
+                    # Universe-appropriate sanity-check banners. The
+                    # groups come from the Universe.sanity_check_groups
+                    # dict in app/universe_registry.py — BIST checks
+                    # the banking sector; S&P checks mega-cap tech;
+                    # EEG checks central-motor / occipital / prefrontal
+                    # electrode triples.
+                    for group_label, members in (_cap(_active_universe, 'sanity_check_groups', None) or {}).items():
+                        present = cluster_df[cluster_df["ticker"].isin(members)]
+                        if present.empty:
+                            continue
+                        present_clusters = present["cluster_id"].unique()
+                        names = present["ticker"].tolist()
+                        if len(names) > 12:
+                            names_str = ", ".join(names[:12]) + f", … (+{len(names) - 12} more)"
+                        else:
+                            names_str = ", ".join(names)
+                        if len(present_clusters) == 1:
+                            st.success(
+                                f"**{group_label} sanity check passed.** All "
+                                f"{len(present)} members ({names_str}) are in "
+                                f"Cluster {present_clusters[0]}."
+                            )
+                        else:
+                            st.warning(
+                                f"**{group_label}:** {len(present)} members span "
+                                f"{len(present_clusters)} clusters "
+                                f"({', '.join(str(c) for c in sorted(present_clusters))}). "
+                                f"Members: {names_str}"
+                            )
 
-                    try:
-                        from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
-                        _has_sklearn = True
-                    except ImportError:
-                        _has_sklearn = False
-
-                    if _has_sklearn:
-                        cluster_labels = cluster_df["cluster_id"].values
-                        sector_labels = cluster_df["sector"].values
-                        ari = adjusted_rand_score(sector_labels, cluster_labels)
-                        nmi = normalized_mutual_info_score(sector_labels, cluster_labels)
-
-                        st.markdown(f"**{_sector_cl} Validation**")
-                        st.caption(
-                            f"How well do statistical clusters match the universe's "
-                            f"{_sector_cl.lower()} labels? ARI and NMI range from 0 (random) to 1 (perfect match)."
-                        )
-                        sv1, sv2, sv3 = st.columns(3)
-                        sv1.metric("Adjusted Rand Index", f"{ari:.3f}")
-                        sv2.metric("Normalized Mutual Info", f"{nmi:.3f}")
-                        sv3.metric(
-                            f"{_sector_cl}s Represented" if not _sector_cl.endswith("s")
-                            else f"{_sector_cl} Represented",
-                            f"{cluster_df['sector'].nunique()}",
-                        )
-
-                        # Universe-appropriate sanity-check banners. The
-                        # groups come from the Universe.sanity_check_groups
-                        # dict in app/universe_registry.py — BIST checks
-                        # the banking sector; S&P checks mega-cap tech;
-                        # EEG checks central-motor / occipital / prefrontal
-                        # electrode triples. Group membership uses an EXACT
-                        # match against the cluster_df['ticker'] column,
-                        # since the registry lists concrete tickers or
-                        # channel names (not sector keywords).
-                        for group_label, members in (_cap(_active_universe, 'sanity_check_groups', None) or {}).items():
-                            present = cluster_df[cluster_df["ticker"].isin(members)]
-                            if present.empty:
-                                continue
-                            present_clusters = present["cluster_id"].unique()
-                            # Cap displayed names so long lists stay readable.
-                            names = present["ticker"].tolist()
-                            if len(names) > 12:
-                                names_str = ", ".join(names[:12]) + f", … (+{len(names) - 12} more)"
-                            else:
-                                names_str = ", ".join(names)
-                            if len(present_clusters) == 1:
-                                st.success(
-                                    f"**{group_label} sanity check passed.** All "
-                                    f"{len(present)} members ({names_str}) are in "
-                                    f"Cluster {present_clusters[0]}."
-                                )
-                            else:
-                                st.warning(
-                                    f"**{group_label}:** {len(present)} members span "
-                                    f"{len(present_clusters)} clusters "
-                                    f"({', '.join(str(c) for c in sorted(present_clusters))}). "
-                                    f"Members: {names_str}"
-                                )
-
-                        st.markdown("**Cluster Purity**")
-                        st.caption(
-                            f"Purity = fraction of the dominant {_sector_cl.lower()} within each cluster. "
-                            f"A purity of 1.0 means every {_item_cl.lower()} in the cluster shares the same "
-                            f"{_sector_cl.lower()}."
-                        )
-                        purity_rows = []
-                        for cid, grp in cluster_df.groupby("cluster_id"):
-                            sector_counts = grp["sector"].value_counts()
-                            dominant = sector_counts.index[0]
-                            purity = sector_counts.iloc[0] / len(grp)
-                            purity_rows.append({
-                                "Cluster": cid,
-                                "Size": len(grp),
-                                f"Dominant {_sector_cl}": dominant,
-                                "Purity": f"{purity:.2f}",
-                                "Members": ", ".join(sorted(grp["ticker"].tolist())),
-                            })
-                        purity_df = pd.DataFrame(purity_rows)
-                        st.dataframe(purity_df, use_container_width=True, hide_index=True)
+                    st.markdown("**Cluster Purity**")
+                    st.caption(
+                        f"Each cluster's dominant {_sector_cl.lower()} and the fraction "
+                        f"of members sharing that {_sector_cl.lower()}. Purity = 1.0 means "
+                        f"every {_item_cl.lower()} in the cluster shares the same "
+                        f"{_sector_cl.lower()}."
+                    )
+                    purity_rows = []
+                    for cid, grp in cluster_df.groupby("cluster_id"):
+                        sector_counts = grp["sector"].value_counts()
+                        dominant = sector_counts.index[0]
+                        purity = sector_counts.iloc[0] / len(grp)
+                        purity_rows.append({
+                            "Cluster": cid,
+                            "Size": len(grp),
+                            f"Dominant {_sector_cl}": dominant,
+                            "Purity": f"{purity:.2f}",
+                            "Members": ", ".join(sorted(grp["ticker"].tolist())),
+                        })
+                    purity_df = pd.DataFrame(purity_rows)
+                    st.dataframe(purity_df, use_container_width=True, hide_index=True)
             else:
                 st.info("Run the clustering pipeline to see cluster assignments.")
 
@@ -1257,96 +1289,98 @@ with tab_cluster:
         mst_metrics = load_mst_metrics()
 
         if not mst_edges.empty and not mst_metrics.empty and HAS_NETWORKX:
-            col_mst_graph, col_mst_table = st.columns([3, 2])
+            # MST gets full page width (no col split). Hub table moves into
+            # an expander below — the cluttered "Quick Jump to Pair Analysis"
+            # mini-widget that used to live alongside the table is removed
+            # entirely; the same nav is available from the Pair Analysis page
+            # and the Pairs & Dislocations tab.
+            G = nx.Graph()
+            sector_map = dict(zip(mst_metrics["ticker"], mst_metrics["sector"]))
+            degree_map = dict(zip(mst_metrics["ticker"], mst_metrics["degree"]))
 
-            with col_mst_graph:
-                G = nx.Graph()
-                sector_map = dict(zip(mst_metrics["ticker"], mst_metrics["sector"]))
-                degree_map = dict(zip(mst_metrics["ticker"], mst_metrics["degree"]))
+            for _, row in mst_edges.iterrows():
+                G.add_edge(row["source"], row["target"], weight=row["distance"])
 
-                for _, row in mst_edges.iterrows():
-                    G.add_edge(row["source"], row["target"], weight=row["distance"])
+            # `_mst_layout` is @st.cache_data — first compute is ~400 ms
+            # on S&P, subsequent universe re-renders are instant.
+            pos = _mst_layout(
+                mst_edges,
+                f"{_active_universe.key}:mst:{len(mst_edges)}",
+            )
 
-                # `_mst_layout` is @st.cache_data — first compute is ~400 ms
-                # on S&P, subsequent universe re-renders are instant. The
-                # status widget flashes on every interaction otherwise.
-                pos = _mst_layout(
-                    mst_edges,
-                    f"{_active_universe.key}:mst:{len(mst_edges)}",
-                )
-
-                edge_traces = []
-                for u, v, d in G.edges(data=True):
-                    x0, y0 = pos[u]
-                    x1, y1 = pos[v]
-                    edge_traces.append(go.Scatter(
-                        x=[x0, x1], y=[y0, y1],
-                        mode="lines",
-                        line=dict(width=1.8, color="#A0A8B8"),
-                        hoverinfo="text",
-                        hovertext=f"{u} — {v}  (d = {d['weight']:.3f})",
-                        showlegend=False,
-                    ))
-
-                sectors = sorted(set(sector_map.values()) - {None, np.nan})
-                color_map = {s: SECTOR_PALETTE[i % len(SECTOR_PALETTE)]
-                             for i, s in enumerate(sectors)}
-
-                node_x, node_y, node_text, node_color, node_size = [], [], [], [], []
-                for node in G.nodes():
-                    x, y = pos[node]
-                    node_x.append(x)
-                    node_y.append(y)
-                    sec = sector_map.get(node, "Unknown")
-                    deg = degree_map.get(node, 1)
-                    node_text.append(f"<b>{node}</b><br>{_sector_mst}: {sec}<br>Degree: {deg}")
-                    node_color.append(color_map.get(sec, get_colors()["muted"]))
-                    node_size.append(14 + deg * 6)
-
-                node_trace = go.Scatter(
-                    x=node_x, y=node_y,
-                    mode="markers+text",
-                    text=[n for n in G.nodes()],
-                    textposition="top center",
-                    textfont=dict(size=9, color="#2B2D42"),
-                    hovertext=node_text, hoverinfo="text",
-                    marker=dict(
-                        size=node_size, color=node_color,
-                        line=dict(width=2, color="white"),
-                    ),
+            edge_traces = []
+            for u, v, d in G.edges(data=True):
+                x0, y0 = pos[u]
+                x1, y1 = pos[v]
+                edge_traces.append(go.Scatter(
+                    x=[x0, x1], y=[y0, y1],
+                    mode="lines",
+                    line=dict(width=1.8, color="#A0A8B8"),
+                    hoverinfo="text",
+                    hovertext=f"{u} — {v}  (d = {d['weight']:.3f})",
                     showlegend=False,
-                )
+                ))
 
-                fig_mst = go.Figure(data=edge_traces + [node_trace])
-                apply_chart_style(fig_mst,
-                    showlegend=True, height=750,
-                    margin=dict(l=10, r=10, t=10, b=10),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
-                               scaleanchor="x", scaleratio=1),
-                    legend=dict(font=dict(size=9), orientation="v",
-                                yanchor="top", y=0.99, xanchor="left", x=0.01,
-                                bgcolor="rgba(255,255,255,0.85)", borderwidth=1,
-                                bordercolor="#e2e6ee"),
-                )
-                for sec in sectors:
-                    fig_mst.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="markers",
-                        marker=dict(size=10, color=color_map[sec]),
-                        name=sec, showlegend=True,
-                    ))
-                render_chart(fig_mst, chart_id="mo_mst", filename_base="mst_network",
-                             title_key="mo_mst", default_title="Minimum Spanning Tree")
+            sectors = sorted(set(sector_map.values()) - {None, np.nan})
+            color_map = {s: SECTOR_PALETTE[i % len(SECTOR_PALETTE)]
+                         for i, s in enumerate(sectors)}
 
-            with col_mst_table:
-                st.markdown(f"**Hub {_items_mst} (by degree)**")
+            node_x, node_y, node_text, node_color, node_size = [], [], [], [], []
+            for node in G.nodes():
+                x, y = pos[node]
+                node_x.append(x)
+                node_y.append(y)
+                sec = sector_map.get(node, "Unknown")
+                deg = degree_map.get(node, 1)
+                node_text.append(f"<b>{node}</b><br>{_sector_mst}: {sec}<br>Degree: {deg}")
+                node_color.append(color_map.get(sec, get_colors()["muted"]))
+                node_size.append(14 + deg * 6)
+
+            node_trace = go.Scatter(
+                x=node_x, y=node_y,
+                mode="markers+text",
+                text=[n for n in G.nodes()],
+                textposition="top center",
+                textfont=dict(size=9, color="#2B2D42"),
+                hovertext=node_text, hoverinfo="text",
+                marker=dict(
+                    size=node_size, color=node_color,
+                    line=dict(width=2, color="white"),
+                ),
+                showlegend=False,
+            )
+
+            fig_mst = go.Figure(data=edge_traces + [node_trace])
+            apply_chart_style(fig_mst,
+                showlegend=True, height=750,
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
+                           scaleanchor="x", scaleratio=1),
+                legend=dict(font=dict(size=9), orientation="v",
+                            yanchor="top", y=0.99, xanchor="left", x=0.01,
+                            bgcolor="rgba(255,255,255,0.85)", borderwidth=1,
+                            bordercolor="#e2e6ee"),
+            )
+            for sec in sectors:
+                fig_mst.add_trace(go.Scatter(
+                    x=[None], y=[None], mode="markers",
+                    marker=dict(size=10, color=color_map[sec]),
+                    name=sec, showlegend=True,
+                ))
+            render_chart(fig_mst, chart_id="mo_mst", filename_base="mst_network",
+                         title_key="mo_mst", default_title="Minimum Spanning Tree")
+
+            # Hub table behind an expander — was always-on in the right column
+            # of a [3,2] split, now hidden by default to let the MST breathe.
+            with st.expander(f"Hub {_items_mst} (by degree)", expanded=False):
                 _item_mst = _cap(_active_universe, 'item_label', 'Ticker')
                 display_metrics = mst_metrics.copy()
                 display_metrics["betweenness_centrality"] = display_metrics[
                     "betweenness_centrality"
                 ].map(lambda x: f"{x:.4f}")
                 st.dataframe(
-                    display_metrics, use_container_width=True, height=500, hide_index=True,
+                    display_metrics, use_container_width=True, hide_index=True,
                     column_config={
                         "ticker":                 st.column_config.TextColumn(_item_mst),
                         "sector":                 st.column_config.TextColumn(_sector_mst),
@@ -1354,35 +1388,6 @@ with tab_cluster:
                         "betweenness_centrality": st.column_config.TextColumn("Betweenness"),
                     },
                 )
-
-                # Quick-jump to Pair Analysis is finance-only — the EEG
-                # universe doesn't have a pair-trading concept (no spread,
-                # no Z-score signal, etc.), so suppress the whole block
-                # when has_pair_trading=False.
-                if _cap(_active_universe, 'has_pair_trading', True):
-                    st.markdown("---")
-                    st.markdown("**Quick Jump to Pair Analysis**")
-                    _hub_tickers = mst_metrics.head(10)["ticker"].tolist()
-                    _sel = st.selectbox(
-                        f"Select hub {_cap(_active_universe, 'item_label', 'Ticker').lower()}",
-                        _hub_tickers, key="mst_hub_jump",
-                    )
-                    if st.button("Analyze this pair", key="mst_jump_btn"):
-                        st.session_state["pa_ticker_a"] = _sel
-                        # Ensure ticker_b is set AND differs from ticker_a,
-                        # otherwise Pair Analysis lands on the same-ticker
-                        # degraded state. (The collision-resolver in
-                        # pair_analysis.render will also catch this, but
-                        # picking a meaningful partner here avoids the
-                        # auto-snap surprise for the user.)
-                        _existing_b = st.session_state.get("pa_ticker_b")
-                        if _existing_b is None or _existing_b == _sel:
-                            st.session_state["pa_ticker_b"] = next(
-                                (t for t in _hub_tickers if t != _sel),
-                                _sel,
-                            )
-                        st.session_state["_goto_pair_analysis"] = True
-                        st.rerun()
 
         elif not HAS_NETWORKX:
             st.warning("Install `networkx` to display the MST network graph (`pip install networkx`).")
@@ -1411,21 +1416,48 @@ with tab_rolling:
             ),
         )
 
-        rc_col1, rc_col2, rc_col3, rc_col4 = st.columns(4)
-        with rc_col1:
-            rc_window = st.selectbox(
-                "Window (days)" if _is_finance_rc else "Window (samples)",
-                [60, 120, 252, 504], index=2, key="rc_win",
-            )
-        with rc_col2:
-            rc_step = st.selectbox("Step", [1, 5, 21], index=1, key="rc_step",
-                                   format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(x, str(x)))
-        with rc_col3:
-            rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
-        with rc_col4:
-            rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
+        # st.form gates the 4 outer rolling widgets behind an explicit
+        # "Recompute" submit button. Off-grid params (e.g. step=1, spearman,
+        # window=504) cost up to 12 s on S&P; without the form, the user
+        # paid that cost on every intermediate selectbox change. With the
+        # form, widget changes accumulate locally, then a single submit
+        # triggers one script rerun. Precomputed combos (window ∈ {60,120,
+        # 252}, step=5, pearson, rolling) still load instantly because the
+        # downstream `_use_precomputed_market` check hits the parquet cache.
+        st.caption(
+            ":material/info: Configure window / step / method, then click "
+            "**Recompute** to refresh charts. Precomputed combos "
+            "(window ∈ {60, 120, 252}, step=5, pearson, rolling) load instantly."
+        )
+        with st.form("rolling_params", border=False):
+            rc_col1, rc_col2, rc_col3, rc_col4, rc_col5 = st.columns([2, 2, 2, 2, 1.2])
+            with rc_col1:
+                rc_window = st.selectbox(
+                    "Window (days)" if _is_finance_rc else "Window (samples)",
+                    [60, 120, 252, 504], index=2, key="rc_win",
+                )
+            with rc_col2:
+                rc_step = st.selectbox(
+                    "Step", [1, 5, 21], index=1, key="rc_step",
+                    format_func=lambda x: {1: "1 (daily)", 5: "5 (weekly)", 21: "21 (monthly)"}.get(x, str(x)),
+                )
+            with rc_col3:
+                rc_method = st.selectbox("Method", ["pearson", "spearman"], key="rc_method")
+            with rc_col4:
+                rc_window_type = st.selectbox("Window type", ["rolling", "expanding", "ewm"], key="rc_wtype")
+            with rc_col5:
+                # Vertical alignment hack: empty markdown matches the label
+                # height of the selectboxes so the button aligns to their
+                # input row, not their label row.
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                st.form_submit_button(
+                    "Recompute", type="primary", use_container_width=True,
+                )
 
         rc_expanding = rc_window_type == "expanding"
+        # Event Markers popover lives OUTSIDE the form — popovers + forms
+        # in the same row break Streamlit's column layout, and event-marker
+        # toggles are cheap (no compute) so they don't need recompute gating.
         show_defaults, custom_events = event_marker_manager_ui("rc", min_date, max_date)
 
         _ra_market_label = "Market Overview" if _is_finance_rc else "Network Overview"
