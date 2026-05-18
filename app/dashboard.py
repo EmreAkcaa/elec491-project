@@ -633,11 +633,17 @@ _default_nav = "Cross-Market" if _eligible_for_cross_market else _overview_label
 if st.session_state.get("nav_page") not in _nav_options:
     st.session_state["nav_page"] = _default_nav
 
+# Sprint 2 PR-P: dropped `default=_default_nav` from this call. Streamlit
+# emits a warning when a widget has BOTH `key=` (binding session_state)
+# AND `default=` (passing a default) — the two can collide. The guard
+# block above already sets `st.session_state["nav_page"]` to a valid
+# option on fresh-session AND when the active universe changes, so the
+# `default=` here was redundant and tripped the warning banner on every
+# first paint.
 _nav = st.segmented_control(
     "Navigate",
     _nav_options,
     key="nav_page",
-    default=_default_nav,
     label_visibility="collapsed",
 )
 
