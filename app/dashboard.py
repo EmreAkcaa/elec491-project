@@ -1567,11 +1567,27 @@ with tab_rolling:
             # Audit item A4.
             _form_cols = st.columns([2, 2, 2, 2, 2, 1.2])
             with _form_cols[0]:
-                rc_window = int(st.number_input(
+                # Curated selectbox (not number_input). number_input with
+                # step=10 was technically freestyle — typed values like 247
+                # were accepted, each one missing the precomputed parquet
+                # cache and triggering a fresh ~2 s on-the-fly compute.
+                # Restricting to a curated list keeps users on the
+                # precomputed-fast path by default and prevents the
+                # "user typed 247, why is this slow" trap. Precomputed
+                # combos still match: {60, 120, 252}.
+                _rc_window_options = [30, 60, 90, 120, 180, 252, 365, 504]
+                _rc_window_default_idx = _rc_window_options.index(252)
+                rc_window = int(st.selectbox(
                     "Window (days)" if _is_finance_rc else "Window (samples)",
-                    min_value=20, max_value=504, value=252, step=10,
+                    _rc_window_options,
+                    index=_rc_window_default_idx,
                     key="rc_win",
-                    help="Trading days in each rolling window. {60, 120, 252} hit the precomputed parquet (instant); other values compute on the fly.",
+                    help=(
+                        "Trading-day window for each rolling correlation snapshot. "
+                        "**60 / 120 / 252** load from the precomputed parquet "
+                        "(instant); other values compute on the fly (~2 s on S&P "
+                        "after PR #53 vectorisation)."
+                    ),
                 ))
             with _form_cols[1]:
                 rc_step = st.selectbox(
