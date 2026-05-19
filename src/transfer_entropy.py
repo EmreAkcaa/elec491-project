@@ -289,6 +289,239 @@ def compute_transfer_entropy_matrix(
     return out["filtered"], out["net_filtered"]
 
 
+# ---------------------------------------------------------------------------
+# Lag-sweep / Rolling / Bootstrap helpers (G1, G3, G4 — PR #73)
+# ---------------------------------------------------------------------------
+
+def compute_lag_sweep_for_pairs(
+    returns: pd.DataFrame,
+    pairs: list[tuple[str, str]],
+    lags: list[int],
+    *,
+    n_shuffles: int = 1000,
+    n_bins: int = 3,
+    block_length: int = 5,
+    multiple_testing: str = "fdr_bh",
+    significance_level: float = 0.05,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Compute TE for a hand-picked pair list across multiple lag values.
+
+    For each (pair, direction, lag) compute TE + a surrogate-null p-value.
+    BH-FDR (or the chosen correction) is applied **per-lag** so a finding at
+    one lag doesn't compete with findings at another.
+
+    Returns a long-form DataFrame with columns ``[ticker_a, ticker_b,
+    direction, lag, te, p_value, significant]``. ``direction`` is the string
+    ``"a_to_b"`` or ``"b_to_a"``; ``significant`` is the per-lag corrected
+    rejection mask (True = reject H₀).
+
+    Cost: O(len(pairs) * len(lags) * n_shuffles * pair-evaluation). On 10
+    pairs × 3 lags × K=1000 ≈ 90 s on a single core. Parallelism not used —
+    the pair count is small enough that joblib overhead would dominate.
+    """
+    rows: list[dict] = []
+    for lag_idx, lag in enumerate(lags):
+        # Run all (pair × direction) tests at this lag.
+        lag_rows: list[dict] = []
+        for pair_idx, (ta, tb) in enumerate(pairs):
+            if ta not in returns.columns or tb not in returns.columns:
+                continue
+            # Joint dropna preserves date alignment between the two series.
+            # WITHOUT this, dropna-per-series + tail alignment misaligns
+            # pairs when each ticker has NaNs on different dates → joint
+            # histogram is computed on un-paired observations.
+            both = returns[[ta, tb]].dropna()
+            x = both[ta].to_numpy()
+            y = both[tb].to_numpy()
+            n = x.size
+            if n < (lag + 30):
+                continue
+            seed_xy = seed + 1000 * lag_idx + 10 * pair_idx
+            seed_yx = seed_xy + 1
+            _, _, te_xy, p_xy = _te_one_pair(
+                0, 1, x, y, lag=lag, n_bins=n_bins,
+                n_shuffles=n_shuffles, block_length=block_length, pair_seed=seed_xy,
+            )
+            _, _, te_yx, p_yx = _te_one_pair(
+                0, 1, y, x, lag=lag, n_bins=n_bins,
+                n_shuffles=n_shuffles, block_length=block_length, pair_seed=seed_yx,
+            )
+            lag_rows.append({
+                "ticker_a": ta, "ticker_b": tb, "direction": "a_to_b",
+                "lag": lag, "te": float(te_xy), "p_value": float(p_xy),
+            })
+            lag_rows.append({
+                "ticker_a": ta, "ticker_b": tb, "direction": "b_to_a",
+                "lag": lag, "te": float(te_yx), "p_value": float(p_yx),
+            })
+
+        # Apply multiple-testing correction WITHIN this lag's batch.
+        if lag_rows:
+            pvals = np.array([r["p_value"] for r in lag_rows])
+            if multiple_testing == "fdr_bh":
+                significant = _benjamini_hochberg(pvals, significance_level)
+            elif multiple_testing == "bonferroni":
+                significant = pvals < (significance_level / len(pvals))
+            else:
+                significant = pvals < significance_level
+            for r, sig in zip(lag_rows, significant):
+                r["significant"] = bool(sig)
+            rows.extend(lag_rows)
+
+    return pd.DataFrame(rows)
+
+
+def compute_rolling_te(
+    returns: pd.DataFrame,
+    pairs: list[tuple[str, str]],
+    *,
+    lag: int = 1,
+    window: int = 252,
+    stride: int = 21,
+    n_shuffles: int = 500,
+    n_bins: int = 3,
+    block_length: int = 5,
+    seed: int = 42,
+    n_jobs: int = -1,
+) -> pd.DataFrame:
+    """Sliding-window transfer entropy on a hand-picked pair list.
+
+    For each window of size `window` ending at every `stride`-th date,
+    compute TE + p-value in both directions for each pair. Returns a long-
+    form DataFrame indexed by window-end-date, with columns
+    ``[ticker_a, ticker_b, direction, te, p_value]``.
+
+    Hypothesis discipline: pass only the pairs that already showed
+    full-sample significance (G1 survivors). Running this on the full
+    grid is wasteful — the multiple-testing problem only gets worse with
+    many windows.
+
+    Cost on BIST: ~64 windows × 10 pairs × 2 directions × K=500 ≈ 640k
+    TE evaluations. Parallelised via joblib over (window × pair × dir)
+    combinations: ~6-8 min on 8 cores.
+    """
+    from joblib import Parallel, delayed
+
+    if not pairs:
+        return pd.DataFrame()
+
+    if isinstance(returns.index, pd.DatetimeIndex):
+        # Build the window-end date grid. End-aligned windows: window i ends
+        # at index window-1, window-1+stride, ... and contains the previous
+        # `window` observations.
+        end_positions = list(range(window - 1, len(returns.index), stride))
+    else:
+        end_positions = list(range(window - 1, len(returns.index), stride))
+
+    if not end_positions:
+        return pd.DataFrame()
+
+    # Build the task list: (end_pos, pair_idx, direction)
+    tasks = []
+    for ep_idx, end_pos in enumerate(end_positions):
+        start_pos = end_pos - window + 1
+        for p_idx, (ta, tb) in enumerate(pairs):
+            tasks.append((end_pos, start_pos, p_idx, ta, tb, "a_to_b"))
+            tasks.append((end_pos, start_pos, p_idx, ta, tb, "b_to_a"))
+
+    def _one_task(end_pos, start_pos, p_idx, ta, tb, direction):
+        if ta not in returns.columns or tb not in returns.columns:
+            return None
+        slc = returns.iloc[start_pos:end_pos + 1]
+        # Joint dropna preserves date alignment within the window.
+        both = slc[[ta, tb]].dropna()
+        x = both[ta].to_numpy()
+        y = both[tb].to_numpy()
+        n = x.size
+        if n < (lag + 30):
+            return None
+        pair_seed = seed + 10_000 * end_pos + 100 * p_idx + (0 if direction == "a_to_b" else 1)
+        if direction == "a_to_b":
+            _, _, te_val, p_val = _te_one_pair(
+                0, 1, x, y, lag=lag, n_bins=n_bins,
+                n_shuffles=n_shuffles, block_length=block_length, pair_seed=pair_seed,
+            )
+        else:
+            _, _, te_val, p_val = _te_one_pair(
+                0, 1, y, x, lag=lag, n_bins=n_bins,
+                n_shuffles=n_shuffles, block_length=block_length, pair_seed=pair_seed,
+            )
+        date = returns.index[end_pos]
+        return {
+            "date": date, "ticker_a": ta, "ticker_b": tb, "direction": direction,
+            "te": float(te_val), "p_value": float(p_val),
+        }
+
+    results = Parallel(n_jobs=n_jobs, verbose=5)(
+        delayed(_one_task)(*t) for t in tasks
+    )
+    rows = [r for r in results if r is not None]
+    return pd.DataFrame(rows)
+
+
+def bootstrap_te(
+    source_series: np.ndarray,
+    target_series: np.ndarray,
+    *,
+    n_iter: int = 500,
+    lag: int = 1,
+    n_bins: int = 3,
+    block_length: int = 5,
+    seed: int = 42,
+) -> dict:
+    """Joint circular-block-bootstrap 95% CI for TE(source → target).
+
+    Resamples (source, target) JOINTLY with the SAME block index so the
+    pair structure is preserved within blocks. This gives a CI on the
+    POINT ESTIMATE of TE, not the surrogate-null distribution (which the
+    existing significance test in `_te_one_pair` already provides).
+
+    Returns ``{point, ci_low, ci_high, n_iter, includes_zero}``.
+    """
+    x = np.asarray(source_series, dtype=float)
+    y = np.asarray(target_series, dtype=float)
+    # Joint NaN mask preserves pair alignment.
+    mask = np.isfinite(x) & np.isfinite(y)
+    x, y = x[mask], y[mask]
+    n = x.size
+    if n < block_length * 4:
+        return {
+            "point": float("nan"), "ci_low": float("nan"), "ci_high": float("nan"),
+            "n_iter": 0, "includes_zero": True,
+        }
+
+    te_point = transfer_entropy(x, y, lag=lag, n_bins=n_bins)
+
+    rng = np.random.default_rng(seed)
+    n_blocks = int(np.ceil(n / block_length))
+    samples = np.empty(n_iter)
+    for it in range(n_iter):
+        # Pick block starts once; apply the SAME index list to both
+        # source and target. This preserves the within-block pair
+        # structure that carries the directional information.
+        starts = rng.integers(0, n, size=n_blocks)
+        block_idx = (starts[:, None] + np.arange(block_length)[None, :]) % n
+        idx = block_idx.ravel()[:n]
+        x_bs = x[idx]
+        y_bs = y[idx]
+        try:
+            samples[it] = transfer_entropy(x_bs, y_bs, lag=lag, n_bins=n_bins)
+        except Exception:
+            samples[it] = np.nan
+
+    samples = samples[np.isfinite(samples)]
+    ci_low = float(np.percentile(samples, 2.5)) if samples.size else float("nan")
+    ci_high = float(np.percentile(samples, 97.5)) if samples.size else float("nan")
+    return {
+        "point": float(te_point),
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "n_iter": int(samples.size),
+        "includes_zero": bool(ci_low <= 0.0 <= ci_high),
+    }
+
+
 def _apply_multiple_testing(
     pvals: np.ndarray,
     tasks: list[tuple[int, int]],

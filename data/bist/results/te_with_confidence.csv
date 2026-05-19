@@ -1,0 +1,4 @@
+ticker_a,ticker_b,direction,te_point,te_ci_low,te_ci_high,includes_zero
+KCHOL,AKBNK,a_to_b,0.00918,0.00418,0.01662,False
+BRSAN,BRYAT,b_to_a,0.00913,0.00453,0.01597,False
+TUPRS,AYGAZ,a_to_b,0.00788,0.00344,0.01444,False

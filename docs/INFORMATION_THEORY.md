@@ -265,6 +265,41 @@ Both are very large. The earthquake event reconfigured the BIST
 covariance structure roughly twice as drastically as the Ukraine
 invasion did.
 
+### 8. Permutation entropy `PE(X)` — added PR #73
+
+A complementary, **binning-free** complexity measure. Take each window of
+4 consecutive returns; rank the 4 values to get a permutation (one of 24
+possible orderings). Build the histogram over all observed permutations
+across the series, take Shannon entropy, normalise by log₂(24).
+
+```
+PE_norm(X) = H(ordinal-pattern distribution) / log₂(D!)
+```
+
+PE_norm ∈ [0, 1]. 1.0 = patterns uniform (maximally unpredictable).
+0 = single pattern dominates (deterministic).
+
+**Why this is complementary to sign-entropy**: sign-entropy coarse-grains
+returns to 2 states and looks at lag-1 transitions only. PE catches
+**4-bar ordinal patterns** that the sign-only view discards. A series
+like `+, ++, ++, +, +, +, ++, …` has high sign-entropy (mostly positive,
+lag-1 sign is uninformative) but the ordinal structure can still be
+detected by PE if the magnitude trajectory has a repeated shape.
+
+**Artifact**: `data/<universe>/results/permutation_entropy.csv` —
+columns `[ticker, permutation_entropy_norm, n_observations]`. Aggregate
+mean is in `it_summary.json:mean_permutation_entropy_norm`.
+
+**Current BIST findings**:
+- Mean = **0.9978** — BIST is close to ordinally random in aggregate.
+- Range = 0.993 (ZOREN — most patterned) → 0.999 (BRSAN — most random).
+- Distinct from sign-entropy: only **5 of the top-15 most-predictable tickers overlap** between the two measures. Sign-entropy and PE catch genuinely different structural patterns:
+  - Both lists (clearest non-random): **AGHOL, AKFGY, ASELS, CCOLA, VESBE**
+  - PE only (multi-bar patterns missed by sign-only view): **AKSA, ASUZU, BRISA, BRYAT, PAPIL, PGSUS, TOASO, TUPRS, YKBNK, ZOREN**
+
+The dashboard renders these side-by-side in the Information Theory
+sub-tab; tickers in 2+ of the three top-15 lists get a `★` annotation.
+
 ## Where each measure surfaces in the dashboard
 
 | Surface | Measures shown |
@@ -307,6 +342,119 @@ invasion did.
   Gaussian KL probably underestimates the true distributional shift.
   Computing KL between empirical distributions would require either
   density estimation or non-parametric tests; not implemented.
+
+## Lag-sweep transfer entropy (PR #73)
+
+The production TE pipeline tests directional flow at lag=1 only. Our
+pair-trading half-lives are 30–150 days and the crisis windows last 60+
+days, so a daily lag is the *fastest* timescale we could plausibly
+measure. We extend with a **lag-sweep** at {1, 5, 22} days (daily /
+weekly / monthly) on a hand-picked top-correlation hypothesis set
+(10 pairs).
+
+**Why a small hypothesis set**: the BH-FDR cutoff on N=5256 directed
+pairs is ≈ 9.5e-6, requiring K=100,000+ surrogate shuffles to clear.
+On a 20-test batch (10 pairs × 2 directions), the cutoff is α/20 = 0.0025,
+comfortably above the K=1000 minimum p-value of 0.001. So pre-selected
+sets surface signal that the full-grid test multiple-testing-suppresses.
+
+**Methodology**:
+- Same `_te_one_pair` machinery used by the production stage (circular
+  block bootstrap, BH-FDR per-lag).
+- FDR is applied **independently per lag** — a finding at lag=5 doesn't
+  compete with a finding at lag=1.
+
+**Current BIST findings on the top-10 correlation hypothesis set**:
+
+| Lag (days) | FDR survivors | Uncorrected sig at α=0.05 |
+|---|---|---|
+| 1 | **2** | 5 |
+| 5 (weekly) | 0 | 0 |
+| 22 (monthly) | 0 | 3 |
+
+**The 2 lag-1 FDR survivors**:
+- **KCHOL → AKBNK** (holding → bank subsidiary), p=0.004
+- **BRYAT → BRSAN** (tire maker → steel maker), p=0.003
+
+**Headline interpretation**: BIST directional information flow is
+**concentrated at the daily scale**. Weekly flow is undetectable
+at this sample size and pre-selected set; monthly flow shows 3 marginal
+candidates uncorrected but FDR kills them.
+
+**Important alignment note**: the earlier (pre-fix) Gate-1 result
+reported TUPRS → AYGAZ as a third FDR survivor at p=0.001. That was a
+**date-alignment artifact** — the lag-sweep helper was using
+dropna-per-series + tail-alignment, which mispaired observations on
+dates with different NaN patterns. After joint-dropna fix the
+TUPRS→AYGAZ point estimate drops from 0.041 to 0.008 (uncorrected
+p=0.017, no longer surviving FDR). Lesson: validate alignment on
+real data with NaN holes before reporting findings.
+
+## Rolling transfer entropy (PR #73)
+
+The full-sample TE answer is "this directional flow exists across
+2020–2026." A more honest claim requires **time-localisation**: does the
+flow persist throughout the period, or does it concentrate around
+specific regimes?
+
+**Methodology**:
+- 252-day sliding window, 21-day stride → ~64 windows on BIST.
+- K=500 surrogates per window (lower than full-sample K=1000 — at
+  smaller N the surrogate distribution converges faster).
+- **Hypothesis discipline**: only run on the pairs that already
+  surfaced via the full-sample lag-1 test (G1 survivors). Running on
+  the full grid is wasteful and exacerbates the multiple-testing problem.
+
+**Current BIST findings** (across 62 windows):
+
+| Pair (direction) | Mean TE | Max TE | # sig (p<0.05) |
+|---|---|---|---|
+| BRYAT → BRSAN | 0.036 | 0.068 | **14/62** |
+| TUPRS → AYGAZ | 0.026 | 0.051 | 8/62 |
+| BRSAN → BRYAT (reverse) | 0.029 | 0.057 | 5/62 |
+| KCHOL → AKBNK | 0.025 | 0.044 | 2/62 |
+| TUPRS ← AYGAZ (reverse) | 0.027 | 0.058 | 6/62 |
+| KCHOL ← AKBNK (reverse) | 0.024 | 0.048 | 1/62 |
+
+**BRYAT → BRSAN is the most persistent** directional flow — significant
+in 14 of 62 windows (~23% of time). KCHOL → AKBNK is the cleanest
+full-sample finding but the time-localisation is weak (only 2/62
+windows individually significant), suggesting the directional flow is
+spread thinly across the period rather than concentrated.
+
+The chart in the dashboard plots TE(t) for each (pair, direction) with
+crisis-date vertical lines (Ukraine 2022-02, Türkiye earthquake
+2023-02) for visual comparison with the rolling D_eff panel.
+
+## Bootstrap confidence intervals (PR #73)
+
+Point estimates of MI and TE come without error bars in the
+production pipeline. Adding **circular-block-bootstrap CIs**
+(block length = 5, K=500 iterations, joint resampling that preserves
+the pair structure) gives the obvious thesis-defense answer to "is
+this estimate robust or sampling noise?"
+
+**Joint vs source-only bootstrap**: a TE bootstrap that shuffles only
+the source series gives the surrogate-null distribution (which the
+existing pipeline already uses for p-values). A **joint** bootstrap
+that resamples (source, target) with the SAME block index preserves
+the directional information and gives a true CI on the point estimate.
+PR #73's `bootstrap_te` uses the joint approach.
+
+**Current BIST findings**:
+
+*MI nonlinear excess CIs (top-14 pairs)*:
+- **9 of 14** pairs have CIs that exclude zero → robust nonlinear coupling
+- 5 of 14 have CIs straddling zero → consistent with sampling noise
+- Top pair **BRSAN/HEKTS**: excess = 0.044 bits, CI = [0.019, 0.077] — robust.
+
+*TE CIs (3 pairs from G1 + uncorrected-interesting)*:
+- KCHOL → AKBNK: TE = 0.0092, CI = [0.0042, 0.0166] — robust
+- BRYAT → BRSAN: TE = 0.0091, CI = [0.0045, 0.0160] — robust
+- TUPRS → AYGAZ: TE = 0.0079, CI = [0.0034, 0.0144] — robust (even though uncorrected-only at full-grid significance)
+
+The dashboard renders both CI tables in the IT and TE sub-tabs
+respectively, flagging "CI excludes 0?" as a defensibility marker.
 
 ## What we don't compute (and could)
 
