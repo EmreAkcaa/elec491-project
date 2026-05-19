@@ -1,9 +1,9 @@
 {
   "n_significant_fdr": 0,
-  "n_significant_uncorrected": 647,
+  "n_significant_uncorrected": 670,
   "total_pairs": 5256,
   "significance_level": 0.05,
   "multiple_testing": "fdr_bh",
   "surrogate_block_length": 5,
-  "significance_shuffles": 100
+  "significance_shuffles": 1000
 }

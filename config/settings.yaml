@@ -79,7 +79,15 @@ clustering:
 transfer_entropy:
   lag: 1
   n_bins: 3
-  significance_shuffles: 100
+  # Bumped 100 → 1000 (2026-05-19): K=100 produced minimum achievable
+  # p-value ~0.01, which on the 5256-pair grid couldn't clear the
+  # Benjamini–Hochberg α=0.05 cutoff (~1e-5 for the top edge). Result
+  # was 0 significant edges — a resolution artifact, not absence of
+  # signal. Gate-1 verification on 10 high-correlation pairs at K=1000
+  # surfaced 3 directional flows surviving FDR (TUPRS→AYGAZ, KCHOL→AKBNK,
+  # BRSAN→BRYAT) — all sectorally meaningful. K=1000 is the production
+  # floor; bump to 10,000 if a future analysis needs even finer resolution.
+  significance_shuffles: 1000
   significance_level: 0.05
   seed: 42
   # Block length for the circular-block-bootstrap surrogate (preserves source
