@@ -272,8 +272,10 @@ with st.sidebar:
             )
 
     # Re-read the active universe AFTER both sidebar controls.
+    # PORT arda/ui-cleanup item 5: sidebar dataset description caption
+    # removed for cleaner left-rail. `Universe.description` stays in
+    # universe_registry.py for any other consumer that wants it.
     _active_universe = get_universe(current_universe())
-    st.caption(_cap(_active_universe, 'description', ''))
     st.markdown("---")
 
 

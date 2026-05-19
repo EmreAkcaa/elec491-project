@@ -393,10 +393,12 @@ def render(
     pipe_meta = load_metadata()
     market_summary = pipe_meta.get("market_summary", {})
 
-    # ── Header strip: date range | theme | 5 KPI cards (7 cols) ─────────
-    _date_col, _theme_col, m1, m2, m3, m4, m5 = st.columns(
-        [1.5, 0.9, 1.05, 1.05, 1.1, 1.1, 1.5]
-    )
+    # ── Header strip (PORT arda/ui-cleanup item 2: split into 2 rows) ────
+    # Row 1: date range + theme popover (left side).
+    # Row 2: 5 KPI cards across full width.
+    # Same metrics, same order — only the DOM layout differs from the
+    # prior 7-col single row.
+    _date_col, _theme_col = st.columns([1.5, 0.9])
 
     with _theme_col:
         render_theme_popover()
@@ -419,6 +421,7 @@ def render(
     window_length = len(returns)
     dynamic_min_periods = max(30, int(window_length * 0.6))
 
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric(_cap(active_universe, 'items_label', 'Tickers'), f"{returns.shape[1]}")
     m2.metric(
         "Samples" if _cap(active_universe, 'domain', 'finance') == "neuroscience" else "Trading Days",
@@ -499,22 +502,16 @@ def _render_tab_data_stats(
     active_universe,
     market_summary: dict,
 ) -> None:
-    """Auto-extracted from dashboard.py during PHASE 2 / Stage 1."""
+    """Auto-extracted from dashboard.py during PHASE 2 / Stage 1.
+    PORT arda/ui-cleanup item 1: removed three section_header subtitle
+    paragraphs (Data Coverage, Descriptive Statistics, Return Anomalies)."""
     # ── Section 1: Coverage & Normalized Prices ─────────────────────────────
     with st.container(border=True):
         if _cap(active_universe, 'has_index_series', True):
-            section_header(
-                "Data Coverage & Price Performance",
-                f"Left: per-{_cap(active_universe, 'item_label', 'Ticker').lower()} data availability "
-                f"(90% threshold). Right: all prices rebased to 100 — the bold black "
-                f"line is {_cap(active_universe, 'index_ticker', 'XU100')}.",
-            )
+            section_header("Data Coverage & Price Performance")
         else:
             section_header(
-                f"Data Coverage & {_cap(active_universe, 'series_label', 'Log return')} Performance",
-                f"Left: per-{_cap(active_universe, 'item_label', 'Ticker').lower()} data availability. "
-                f"Right: {_cap(active_universe, 'series_label', 'Log return').lower()} time-series for a "
-                f"representative subset of channels (first 30 s).",
+                f"Data Coverage & {_cap(active_universe, 'series_label', 'Log return')} Performance"
             )
 
         col_left, col_right = st.columns(2)
@@ -676,19 +673,11 @@ def _render_tab_data_stats(
         _series_units   = _cap(active_universe, 'series_units', '')
         _series_axis    = f"{_series_label} ({_series_units})" if _series_units else _series_label
 
+        # PORT arda/ui-cleanup item 1: descriptive-stats section_header subtitle removed.
         if _is_finance:
-            section_header(
-                "Descriptive Statistics & Returns",
-                f"Left: per-{_item_label.lower()} risk-return metrics from daily log returns. "
-                f"Right: histogram for a selected {_item_label.lower()} — look for fat tails and skewness.",
-            )
+            section_header("Descriptive Statistics & Returns")
         else:
-            section_header(
-                f"Descriptive Statistics & {_series_label} Distribution",
-                f"Left: per-{_item_label.lower()} distribution shape (skewness, kurtosis, extremes). "
-                f"Annualised return / volatility columns are hidden — they're a financial-only construct. "
-                f"Right: amplitude histogram for a selected {_item_label.lower()}.",
-            )
+            section_header(f"Descriptive Statistics & {_series_label} Distribution")
 
         col_stats, col_hist = st.columns([3, 2])
 
@@ -820,13 +809,10 @@ def _render_tab_data_stats(
                              title_key="mo_hist", default_title=_hist_title)
 
     # ── Section 3: Return Anomalies (financial universes only) ──────────────
+    # PORT arda/ui-cleanup item 1: anomalies section_header subtitle removed.
     if _cap(active_universe, 'has_anomaly_detection', True):
       with st.container(border=True):
-          section_header(
-              "Return Anomalies",
-              "Days where a ticker's daily log return exceeded the configured "
-              "threshold (default ±30%) — usually corporate actions or data glitches.",
-          )
+          section_header("Return Anomalies")
 
           anomalies = load_anomalies()
           if anomalies.empty:
@@ -929,119 +915,112 @@ def _render_tab_clustering(
         _item_cl    = _cap(active_universe, 'item_label', 'Ticker')
         _sector_cl  = _cap(active_universe, 'sector_label', 'Sector')
         _series_cl  = _cap(active_universe, 'series_label', 'log return').lower()
-        section_header(
-            f"Hierarchical Clustering & {_sector_cl} Validation",
-            f"Dendrogram built from d = sqrt(2(1-rho)). {_items_cl} merging at lower heights "
-            f"have more similar {_series_cl} dynamics. Validation metrics (ARI, NMI) measure "
-            f"how well statistical clusters align with the universe's {_sector_cl.lower()} labels.",
+        # PORT arda/ui-cleanup item 3: full-width multi-colored dendrogram
+        # with cluster info BELOW (not right-column). Section_header subtitle
+        # removed.
+        section_header(f"Hierarchical Clustering & {_sector_cl} Validation")
+
+        # Load cluster_df up front so we can derive color_threshold for
+        # the dendrogram + still have it available for the cluster-info
+        # block below.
+        cluster_df = load_cluster_assignments()
+        _n_clusters_hint = (
+            cluster_df["cluster_id"].nunique() if not cluster_df.empty else 0
         )
 
-        col_dendro, col_clusters = st.columns([3, 2])
+        # Dendrogram — full-width row.
+        Z_loaded, labels_loaded = load_linkage()
+        if Z_loaded is not None:
+            n_leaves = len(labels_loaded)
+            # color_threshold tells ff.create_dendrogram to use its default
+            # palette to color the top N clusters distinctly. We derive N
+            # from cluster_df. If unknown, falls through to default (=auto).
+            _color_threshold = None
+            if _n_clusters_hint > 1 and Z_loaded.shape[0] >= _n_clusters_hint - 1:
+                # Distance at which Ward forms exactly _n_clusters_hint clusters.
+                # Pick the merge height just BELOW the (n - n_clusters)th merge
+                # so that everything below threshold is a within-cluster branch
+                # (gets a distinct color), and merges above are the cluster trunks.
+                _cut_idx = max(0, Z_loaded.shape[0] - _n_clusters_hint)
+                _color_threshold = float(Z_loaded[_cut_idx, 2])
+            _dendro_kwargs = dict(
+                orientation="bottom",
+                labels=labels_loaded,
+                linkagefun=lambda x: Z_loaded,
+            )
+            if _color_threshold is not None:
+                _dendro_kwargs["color_threshold"] = _color_threshold
+            fig_dendro = ff.create_dendrogram(np.eye(n_leaves), **_dendro_kwargs)
+            # Keep the line-width bump but DON'T override colors — let
+            # ff.create_dendrogram's default palette show through.
+            for trace in fig_dendro.data:
+                trace.line.width = 1.5
+            # Hide per-leaf labels when there are too many to read.
+            _show_leaf_labels = n_leaves <= 100
+            _leaf_tickfont = 7 if n_leaves <= 100 else 1
+            apply_chart_style(fig_dendro,
+                height=750,
+                margin=dict(l=10, r=10, t=10, b=100 if _show_leaf_labels else 30),
+                xaxis=dict(
+                    tickfont=dict(size=_leaf_tickfont),
+                    tickangle=-90,
+                    showticklabels=_show_leaf_labels,
+                ),
+                yaxis_title="Distance",
+            )
+            render_chart(fig_dendro, chart_id="mo_dendrogram", filename_base="dendrogram",
+                         title_key="mo_dendrogram", default_title="Hierarchical Clustering")
+        else:
+            st.info("Run the clustering pipeline to generate the dendrogram.")
 
-        with col_dendro:
-            Z_loaded, labels_loaded = load_linkage()
-            if Z_loaded is not None:
-                n_leaves = len(labels_loaded)
-                fig_dendro = ff.create_dendrogram(
-                    np.eye(n_leaves),
-                    orientation="bottom",
-                    labels=labels_loaded,
-                    linkagefun=lambda x: Z_loaded,
-                )
-                for trace in fig_dendro.data:
-                    trace.update(line=dict(color=get_colors()["primary"], width=1.2))
-                # Hide per-leaf labels when there are too many to read; the
-                # rendering speed jump is dramatic on the 485-leaf S&P tree.
-                _show_leaf_labels = n_leaves <= 100
-                _leaf_tickfont = 7 if n_leaves <= 100 else 1  # plotly requires size>=1
-                apply_chart_style(fig_dendro,
-                    height=500,
-                    margin=dict(l=10, r=10, t=10, b=100 if _show_leaf_labels else 30),
-                    xaxis=dict(
-                        tickfont=dict(size=_leaf_tickfont),
-                        tickangle=-90,
-                        showticklabels=_show_leaf_labels,
-                    ),
-                    yaxis_title="Distance",
-                )
-                if not _show_leaf_labels:
-                    st.caption(
-                        f":material/info: Per-leaf labels hidden on this "
-                        f"{n_leaves}-leaf dendrogram for legibility; cluster "
-                        "membership is in the table on the right."
-                    )
-                render_chart(fig_dendro, chart_id="mo_dendrogram", filename_base="dendrogram",
-                             title_key="mo_dendrogram", default_title="Hierarchical Clustering")
-            else:
-                st.info("Run the clustering pipeline to generate the dendrogram.")
+        # Cluster info block — full-width row BELOW the dendrogram.
+        if not cluster_df.empty:
+            n_clusters = cluster_df["cluster_id"].nunique()
+            st.metric("Clusters Found", n_clusters)
 
-        with col_clusters:
-            cluster_df = load_cluster_assignments()
-            if not cluster_df.empty:
-                n_clusters = cluster_df["cluster_id"].nunique()
-                st.metric("Clusters Found", n_clusters)
+            if "sector" in cluster_df.columns:
+                # Universe-appropriate sanity-check banners.
+                for group_label, members in (_cap(active_universe, 'sanity_check_groups', None) or {}).items():
+                    present = cluster_df[cluster_df["ticker"].isin(members)]
+                    if present.empty:
+                        continue
+                    present_clusters = present["cluster_id"].unique()
+                    names = present["ticker"].tolist()
+                    if len(names) > 12:
+                        names_str = ", ".join(names[:12]) + f", … (+{len(names) - 12} more)"
+                    else:
+                        names_str = ", ".join(names)
+                    if len(present_clusters) == 1:
+                        st.success(
+                            f"**{group_label} sanity check passed.** All "
+                            f"{len(present)} members ({names_str}) are in "
+                            f"Cluster {present_clusters[0]}."
+                        )
+                    else:
+                        st.warning(
+                            f"**{group_label}:** {len(present)} members span "
+                            f"{len(present_clusters)} clusters "
+                            f"({', '.join(str(c) for c in sorted(present_clusters))}). "
+                            f"Members: {names_str}"
+                        )
 
-                # Friend's UX feedback (this round): the raw cluster
-                # assignments table (cluster_id × ticker × sector), the
-                # cluster-vs-sector crosstab, and the ARI/NMI/Sectors
-                # metric strip were all visual clutter. "Cluster Purity
-                # is enough" — keep just (1) the universe-appropriate
-                # sanity-check banners (one-line green/yellow status) and
-                # (2) the per-cluster purity table below them.
-                if "sector" in cluster_df.columns:
-                    # Universe-appropriate sanity-check banners. The
-                    # groups come from the Universe.sanity_check_groups
-                    # dict in app/universe_registry.py — BIST checks
-                    # the banking sector; S&P checks mega-cap tech;
-                    # EEG checks central-motor / occipital / prefrontal
-                    # electrode triples.
-                    for group_label, members in (_cap(active_universe, 'sanity_check_groups', None) or {}).items():
-                        present = cluster_df[cluster_df["ticker"].isin(members)]
-                        if present.empty:
-                            continue
-                        present_clusters = present["cluster_id"].unique()
-                        names = present["ticker"].tolist()
-                        if len(names) > 12:
-                            names_str = ", ".join(names[:12]) + f", … (+{len(names) - 12} more)"
-                        else:
-                            names_str = ", ".join(names)
-                        if len(present_clusters) == 1:
-                            st.success(
-                                f"**{group_label} sanity check passed.** All "
-                                f"{len(present)} members ({names_str}) are in "
-                                f"Cluster {present_clusters[0]}."
-                            )
-                        else:
-                            st.warning(
-                                f"**{group_label}:** {len(present)} members span "
-                                f"{len(present_clusters)} clusters "
-                                f"({', '.join(str(c) for c in sorted(present_clusters))}). "
-                                f"Members: {names_str}"
-                            )
-
-                    st.markdown("**Cluster Purity**")
-                    st.caption(
-                        f"Each cluster's dominant {_sector_cl.lower()} and the fraction "
-                        f"of members sharing that {_sector_cl.lower()}. Purity = 1.0 means "
-                        f"every {_item_cl.lower()} in the cluster shares the same "
-                        f"{_sector_cl.lower()}."
-                    )
-                    purity_rows = []
-                    for cid, grp in cluster_df.groupby("cluster_id"):
-                        sector_counts = grp["sector"].value_counts()
-                        dominant = sector_counts.index[0]
-                        purity = sector_counts.iloc[0] / len(grp)
-                        purity_rows.append({
-                            "Cluster": cid,
-                            "Size": len(grp),
-                            f"Dominant {_sector_cl}": dominant,
-                            "Purity": f"{purity:.2f}",
-                            "Members": ", ".join(sorted(grp["ticker"].tolist())),
-                        })
-                    purity_df = pd.DataFrame(purity_rows)
-                    st.dataframe(purity_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("Run the clustering pipeline to see cluster assignments.")
+                st.markdown("**Cluster Purity**")
+                purity_rows = []
+                for cid, grp in cluster_df.groupby("cluster_id"):
+                    sector_counts = grp["sector"].value_counts()
+                    dominant = sector_counts.index[0]
+                    purity = sector_counts.iloc[0] / len(grp)
+                    purity_rows.append({
+                        "Cluster": cid,
+                        "Size": len(grp),
+                        f"Dominant {_sector_cl}": dominant,
+                        "Purity": f"{purity:.2f}",
+                        "Members": ", ".join(sorted(grp["ticker"].tolist())),
+                    })
+                purity_df = pd.DataFrame(purity_rows)
+                st.dataframe(purity_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Run the clustering pipeline to see cluster assignments.")
 
     # ── Section 5: MST Network ──────────────────────────────────────────────
     with st.container(border=True):
@@ -1049,10 +1028,8 @@ def _render_tab_clustering(
         _sector_mst   = _cap(active_universe, 'sector_label', 'Sector')
         _domain_mst   = _cap(active_universe, 'domain', 'finance')
         _bridge_scope = "across the market" if _domain_mst == "finance" else "across the network"
-        section_header(
-            "Minimum Spanning Tree",
-            f"Nodes colored by {_sector_mst.lower()}, sized by degree.",
-        )
+        # PORT arda/ui-cleanup item 3: MST section_header subtitle removed.
+        section_header("Minimum Spanning Tree")
 
         mst_edges = load_mst_edges()
         mst_metrics = load_mst_metrics()
@@ -1139,14 +1116,7 @@ def _render_tab_clustering(
                 ))
             render_chart(fig_mst, chart_id="mo_mst", filename_base="mst_network",
                          title_key="mo_mst", default_title="Minimum Spanning Tree")
-            # Sprint 2 PR-I: subtitle disambiguates this MST from the two others
-            # that show up elsewhere in the app (RMT-denoised + per-wavelet-scale).
-            st.caption(
-                "Built from full-period Pearson correlation distance "
-                "d = √(2(1−ρ)). The RMT-denoised version (noise eigenvalues "
-                "replaced) lives under **EEE Analysis → RMT Denoising**; "
-                "per-frequency-band MSTs live under **EEE Analysis → Wavelet Multi-Scale**."
-            )
+            # PORT arda/ui-cleanup item 3: trailing MST caption removed.
 
             # Hub table behind an expander — was always-on in the right column
             # of a [3,2] split, now hidden by default to let the MST breathe.

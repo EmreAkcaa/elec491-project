@@ -252,10 +252,16 @@ def render(
     # COLUMN KEY used for DataFrame lookups. They diverge only when
     # ticker_b is a base-asset key (where "usd_try" is the column but
     # "USD/TRY" is the display).
+    # PORT arda/ui-cleanup item 7: Ticker B selectbox excludes Ticker A
+    # from its options. The session-state swap above (lines 208-215) ensures
+    # the stored pa_ticker_b value is never equal to pa_ticker_a, so the
+    # filtered list never strips the currently-stored value.
+    _ticker_b_options = [t for t in ticker_list if t != ticker_a]
+
     if _compare_asset_key is None:
         # Stock-vs-stock — existing behavior, existing Ticker B selectbox.
         with _c_b:
-            ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
+            ticker_b = st.selectbox("Ticker B", _ticker_b_options, key="pa_ticker_b")
         _b_disp = ticker_b
         _b_is_base_asset = False
     else:
@@ -268,7 +274,7 @@ def render(
         )
         if not _ok:
             with _c_b:
-                ticker_b = st.selectbox("Ticker B", ticker_list, key="pa_ticker_b")
+                ticker_b = st.selectbox("Ticker B", _ticker_b_options, key="pa_ticker_b")
             _b_disp = ticker_b
             _b_is_base_asset = False
             st.warning(
@@ -410,74 +416,42 @@ def render(
             except Exception:
                 pass
 
-        # Price Performance & Return Scatter
+        # Price Performance — full-width.
+        # PORT arda/ui-cleanup item 6: removed the right-column return-scatter
+        # chart (`pa_scatter`). Section title shortened from "Price Performance
+        # & Return Relationship" to "Price Performance". Price chart now
+        # full-width at height 480 (was 440 in a 50/50 split).
         with st.container(border=True):
-            section_header(
-                "Price Performance & Return Relationship",
-                "Left: prices rebased to 100 with divergence shading. "
-                "Right: daily return scatter with OLS regression line.",
-            )
+            section_header("Price Performance")
 
-            col_price, col_scatter = st.columns(2)
+            if ticker_a in prices_window.columns and ticker_b in prices_window.columns:
+                pa = prices_window[ticker_a] / prices_window[ticker_a].iloc[0] * 100
+                pb = prices_window[ticker_b] / prices_window[ticker_b].iloc[0] * 100
 
-            with col_price:
-                if ticker_a in prices_window.columns and ticker_b in prices_window.columns:
-                    pa = prices_window[ticker_a] / prices_window[ticker_a].iloc[0] * 100
-                    pb = prices_window[ticker_b] / prices_window[ticker_b].iloc[0] * 100
-
-                    fig_price = go.Figure()
-                    _al = pd.concat([pa, pb], axis=1).dropna()
-                    if not _al.empty:
-                        _pa_al, _pb_al = _al.iloc[:, 0], _al.iloc[:, 1]
-                        fig_price.add_trace(go.Scatter(
-                            x=list(_pa_al.index) + list(_pb_al.index[::-1]),
-                            y=list(_pa_al.values) + list(_pb_al.values[::-1]),
-                            fill="toself", fillcolor=get_colors()["positive"],
-                            line=dict(width=0), showlegend=False, hoverinfo="skip",
-                        ))
+                fig_price = go.Figure()
+                _al = pd.concat([pa, pb], axis=1).dropna()
+                if not _al.empty:
+                    _pa_al, _pb_al = _al.iloc[:, 0], _al.iloc[:, 1]
                     fig_price.add_trace(go.Scatter(
-                        x=pa.index, y=pa, name=ticker_a,
-                        mode="lines", line=dict(color=get_colors()["primary"], width=2.2),
+                        x=list(_pa_al.index) + list(_pb_al.index[::-1]),
+                        y=list(_pa_al.values) + list(_pb_al.values[::-1]),
+                        fill="toself", fillcolor=get_colors()["positive"],
+                        line=dict(width=0), showlegend=False, hoverinfo="skip",
                     ))
-                    fig_price.add_trace(go.Scatter(
-                        x=pb.index, y=pb, name=_b_disp,
-                        mode="lines", line=dict(color=get_colors()["secondary"], width=2.2),
-                    ))
-                    draw_event_markers(fig_price, show_defaults, custom_events,
-                                       pa.index.min(), pa.index.max())
-                    apply_chart_style(fig_price, height=440,
-                                      yaxis_title="Normalized Price (base = 100)")
-                    render_chart(fig_price, chart_id="pa_prices", filename_base="pair_prices",
-                                 title_key="pa_prices", default_title="Price Performance")
-
-            with col_scatter:
-                if len(both) >= 10:
-                    _ra = both[ticker_a].values
-                    _rb = both[ticker_b].values
-                    _m_ols, _b_ols = np.polyfit(_ra, _rb, 1)
-                    _x_line = np.linspace(_ra.min(), _ra.max(), 200)
-                    _y_line = _m_ols * _x_line + _b_ols
-                    _rho_label = both.corr().iloc[0, 1]
-
-                    fig_scat = go.Figure()
-                    fig_scat.add_trace(go.Scatter(
-                        x=_ra, y=_rb, mode="markers",
-                        marker=dict(color=get_colors()["primary"], size=4, opacity=0.4),
-                        hovertemplate=f"{ticker_a}: %{{x:.4f}}<br>{_b_disp}: %{{y:.4f}}<extra></extra>",
-                        showlegend=False,
-                    ))
-                    fig_scat.add_trace(go.Scatter(
-                        x=_x_line, y=_y_line, mode="lines",
-                        name=f"OLS beta = {_m_ols:.3f}",
-                        line=dict(color=get_colors()["secondary"], width=2.2),
-                    ))
-                    apply_chart_style(fig_scat, height=440,
-                                      xaxis_title=f"{ticker_a} Return",
-                                      yaxis_title=f"{_b_disp} Return",
-                                      title=dict(text=f"rho = {_rho_label:.4f}", font=dict(size=12), x=0.5),
-                                      margin=dict(l=0, r=0, t=40, b=0))
-                    render_chart(fig_scat, chart_id="pa_scatter", filename_base="return_scatter",
-                                 title_key="pa_scatter", default_title="Return Scatter")
+                fig_price.add_trace(go.Scatter(
+                    x=pa.index, y=pa, name=ticker_a,
+                    mode="lines", line=dict(color=get_colors()["primary"], width=2.2),
+                ))
+                fig_price.add_trace(go.Scatter(
+                    x=pb.index, y=pb, name=_b_disp,
+                    mode="lines", line=dict(color=get_colors()["secondary"], width=2.2),
+                ))
+                draw_event_markers(fig_price, show_defaults, custom_events,
+                                   pa.index.min(), pa.index.max())
+                apply_chart_style(fig_price, height=480,
+                                  yaxis_title="Normalized Price (base = 100)")
+                render_chart(fig_price, chart_id="pa_prices", filename_base="pair_prices",
+                             title_key="pa_prices", default_title="Price Performance")
 
     # ══════════════════════════════════════════════════════════════════════
     # Tab 2 — Correlation
@@ -690,14 +664,17 @@ def render(
                 "Exit |Z| Threshold", 0.0, 1.5, 0.5, 0.25, key="pa_exit_z",
             )
 
-        # Shared computation for spread & Z-score
+        # Shared computation for spread & Z-score.
+        # PORT arda/ui-cleanup item 8: removed the `st.status("Computing
+        # spread & Z-score...")` wrapper. `_compute_dislocation` is
+        # @st.cache_data so 95%+ of calls hit cache; the status block was
+        # flashing for no reason. First-compute (cold cache) still gets
+        # the shimmer overlay from app/utils.py inject_custom_css.
         try:
-            with st.status("Computing spread & Z-score...", expanded=False) as _disloc_status:
-                spread, beta, intercept, zscore, half_life, signals_df = _compute_dislocation(
-                    adj_close, adj_cache_key,
-                    ticker_a, ticker_b, ols_lookback, zscore_window, entry_z, exit_z,
-                )
-                _disloc_status.update(label="Spread & Z-score ready", state="complete")
+            spread, beta, intercept, zscore, half_life, signals_df = _compute_dislocation(
+                adj_close, adj_cache_key,
+                ticker_a, ticker_b, ols_lookback, zscore_window, entry_z, exit_z,
+            )
 
             spread_w = spread.loc[start_dt:end_dt]
             zscore_w = zscore.loc[start_dt:end_dt]
@@ -813,12 +790,18 @@ def render(
                     render_chart(fig_z, chart_id="pa_zscore", filename_base="zscore",
                                  title_key="pa_zscore", default_title="Z-Score")
 
+                    # PORT arda/ui-cleanup item 8: Signal History wrapped in
+                    # a collapsed-by-default expander. Same table content;
+                    # only the chrome around it changes.
                     if not _window_signals.empty:
-                        st.markdown(f"**Signal History** ({len(_window_signals)} signals)")
-                        _disp = _window_signals.copy()
-                        _disp["date"] = pd.to_datetime(_disp["date"]).dt.strftime("%Y-%m-%d")
-                        _disp["zscore_value"] = _disp["zscore_value"].map(lambda v: f"{v:.4f}")
-                        st.dataframe(_disp, hide_index=True, use_container_width=True)
+                        with st.expander(
+                            f"Signal History ({len(_window_signals)} signals)",
+                            expanded=False,
+                        ):
+                            _disp = _window_signals.copy()
+                            _disp["date"] = pd.to_datetime(_disp["date"]).dt.strftime("%Y-%m-%d")
+                            _disp["zscore_value"] = _disp["zscore_value"].map(lambda v: f"{v:.4f}")
+                            st.dataframe(_disp, hide_index=True, use_container_width=True)
                 else:
                     st.warning("Not enough data to compute Z-score for the selected window.")
 
