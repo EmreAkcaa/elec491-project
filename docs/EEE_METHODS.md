@@ -133,17 +133,46 @@ Partial correlations follow:
 - Compare CV-selected α against StARS or BIC selection.
 - Investigate whether centering / standardising before fit changes results.
 
+### α-path pre-computation (PR #72)
+
+`src/glasso_alpha_path.py` sweeps GraphicalLasso across a log-spaced α grid
+(80 points from `α=1e-5` to `α=5.0`) and writes the unique sparsity
+snapshots to `data/<universe>/results/glasso_alpha_path.npz`. The sweep
+de-duplicates by sparsity-pattern hash so the 80 fits collapse to a smaller
+set of distinct patterns covering roughly 44%–100% sparsity (26 patterns
+on BIST as of 2026-05).
+
+The dashboard's "Precision Sparsity Timeline" slider scrubs through these
+snapshots in milliseconds (no live refit) and names the tickers newly
+isolated at each step. Independent of the slider, the same Methods Lab →
+GLASSO sub-tab offers a manual α `number_input` whose changes trigger a
+live recompute via `_recompute_glasso` (cached per `(universe, α)` so
+revisits are free).
+
+Pipeline knobs:
+
+- `n_grid=80`, `alpha_lo=1e-5`, `alpha_hi=5.0`, `max_iter=200` (all in
+  `src/glasso_alpha_path.py:run_glasso_alpha_path`).
+- `PRECISION_FLOOR=1e-3` (threshold above which `|Θ_ij|` counts as a
+  direct edge — mirrors the dashboard heatmap floor).
+- BIST-only gate — S&P-485 would push the stage from ~3-5 min to
+  ~30-60 min. Other markets exit silently with a log line; the
+  dashboard surfaces a "run the pipeline" hint when the artifact is
+  missing.
+
+Output schema (`.npz`):
+
+| Array | Shape | Dtype | Meaning |
+|---|---|---|---|
+| `alphas` | `(K,)` | float64 | α thresholds for each unique pattern, ascending |
+| `n_edges` | `(K,)` | int32 | direct-edge count at each snapshot |
+| `sparsity_pct` | `(K,)` | float64 | sparsity percentage at each snapshot |
+| `patterns` | `(K, N, N)` | uint8 | binary sparsity pattern (1 = direct edge) |
+| `tickers` | `(N,)` | object | ticker symbols |
+
+Skip via `--skip-glasso-path` for dev iterations.
+
 ### References
-
-- Friedman, J., Hastie, T., Tibshirani, R. (2008). *Sparse inverse
-  covariance estimation with the graphical lasso.* Biostatistics 9(3):432.
-- Banerjee, O. et al. (2008). *Model selection through sparse maximum
-  likelihood estimation for multivariate Gaussian or binary data.* JMLR
-  9:485.
-
----
-
-## 3. Wavelet multi-scale correlation — `src/wavelet_analysis.py`
 
 ### Theory
 
