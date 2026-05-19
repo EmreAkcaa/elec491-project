@@ -317,19 +317,35 @@ def render_chart(
     if default_title:
         st.markdown(f"**{default_title}**")
     try:
-        # Defensive: shrink top margin + clear any pre-existing layout title.
-        # Plotly subtlety (verified on 5.24.1, 2026-05-19): calling
-        # `update_layout(title=None)` does NOT remove the title attribute —
-        # it leaves an empty Title() object that serializes to
-        # `"title": {}` in JSON. Plotly.js then reads `title.text` as
-        # `undefined` and renders the literal string "undefined" inside the
-        # chart canvas. Setting `title=dict(text="")` instead serializes to
-        # `"title": {"text": ""}` which Plotly.js renders as no title at all.
+        # Shrink the top margin so the chart starts near the top of its
+        # container (no reserved title strip).
         cur_margin = dict(fig.layout.margin.to_plotly_json())
         cur_margin["t"] = 10
-        fig.update_layout(title=dict(text=""), margin=cur_margin)
+        fig.update_layout(margin=cur_margin)
+
+        # Only mutate the title if the figure ACTUALLY HAS one we need
+        # to blank out (e.g., an upstream `apply_chart_style(..., title=...)`
+        # set it). Two important subtleties on Plotly 5.24.1:
+        #
+        # 1. `update_layout(title=None)` does NOT delete the title — it
+        #    leaves an empty Title() object that serializes to
+        #    `"title": {}` in JSON. Plotly.js reads `title.text` as JS
+        #    `undefined` and renders the literal string "undefined" in
+        #    the chart canvas. (This was the bug the previous render_chart
+        #    revision shipped — verified 2026-05-19.)
+        #
+        # 2. Even `title=dict(text="")` adds `{"text": ""}` to every
+        #    figure's JSON unconditionally — noisy on figures that never
+        #    had a title to begin with.
+        #
+        # Cleanest fix: leave fresh figures untouched (no `title` key in
+        # JSON at all), and only blank out figures whose title was set
+        # upstream.
+        existing_title = fig.layout.title.text if fig.layout.title else None
+        if existing_title:
+            fig.update_layout(title=dict(text=""))
     except Exception:
-        # Plotly version drift safety — never block a chart on margin fiddling.
+        # Plotly version drift safety — never block a chart on layout fiddling.
         pass
 
     config = get_plotly_config(chart_id)

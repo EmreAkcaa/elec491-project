@@ -21,47 +21,60 @@ def utils_mod():
     return utils
 
 
-def test_render_chart_title_clear_does_not_leak_undefined():
-    """Regression: `fig.update_layout(title=None)` leaves a stale empty
-    Title() object that serializes to `"title": {}` in JSON. Plotly.js
-    reads `title.text` as undefined and renders the literal string
-    "undefined" in the chart canvas.
+def _apply_render_chart_title_clear(fig):
+    """Mirror of the title-clear block in `render_chart` (app/utils.py).
+    Kept here so the tests don't have to spin up a Streamlit runtime."""
+    cur_margin = dict(fig.layout.margin.to_plotly_json())
+    cur_margin["t"] = 10
+    fig.update_layout(margin=cur_margin)
+    existing_title = fig.layout.title.text if fig.layout.title else None
+    if existing_title:
+        fig.update_layout(title=dict(text=""))
 
-    The fix is `title=dict(text="")` which serializes to
-    `"title": {"text": ""}` — Plotly.js renders no title at all.
 
-    This test pins the SEMANTIC: the title-clear path used by
-    `render_chart` must produce JSON where `layout.title.text` is the
-    empty string (or absent), never an empty dict.
+def test_render_chart_blanks_upstream_title_without_leaking_undefined():
+    """A figure that had a title set by upstream `apply_chart_style` must
+    end up with text="" in the JSON — never the empty dict `{}` which
+    Plotly.js renders as the literal string "undefined".
     """
     import json
     import plotly.graph_objects as go
 
-    # Mimic the upstream "apply_chart_style set a title" path then
-    # apply the render_chart title-clear logic.
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=[1, 2, 3], y=[1, 2, 3]))
     fig.update_layout(title="Some upstream title we want to strip")
 
-    # === This is the code path that ships in render_chart. ===
-    cur_margin = dict(fig.layout.margin.to_plotly_json())
-    cur_margin["t"] = 10
-    fig.update_layout(title=dict(text=""), margin=cur_margin)
-    # =========================================================
+    _apply_render_chart_title_clear(fig)
 
-    serialized = json.loads(fig.to_json())
-    title_obj = serialized["layout"].get("title")
-    # title_obj must be either absent, or carry text=""; an empty dict
-    # `{}` is the broken state that leaks "undefined" to the front end.
+    title_obj = json.loads(fig.to_json())["layout"].get("title")
     assert title_obj != {}, (
         "render_chart's title-clear produced an empty title dict. "
-        "Plotly.js will render this as the literal string 'undefined' "
-        "in the chart canvas. Use `title=dict(text='')` not `title=None`."
+        "Plotly.js renders this as the literal string 'undefined'."
     )
-    if title_obj is not None:
-        assert title_obj.get("text", "") == "", (
-            f"Expected title.text='' or absent; got {title_obj.get('text')!r}"
-        )
+    assert title_obj is not None and title_obj.get("text") == "", (
+        f"Expected title.text=''; got {title_obj}"
+    )
+
+
+def test_render_chart_leaves_titleless_figures_untouched():
+    """A figure that NEVER had a title shouldn't grow a `title` key in
+    its JSON just because it went through `render_chart`. Keeps the
+    figure JSON clean and means the front-end sees no title attribute
+    at all (cleanest possible 'blank').
+    """
+    import json
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[1, 2, 3], y=[1, 2, 3]))
+    # Note: no update_layout(title=...) call. The figure has no title.
+
+    _apply_render_chart_title_clear(fig)
+
+    layout_keys = set(json.loads(fig.to_json())["layout"].keys())
+    assert "title" not in layout_keys, (
+        f"render_chart added a stray title to a fresh figure: layout keys = {layout_keys}"
+    )
 
 
 def test_data_paths_bist_explicit(utils_mod):
