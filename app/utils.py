@@ -1940,6 +1940,97 @@ def load_entropy_rate_signs() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# PR #73 — IT extensions G1-G4 loaders
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def _load_permutation_entropy(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "permutation_entropy.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_permutation_entropy() -> pd.DataFrame:
+    """Per-ticker normalised permutation entropy (D=4, τ=1).
+
+    Empty DataFrame on miss. Schema: ``[ticker, permutation_entropy_norm,
+    n_observations]``. Complementary to ``entropy_rate_signs.csv``:
+    sign-entropy captures 2-state lag-1 transitions; PE catches 4-bar
+    ordinal patterns the sign-only view discards.
+    """
+    return _load_permutation_entropy(current_universe())
+
+
+@st.cache_data
+def _load_te_lag_sweep(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "te_lag_sweep.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_te_lag_sweep() -> pd.DataFrame:
+    """TE values + per-lag-FDR significance on the top-correlation
+    hypothesis set, across multiple lag values.
+
+    Schema: ``[ticker_a, ticker_b, direction, lag, te, p_value, significant]``.
+    """
+    return _load_te_lag_sweep(current_universe())
+
+
+@st.cache_data
+def _load_rolling_te(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "rolling_te_pairs.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_rolling_te() -> pd.DataFrame:
+    """Rolling-window TE on G1 survivors (one row per (window-end-date,
+    pair, direction)).
+
+    Schema: ``[date, ticker_a, ticker_b, direction, te, p_value]``.
+    """
+    return _load_rolling_te(current_universe())
+
+
+@st.cache_data
+def _load_te_with_ci(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "te_with_confidence.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_te_with_ci() -> pd.DataFrame:
+    """Joint-bootstrap 95% CIs on TE point estimates for G1 survivors.
+
+    Schema: ``[ticker_a, ticker_b, direction, te_point, te_ci_low,
+    te_ci_high, includes_zero]``.
+    """
+    return _load_te_with_ci(current_universe())
+
+
+@st.cache_data
+def _load_mi_excess_with_ci(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "mi_nonlinear_excess_with_ci.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_mi_excess_with_ci() -> pd.DataFrame:
+    """Joint-bootstrap 95% CIs on MI nonlinear excess for the top-14 pairs.
+
+    Schema: ``[ticker_a, ticker_b, excess_point, excess_ci_low,
+    excess_ci_high, includes_zero]``.
+    """
+    return _load_mi_excess_with_ci(current_universe())
+
+
+# ---------------------------------------------------------------------------
 # Transfer entropy statistical artifacts (PR #71 — IT orphan surface)
 # ---------------------------------------------------------------------------
 # Written by `src/transfer_entropy.py:run_transfer_entropy`. The pipeline

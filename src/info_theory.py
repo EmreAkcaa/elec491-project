@@ -302,6 +302,168 @@ def sign_entropy_rate(series: np.ndarray) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Permutation entropy (G2 — PR #73)
+# ---------------------------------------------------------------------------
+
+def permutation_entropy(
+    series: np.ndarray,
+    embedding_dim: int = 4,
+    delay: int = 1,
+    *,
+    normalize: bool = True,
+) -> float:
+    """Permutation entropy of a 1-D series.
+
+    For each window of `embedding_dim` consecutive observations (with `delay`
+    skips), rank-order the values to get a permutation. Build the histogram
+    over all `embedding_dim!` permutations and return the Shannon entropy
+    of that histogram in bits.
+
+    Properties:
+      * Range: [0, log2(embedding_dim!)] (e.g. [0, log2(24)] for D=4).
+      * Normalised version divides by log2(D!) so the result is in [0, 1].
+      * Robust to monotone transformations of the series — only the
+        ordering matters, not the magnitudes (no binning bias).
+      * Established complexity measure for time-series (Bandt & Pompe 2002).
+
+    Returns NaN when the series is too short (< D+1 effective samples).
+    Ties broken by NumPy's stable rank (argsort of argsort).
+    """
+    s = np.asarray(series, dtype=float)
+    s = s[np.isfinite(s)]
+    n = s.size
+    if embedding_dim < 2 or delay < 1:
+        raise ValueError("embedding_dim must be ≥ 2 and delay must be ≥ 1")
+    eff_len = (embedding_dim - 1) * delay + 1
+    if n < eff_len + 1:
+        return float("nan")
+
+    # Build (N - eff_len + 1) windows, each of size D.
+    n_windows = n - eff_len + 1
+    # Vectorised indexing: window i = s[i : i + eff_len : delay]
+    idx = np.arange(0, eff_len, delay)[None, :] + np.arange(n_windows)[:, None]
+    windows = s[idx]  # shape (n_windows, embedding_dim)
+
+    # Encode each window's permutation as a single integer in a positional
+    # base-D numeral system. argsort gives the ranks; we hash them to an
+    # int by Σ rank_i * D^i. This is faster than tuple-key counting on
+    # large windows and avoids hash collisions.
+    ranks = np.argsort(np.argsort(windows, axis=1), axis=1)
+    powers = embedding_dim ** np.arange(embedding_dim)
+    codes = (ranks * powers).sum(axis=1)
+
+    _, counts = np.unique(codes, return_counts=True)
+    probs = counts / counts.sum()
+    h_bits = float(-(probs * np.log2(probs)).sum())
+
+    if normalize:
+        # log2(D!) is the maximum possible entropy on D! patterns.
+        from math import factorial
+        max_h = float(np.log2(factorial(embedding_dim)))
+        return h_bits / max_h if max_h > 0 else 0.0
+    return h_bits
+
+
+def permutation_entropy_per_ticker(
+    returns: pd.DataFrame,
+    embedding_dim: int = 4,
+    delay: int = 1,
+) -> pd.DataFrame:
+    """Per-ticker permutation entropy on the log-returns panel.
+
+    Returns a DataFrame with columns ``[ticker, permutation_entropy_norm,
+    n_observations]``. Tickers with insufficient observations get NaN PE.
+    """
+    rows: list[dict] = []
+    for ticker in returns.columns:
+        series = returns[ticker].to_numpy(dtype=float)
+        finite = np.isfinite(series)
+        n_obs = int(finite.sum())
+        pe = permutation_entropy(
+            series[finite], embedding_dim=embedding_dim, delay=delay, normalize=True,
+        )
+        rows.append({
+            "ticker": ticker,
+            "permutation_entropy_norm": pe,
+            "n_observations": n_obs,
+        })
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap confidence intervals (G4 — PR #73)
+# ---------------------------------------------------------------------------
+
+def bootstrap_mi_excess(
+    series_x: np.ndarray,
+    series_y: np.ndarray,
+    *,
+    n_iter: int = 500,
+    block_length: int = 5,
+    n_bins: int = 4,
+    units: str = "bits",
+    seed: int = 42,
+) -> dict:
+    """Circular-block-bootstrap 95% CI for empirical-minus-Gaussian MI.
+
+    Returns ``{point, ci_low, ci_high, n_iter, includes_zero}``. Both X
+    and Y are bootstrapped jointly (same block index across them) so the
+    pair structure is preserved within blocks.
+
+    Reuses :func:`src.transfer_entropy._circular_block_bootstrap` to stay
+    consistent with the surrogate-null methodology used by transfer entropy.
+    """
+    from src.transfer_entropy import _circular_block_bootstrap
+
+    x = np.asarray(series_x, dtype=float)
+    y = np.asarray(series_y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    x, y = x[mask], y[mask]
+    if x.size < block_length * 4:
+        return {
+            "point": float("nan"), "ci_low": float("nan"), "ci_high": float("nan"),
+            "n_iter": 0, "includes_zero": True,
+        }
+
+    # Point estimate from the full series.
+    rho = float(np.corrcoef(x, y)[0, 1])
+    mi_emp_point = pairwise_mi_value(x, y, n_bins=n_bins, units=units)
+    mi_gauss_point = gaussian_mi_from_corr(rho, units=units)
+    excess_point = mi_emp_point - mi_gauss_point
+
+    # Joint bootstrap: pick block indices once, slice both x and y.
+    rng = np.random.default_rng(seed)
+    n = x.size
+    n_blocks = int(np.ceil(n / block_length))
+    samples = np.empty(n_iter)
+    for it in range(n_iter):
+        starts = rng.integers(0, n, size=n_blocks)
+        # Build the per-iter index list once, then slice both x and y.
+        block_idx = (starts[:, None] + np.arange(block_length)[None, :]) % n
+        idx = block_idx.ravel()[:n]
+        x_bs = x[idx]
+        y_bs = y[idx]
+        try:
+            rho_bs = float(np.corrcoef(x_bs, y_bs)[0, 1])
+            mi_e = pairwise_mi_value(x_bs, y_bs, n_bins=n_bins, units=units)
+            mi_g = gaussian_mi_from_corr(rho_bs, units=units)
+            samples[it] = mi_e - mi_g
+        except Exception:
+            samples[it] = np.nan
+
+    samples = samples[np.isfinite(samples)]
+    ci_low = float(np.percentile(samples, 2.5)) if samples.size else float("nan")
+    ci_high = float(np.percentile(samples, 97.5)) if samples.size else float("nan")
+    return {
+        "point": float(excess_point),
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "n_iter": int(samples.size),
+        "includes_zero": bool(ci_low <= 0.0 <= ci_high),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Top-level pipeline stage
 # ---------------------------------------------------------------------------
 
@@ -478,6 +640,16 @@ def run_info_theory(config: PipelineConfig) -> None:
         index_label="ticker",
     )
 
+    # 6. Permutation entropy per ticker (PR #73 — G2)
+    # Complementary to sign-entropy: captures 4-bar ordinal patterns that
+    # sign-entropy (2-state, lag-1 only) throws away.
+    pe_df = permutation_entropy_per_ticker(returns, embedding_dim=4, delay=1)
+    pe_df.to_csv(
+        config.data_results / "permutation_entropy.csv",
+        index=False,
+    )
+    pe_mean = float(pe_df["permutation_entropy_norm"].dropna().mean()) if pe_df["permutation_entropy_norm"].notna().any() else float("nan")
+
     summary = {
         "n_tickers": int(len(returns.columns)),
         "n_observations": int(len(returns)),
@@ -485,6 +657,9 @@ def run_info_theory(config: PipelineConfig) -> None:
         "log_det_term": dh_val,
         "joint_gaussian_entropy_nats": joint_h_nats,
         "mean_sign_entropy_rate_bits": sign_h_mean,
+        "mean_permutation_entropy_norm": pe_mean,
+        "permutation_entropy_embedding_dim": 4,
+        "permutation_entropy_delay": 1,
         "mi_bits_units": True,
         "n_bins": int(n_bins),
         "rolling_window": int(window),
