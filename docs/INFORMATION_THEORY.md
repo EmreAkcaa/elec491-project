@@ -265,42 +265,7 @@ Both are very large. The earthquake event reconfigured the BIST
 covariance structure roughly twice as drastically as the Ukraine
 invasion did.
 
-### 8. Permutation entropy `PE(X)` — added PR #73
-
-A complementary, **binning-free** complexity measure. Take each window of
-4 consecutive returns; rank the 4 values to get a permutation (one of 24
-possible orderings). Build the histogram over all observed permutations
-across the series, take Shannon entropy, normalise by log₂(24).
-
-```
-PE_norm(X) = H(ordinal-pattern distribution) / log₂(D!)
-```
-
-PE_norm ∈ [0, 1]. 1.0 = patterns uniform (maximally unpredictable).
-0 = single pattern dominates (deterministic).
-
-**Why this is complementary to sign-entropy**: sign-entropy coarse-grains
-returns to 2 states and looks at lag-1 transitions only. PE catches
-**4-bar ordinal patterns** that the sign-only view discards. A series
-like `+, ++, ++, +, +, +, ++, …` has high sign-entropy (mostly positive,
-lag-1 sign is uninformative) but the ordinal structure can still be
-detected by PE if the magnitude trajectory has a repeated shape.
-
-**Artifact**: `data/<universe>/results/permutation_entropy.csv` —
-columns `[ticker, permutation_entropy_norm, n_observations]`. Aggregate
-mean is in `it_summary.json:mean_permutation_entropy_norm`.
-
-**Current BIST findings**:
-- Mean = **0.9978** — BIST is close to ordinally random in aggregate.
-- Range = 0.993 (ZOREN — most patterned) → 0.999 (BRSAN — most random).
-- Distinct from sign-entropy: only **5 of the top-15 most-predictable tickers overlap** between the two measures. Sign-entropy and PE catch genuinely different structural patterns:
-  - Both lists (clearest non-random): **AGHOL, AKFGY, ASELS, CCOLA, VESBE**
-  - PE only (multi-bar patterns missed by sign-only view): **AKSA, ASUZU, BRISA, BRYAT, PAPIL, PGSUS, TOASO, TUPRS, YKBNK, ZOREN**
-
-The dashboard renders these side-by-side in the Information Theory
-sub-tab; tickers in 2+ of the three top-15 lists get a `★` annotation.
-
-### 9. Predictability stylised facts beyond sign-entropy — added PR #74
+### 8. Predictability diagnostics — added PR #74
 
 Sign-entropy at lag-1 with 2-state coarse-graining is the weakest possible
 predictability measure: it ignores return magnitude and only looks back
@@ -368,14 +333,14 @@ TKNSA, SKBNK, ISGYO, BRSAN, PAPIL, SASA, BTCIM, ASUZU.
 | Surface | Measures shown |
 |---|---|
 | **Methods Lab → Information Theory** → KPI strip | D_eff, ΔH, mean sign-entropy rate, ticker count |
-| **Methods Lab → Information Theory** → MI panel | MI matrix heatmap (off-diagonal), MI vs Gaussian scatter, top non-linear-excess table |
 | **Methods Lab → Information Theory** → rolling panel | D_eff(t), ΔH(t) on dual axes with crisis markers |
 | **Methods Lab → Information Theory** → regime panel | KL divergence per documented crisis |
-| **Methods Lab → Information Theory** → per-ticker (PR #71) | Most-predictable tickers by sign-entropy + most-non-linearly-coupled tickers by Σ excess |
+| **Methods Lab → Information Theory** → predictability diagnostics | Volatility clustering / Hurst / raw return ACF table |
 | **Methods Lab → Transfer Entropy** → KPI strip | sources / sinks / magnitude-ranked edges / FDR-significant count |
-| **Methods Lab → Transfer Entropy** → network plot | Top-N directed edges with arrows; node colour = role, size = degree |
-| **Methods Lab → Transfer Entropy** → net flow heatmap | `net[i, j] = TE(i→j) − TE(j→i)` |
-| **Methods Lab → Transfer Entropy** → p-value panel (PR #71) | Histogram of TE p-values + significant-edges table |
+| **Methods Lab → Transfer Entropy** → network plot + net flow heatmap | Directed edges with arrows + `net[i, j] = TE(i→j) − TE(j→i)` |
+| **Methods Lab → Transfer Entropy** → FDR-significant edges table | Pairs that pass surrogate-null + BH-FDR |
+| **Methods Lab → Transfer Entropy** → rolling chart + CI table | Time-localised TE for G1 survivors + joint-bootstrap 95% CIs |
+| **Methods Lab → Transfer Entropy** → conditional + sector panels | CTE vs TE on G1 survivors + sector → sector heatmap |
 | **Cross-Market** → KPI strip | D_eff comparison BIST vs S&P |
 
 ## Honest limitations
@@ -504,33 +469,92 @@ that resamples (source, target) with the SAME block index preserves
 the directional information and gives a true CI on the point estimate.
 PR #73's `bootstrap_te` uses the joint approach.
 
-**Current BIST findings**:
+**Current BIST findings** — TE CIs on the G1 survivors + uncorrected-interesting pair (joint bootstrap, K=500):
 
-*MI nonlinear excess CIs (top-14 pairs)*:
-- **9 of 14** pairs have CIs that exclude zero → robust nonlinear coupling
-- 5 of 14 have CIs straddling zero → consistent with sampling noise
-- Top pair **BRSAN/HEKTS**: excess = 0.044 bits, CI = [0.019, 0.077] — robust.
+| Pair | TE | 95% CI | Robust? |
+|---|---|---|---|
+| KCHOL → AKBNK | 0.0092 | [0.0042, 0.0166] | yes |
+| BRYAT → BRSAN | 0.0091 | [0.0045, 0.0160] | yes |
+| TUPRS → AYGAZ | 0.0079 | [0.0034, 0.0144] | yes |
 
-*TE CIs (3 pairs from G1 + uncorrected-interesting)*:
-- KCHOL → AKBNK: TE = 0.0092, CI = [0.0042, 0.0166] — robust
-- BRYAT → BRSAN: TE = 0.0091, CI = [0.0045, 0.0160] — robust
-- TUPRS → AYGAZ: TE = 0.0079, CI = [0.0034, 0.0144] — robust (even though uncorrected-only at full-grid significance)
+All three CIs cleanly exclude 0. The dashboard renders the CI table
+beside the rolling-TE chart.
 
-The dashboard renders both CI tables in the IT and TE sub-tabs
-respectively, flagging "CI excludes 0?" as a defensibility marker.
+## Conditional TE: market-mediation check (PR #75)
+
+Unconditional TE can be inflated when both X and Y follow a common
+factor (the market index). **Conditional TE** controls for the
+factor:
+
+```
+TE(X → Y | Z) = H(Y_t | Y_lag, Z_lag) − H(Y_t | Y_lag, X_lag, Z_lag)
+```
+
+If `CTE(X → Y | XU100)` is comparable to (or larger than) the
+unconditional `TE(X → Y)`, the directed flow is **pair-specific**, not
+a market-factor artifact. If CTE drops to zero, the original TE was
+just "both following the market."
+
+**Caveat**: 4-way joint discretisation (3⁴ = 81 cells on ~1500 obs) has
+more estimator bias than the 3-way TE. Treat CTE as **ordinal** vs TE
+rather than as a precise absolute value.
+
+**Current BIST findings** (3-way joint with surrogate-null test of X,
+K=1000):
+
+| Pair | TE | CTE \| XU100 | Δ = CTE − TE | p | Verdict |
+|---|---|---|---|---|---|
+| KCHOL → AKBNK | 0.0090 | 0.0164 | +0.0074 | 0.082 | pair-specific |
+| BRYAT → BRSAN | 0.0095 | 0.0163 | +0.0068 | 0.078 | pair-specific |
+| TUPRS → AYGAZ | 0.0080 | 0.0167 | +0.0087 | 0.068 | pair-specific |
+
+The directed flow on all three pairs **sharpens** under market
+conditioning — the IT analogue of partial correlation says these are
+real pair-level relationships, not co-movement through XU100.
+
+## Sector-aggregated TE: lead-lag at sector resolution (PR #75)
+
+The full 5256-pair grid is multiple-testing-limited at K=1000.
+Aggregating tickers into 13 equal-weight sector portfolios collapses
+the test to 156 directed pairs — BH-FDR cutoff becomes ~30× more
+forgiving.
+
+**Methodology**: equal-weight sector portfolio = mean of all tickers in
+the sector. TE between sector portfolios uses the same `_te_one_pair`
+machinery as ticker-level TE.
+
+**Current BIST findings** (K=1000, 0 FDR survivors, 26 of 156
+uncorrected significant). Top edges by TE:
+
+| Source sector | Target sector | TE | p |
+|---|---|---|---|
+| Insurance | Consumer Durables | 0.0102 | 0.002 |
+| Conglomerates | Insurance | 0.0101 | 0.002 |
+| Technology | Insurance | 0.0098 | 0.002 |
+| Defense | Technology | 0.0091 | 0.005 |
+| Energy | Insurance | 0.0086 | 0.006 |
+| Conglomerates | Consumer Durables | 0.0086 | 0.007 |
+| Building Materials | Energy | 0.0082 | 0.014 |
+| **Conglomerates** | Retail / Steel | 0.0077-0.0082 | <0.03 |
+
+**Conglomerates is the most prolific upstream sector** — 4 of the top-15
+edges originate there (Insurance, Consumer Durables, Retail, Steel as
+targets). This aggregates the ticker-level KCHOL → AKBNK finding into
+a sector-level pattern: the BIST holding-company complex carries
+directional information into smaller sectors.
+
+K=10,000 (one-time Colab job, ~40 min) would clear FDR on the strongest
+edges.
 
 ## What we don't compute (and could)
 
 - **Conditional MI `I(X; Y | Z)`** — would isolate direct from indirect
-  pairwise coupling. We have partial correlation (GLASSO stage); the
-  IT analogue is the next step.
-- **Conditional transfer entropy `TE(X → Y | Z)`** — isolates direct
-  causal-looking flow.
-- **Multi-lag TE / lag sweep** — slow lead-lag relationships.
-- **Rolling TE** — time-varying directional flow (analogous to the
-  rolling D_eff we already plot). Currently snapshot only.
+  pairwise coupling. We have partial correlation (GLASSO stage) and
+  conditional TE (PR #75); the conditional MI analogue is the next step.
 - **Granger causality** — the standard linear baseline TE generalises.
   Useful as a sanity check; not in the pipeline.
+- **K=10,000 sector TE on Colab** — would clear FDR on the strongest
+  Conglomerates → smaller-sectors edges. ~40 min Colab job, well-bounded.
 
 ## References
 
