@@ -30,8 +30,10 @@ from utils import (
     load_snn_training_history, load_snn_raster_sample, load_snn_membrane_sample,
     load_dendrogram_order,
     load_mi_matrix, load_mi_gaussian_matrix, load_mi_nonlinear_excess_top,
+    load_mi_nonlinear_excess,
     load_rolling_info_theory, load_regime_kl, load_it_summary,
     load_entropy_rate_signs,
+    load_te_summary, load_te_pvalues, load_te_significance,
     downsample_matrix_for_display,
 )
 
@@ -747,20 +749,44 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
         n_sources = (roles["role"] == "source").sum() if not roles.empty else 0
         n_sinks = (roles["role"] == "sink").sum() if not roles.empty else 0
 
-        c1, c2, c3 = st.columns(3)
+        # PR #71: surface the surrogate-null + FDR statistics that the pipeline
+        # produces but the page previously ignored. Honest framing of the
+        # statistical bar lets the user understand WHY the magnitude-ranked
+        # network below may have edges that don't all survive FDR.
+        te_summary = load_te_summary()
+        n_sig_fdr = int(te_summary.get("n_significant_fdr", 0))
+        n_sig_unc = int(te_summary.get("n_significant_uncorrected", 0))
+        total_pairs = int(te_summary.get("total_pairs", 0))
+        shuffles = int(te_summary.get("significance_shuffles", 0))
+        correction = te_summary.get("multiple_testing", "fdr_bh")
+        alpha = float(te_summary.get("significance_level", 0.05))
+
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Information Sources", n_sources)
         c2.metric("Information Sinks", n_sinks)
         c3.metric(
-            "Top directed edges by magnitude",
+            "Magnitude-ranked edges shown",
             len(edges),
             help=(
                 "Strongest pair-wise transfer-entropy values across the "
-                "directed network. The pipeline also runs a circular-block-"
-                "bootstrap surrogate-null + Benjamini–Hochberg FDR "
-                "correction; the network shown ranks by magnitude so the "
-                "network structure is visible at any shuffle resolution."
+                "directed network. Always shown so the network structure "
+                "is visible even when no edges survive FDR."
             ),
         )
+        if total_pairs:
+            c4.metric(
+                f"Significant at FDR α={alpha:g}",
+                f"{n_sig_fdr} / {total_pairs}",
+                help=(
+                    f"From {shuffles} surrogate shuffles + {correction} "
+                    f"multiple-testing correction. "
+                    f"{n_sig_unc} pairs pass at uncorrected α={alpha:g} — "
+                    f"of those, {n_sig_fdr} survive correction across "
+                    f"{total_pairs} simultaneous tests."
+                ),
+            )
+        else:
+            c4.metric("FDR result", "n/a")
 
         col_net, col_table = st.columns([3, 2])
 
@@ -884,6 +910,102 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
             )
         else:
             st.info("Run the pipeline to generate the net transfer-entropy matrix.")
+
+        # ---- PR #71: p-value distribution + FDR-significant edges table ----
+        # The pipeline always wrote transfer_entropy_pvalues.parquet but the
+        # page never read it. The p-value distribution is the most honest
+        # one-glance summary of how much TE signal exists: a uniform [0,1]
+        # histogram = no information flow anywhere; a spike near 0 = real
+        # directional flows that survive surrogate testing.
+        pvals = load_te_pvalues()
+        sig_mask = load_te_significance()
+        if not pvals.empty:
+            st.markdown("---")
+            st.markdown(
+                "**Statistical significance distribution** — p-values from the "
+                "surrogate-null test on all directed pairs. Under the null "
+                "hypothesis of no information flow, p-values are uniform on "
+                "[0, 1]; a left-skewed mass near 0 means real directed-flow "
+                "signal exists beyond what circular-block-bootstrap shuffles "
+                "produce by chance."
+            )
+            # Flatten off-diagonal p-values (diag is self → undefined/NaN)
+            p_flat = pvals.to_numpy()
+            mask = ~np.eye(p_flat.shape[0], dtype=bool)
+            p_off = p_flat[mask]
+            p_off = p_off[np.isfinite(p_off)]
+            if len(p_off) > 0:
+                fig_p = go.Figure()
+                fig_p.add_trace(go.Histogram(
+                    x=p_off, nbinsx=40,
+                    marker_color=get_colors()["primary"],
+                    name="observed p-values",
+                    hovertemplate="p ∈ [%{x:.3f}, %{x:.3f}+bin]<br>count = %{y}<extra></extra>",
+                ))
+                # Uniform-null reference line
+                expected = len(p_off) / 40
+                fig_p.add_hline(
+                    y=expected, line_dash="dash",
+                    line_color=get_colors()["muted"],
+                    annotation_text=f"uniform-null expectation ({expected:.0f}/bin)",
+                    annotation_position="top right", annotation_font_size=10,
+                )
+                fig_p.add_vline(
+                    x=alpha if total_pairs else 0.05,
+                    line_dash="dot",
+                    line_color=get_colors()["secondary"],
+                    annotation_text=f"α = {alpha if total_pairs else 0.05:g}",
+                    annotation_position="top",
+                    annotation_font_size=10,
+                )
+                apply_chart_style(
+                    fig_p, height=300,
+                    xaxis_title="p-value",
+                    yaxis_title="count of directed pairs",
+                )
+                render_chart(
+                    fig_p, chart_id="te_pvalue_hist",
+                    filename_base="te_pvalue_distribution",
+                    default_title="Transfer-entropy p-value distribution (uniform = no signal)",
+                )
+
+            # Show the actual significant edges if any survived FDR
+            if not sig_mask.empty:
+                # sig_mask is N×N boolean. Read raw TE values for the True cells.
+                if not raw_te.empty:
+                    sig_arr = sig_mask.to_numpy()
+                    te_arr = raw_te.to_numpy()
+                    tickers = list(sig_mask.columns)
+                    sig_rows: list[dict] = []
+                    for i in range(sig_arr.shape[0]):
+                        for j in range(sig_arr.shape[1]):
+                            if i == j or not bool(sig_arr[i, j]):
+                                continue
+                            sig_rows.append({
+                                "source": tickers[i],
+                                "target": tickers[j],
+                                "te (nats)": float(te_arr[i, j]),
+                                "p-value": float(pvals.iloc[i, j]) if not pvals.empty else float("nan"),
+                            })
+                    if sig_rows:
+                        sig_df = pd.DataFrame(sig_rows).sort_values("te (nats)", ascending=False)
+                        st.markdown(
+                            f"**Directed flows that survive {correction} at α = {alpha:g}** "
+                            f"— {len(sig_df)} edges out of {total_pairs} directed pairs tested."
+                        )
+                        sig_df["te (nats)"] = sig_df["te (nats)"].round(5)
+                        sig_df["p-value"] = sig_df["p-value"].round(4)
+                        st.dataframe(
+                            sig_df, use_container_width=True, hide_index=True,
+                        )
+                    elif total_pairs:
+                        st.caption(
+                            f"No directed pairs survived {correction} at α = {alpha:g} "
+                            f"with K = {shuffles} surrogate shuffles. To resolve smaller "
+                            f"p-values, increase `transfer_entropy.significance_shuffles` "
+                            f"in `config/settings.yaml` and re-run the pipeline. The "
+                            f"network plot above ranks by raw TE magnitude regardless."
+                        )
 
 
 # ---------------------------------------------------------------------------
@@ -1454,6 +1576,97 @@ def render_info_theory(sector_map: dict, *, u=None):
                 for r in regime
             ])
             st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+        # ---- Panel E (PR #71): per-ticker information diagnostics ----
+        # Previously the page surfaced ONLY the universe-aggregate mean
+        # sign-entropy + top-14 nonlinear-excess pairs. We have the full
+        # per-ticker breakdown on disk (entropy_rate_signs.csv +
+        # mi_nonlinear_excess.parquet) — surface it.
+        sign_ent = load_entropy_rate_signs()
+        full_excess = load_mi_nonlinear_excess()
+        if not sign_ent.empty or not full_excess.empty:
+            st.markdown(
+                "**Per-ticker information diagnostics** — which individual "
+                f"{_items_label(u).lower() if '_items_label' in dir() else 'tickers'} "
+                "stand out on each information measure?"
+            )
+            _col_pred, _col_nonlin = st.columns(2)
+
+            with _col_pred:
+                st.markdown(
+                    "**Most directionally predictable** "
+                    "(lowest sign-entropy — deviation from 1 bit = weak EMH violation)"
+                )
+                if sign_ent.empty:
+                    st.caption("No per-ticker sign-entropy on disk.")
+                else:
+                    disp = sign_ent.copy()
+                    disp = disp.sort_values("entropy_rate_bits", ascending=True).head(15)
+                    disp["deviation_from_1_bit"] = (1.0 - disp["entropy_rate_bits"]).round(4)
+                    disp["entropy_rate_bits"] = disp["entropy_rate_bits"].round(4)
+                    st.dataframe(
+                        disp.reset_index(drop=True),
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                            "ticker": st.column_config.TextColumn("Ticker"),
+                            "entropy_rate_bits": st.column_config.NumberColumn(
+                                "H(sign_t | sign_{t-1})  [bits]",
+                                format="%.4f",
+                                help="Conditional entropy of tomorrow's sign given today's. "
+                                     "1.0 = independent (efficient). Below 1.0 = today's "
+                                     "sign carries information about tomorrow's.",
+                            ),
+                            "deviation_from_1_bit": st.column_config.NumberColumn(
+                                "Δ from 1.0 bit",
+                                format="%.4f",
+                                help="How far this ticker is from a fair coin flip. "
+                                     "Multiply by ~100 for a rough % edge.",
+                            ),
+                        },
+                    )
+
+            with _col_nonlin:
+                st.markdown(
+                    "**Most non-linearly coupled** "
+                    "(sum of nonlinear excess across all partners — beyond what Pearson explains)"
+                )
+                if full_excess.empty:
+                    st.caption("No full nonlinear-excess matrix on disk.")
+                else:
+                    # Aggregate: for each ticker, total |nonlinear excess| over partners.
+                    # Diagonal is zero by construction; off-diagonal sum gives a
+                    # "how much non-linear coupling does this ticker carry across
+                    # the whole panel" score.
+                    excess = full_excess.copy()
+                    # Defensive: strip any self-pairs.
+                    for t in excess.columns:
+                        if t in excess.index:
+                            excess.loc[t, t] = 0.0
+                    per_ticker = excess.abs().sum(axis=1).sort_values(ascending=False).head(15)
+                    nl_df = pd.DataFrame({
+                        "ticker": per_ticker.index,
+                        "total_nonlinear_excess_bits": per_ticker.values.round(4),
+                    })
+                    st.dataframe(
+                        nl_df, use_container_width=True, hide_index=True,
+                        column_config={
+                            "ticker": st.column_config.TextColumn("Ticker"),
+                            "total_nonlinear_excess_bits": st.column_config.NumberColumn(
+                                "Σ excess MI [bits]",
+                                format="%.4f",
+                                help="Sum of (empirical MI − Gaussian-baseline MI) across "
+                                     "all partners. High score → this ticker's joint "
+                                     "behaviour carries information Pearson misses.",
+                            ),
+                        },
+                    )
+
+            st.caption(
+                ":material/info: Both columns surface artifacts the pipeline always wrote "
+                "but the dashboard previously didn't read (`entropy_rate_signs.csv` and the "
+                "full `mi_nonlinear_excess.parquet`). The universe-aggregate mean is the "
+                "headline KPI above; per-ticker tells you WHERE the signal lives."
+            )
 
 
 # ---------------------------------------------------------------------------

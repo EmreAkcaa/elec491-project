@@ -1899,6 +1899,61 @@ def load_entropy_rate_signs() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Transfer entropy statistical artifacts (PR #71 — IT orphan surface)
+# ---------------------------------------------------------------------------
+# Written by `src/transfer_entropy.py:run_transfer_entropy`. The pipeline
+# produced these from the start but the dashboard never read them — full
+# p-value distribution + post-FDR boolean mask + count summary. Wiring
+# them lets the IT tab honestly display the resolution-vs-significance
+# trade-off (e.g., "X of 5256 directed pairs survive FDR at K=1000
+# shuffles") instead of just showing the filtered matrix.
+
+@st.cache_data
+def _load_te_pvalues(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "transfer_entropy_pvalues.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_te_pvalues() -> pd.DataFrame:
+    """Per-directed-pair p-values from the surrogate-null test.
+
+    Empty DataFrame on miss (older runs that didn't write this artifact).
+    """
+    return _load_te_pvalues(current_universe())
+
+
+@st.cache_data
+def _load_te_significance(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "transfer_entropy_significance.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_te_significance() -> pd.DataFrame:
+    """Boolean mask post multiple-testing correction (True = reject null)."""
+    return _load_te_significance(current_universe())
+
+
+@st.cache_data
+def _load_te_summary(universe: str) -> dict:
+    path = data_results(universe) / "transfer_entropy_summary.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def load_te_summary() -> dict:
+    """Counts + method metadata: n_significant_fdr, n_significant_uncorrected,
+    total_pairs, significance_level, multiple_testing, surrogate_block_length,
+    significance_shuffles."""
+    return _load_te_summary(current_universe())
+
+
+# ---------------------------------------------------------------------------
 # Event markers
 # ---------------------------------------------------------------------------
 
