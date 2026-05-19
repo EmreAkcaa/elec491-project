@@ -38,6 +38,7 @@ from utils import (
     load_permutation_entropy,
     load_te_lag_sweep, load_rolling_te, load_te_with_ci,
     load_mi_excess_with_ci,
+    load_predictability_diagnostics,
     downsample_matrix_for_display,
 )
 
@@ -2227,6 +2228,132 @@ def render_info_theory(sector_map: dict, *, u=None):
                         filename_base="permutation_entropy_distribution",
                         default_title=f"Permutation entropy distribution (mean = {pe_values.mean():.4f})",
                     )
+
+        # ---- Panel F (PR #74): Predictability stylised facts -----------
+        # Sign-entropy at lag-1 with 2-state coarse-graining ignores
+        # return magnitude entirely. Three classic financial diagnostics
+        # the dashboard was missing — surface them so the headline
+        # "sign-entropy ≈ 1 → market is unpredictable" can't be read
+        # without honest qualification.
+        predict_df = load_predictability_diagnostics()
+        if not predict_df.empty:
+            st.markdown("---")
+            section_header(
+                "Predictability beyond sign-entropy",
+                "Sign-entropy ≈ 1.0 only says yesterday's SIGN doesn't "
+                "predict today's. It says nothing about MAGNITUDE or "
+                "long-range memory — both of which are routinely predictable "
+                "on liquid equity markets. Three classic stylised facts "
+                "below.",
+            )
+
+            # Headline KPIs
+            n_total = len(predict_df)
+            n_vol_cluster = int((predict_df["acf_abs_returns_lag1"].dropna() > 0.20).sum())
+            n_persistent = int((predict_df["hurst_exponent"].dropna() > 0.55).sum())
+            n_random_walk = int(
+                ((predict_df["hurst_exponent"] >= 0.45)
+                 & (predict_df["hurst_exponent"] <= 0.55)).sum()
+            )
+            n_mean_revert = int((predict_df["hurst_exponent"].dropna() < 0.45).sum())
+            bartlett = 1.96 / np.sqrt(int(load_it_summary().get("n_observations", 1) or 1))
+            n_acf_r = int((predict_df["acf_returns_lag1"].abs() > bartlett).sum())
+
+            _k1, _k2, _k3, _k4 = st.columns(4)
+            _k1.metric(
+                "Volatility clustering",
+                f"{n_vol_cluster}/{n_total}",
+                help=(
+                    "Tickers with ACF(|returns|, lag=1) > 0.20. Tomorrow's "
+                    "volatility is strongly predictable from today's even "
+                    "when tomorrow's direction isn't."
+                ),
+            )
+            _k2.metric(
+                "Persistent (Hurst > 0.55)",
+                f"{n_persistent}/{n_total}",
+                help=(
+                    "Tickers with rescaled-range Hurst exponent > 0.55 — "
+                    "positive long-range memory (trending regime). Hurst ≈ "
+                    "0.5 is the random-walk null."
+                ),
+            )
+            _k3.metric(
+                "Random walk (0.45 ≤ H ≤ 0.55)",
+                f"{n_random_walk}/{n_total}",
+                help="Tickers with no detectable long-range memory.",
+            )
+            _k4.metric(
+                f"|ACF(r, 1)| > {bartlett:.3f}",
+                f"{n_acf_r}/{n_total}",
+                help=(
+                    "Tickers whose raw lag-1 return autocorrelation exceeds "
+                    "the Bartlett 95% threshold — direct return predictability."
+                ),
+            )
+
+            # Build the comparison table — most-misleading tickers first
+            disp = predict_df.copy()
+            disp["deviation_sign_h"] = (1.0 - disp["sign_entropy_bits"]).round(4)
+            disp["abs_acf_r"] = disp["acf_returns_lag1"].abs().round(4)
+            for col in ["sign_entropy_bits", "acf_returns_lag1",
+                        "acf_abs_returns_lag1", "acf_abs_returns_lag5",
+                        "acf_abs_returns_lag22", "hurst_exponent"]:
+                disp[col] = disp[col].round(4)
+            # Sort by the "predictable magnitude" measure — the one
+            # sign-entropy is blind to.
+            disp = disp.sort_values("acf_abs_returns_lag1", ascending=False).head(15)
+            st.markdown(
+                "**Top-15 tickers ranked by volatility clustering** "
+                "(highest ACF of |returns|). Sign-entropy column shows how "
+                "close each ticker is to 1.0 — a measure that calls them "
+                "'unpredictable' despite the strong magnitude autocorrelation."
+            )
+            st.dataframe(
+                disp[["ticker", "sign_entropy_bits", "acf_returns_lag1",
+                      "acf_abs_returns_lag1", "acf_abs_returns_lag5",
+                      "acf_abs_returns_lag22", "hurst_exponent"]],
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "ticker": st.column_config.TextColumn("Ticker"),
+                    "sign_entropy_bits": st.column_config.NumberColumn(
+                        "Sign-entropy (bits)", format="%.4f",
+                        help="1.0 = 'looks unpredictable' by the 2-state lag-1 view.",
+                    ),
+                    "acf_returns_lag1": st.column_config.NumberColumn(
+                        "ACF(r, lag-1)", format="%+.4f",
+                        help="Direct lag-1 autocorrelation of raw returns. "
+                             "Small but often non-zero on BIST.",
+                    ),
+                    "acf_abs_returns_lag1": st.column_config.NumberColumn(
+                        "ACF(|r|, lag-1)", format="%.4f",
+                        help="VOLATILITY CLUSTERING — how strongly today's "
+                             "|return| predicts tomorrow's |return|. The "
+                             "classic financial stylised fact sign-entropy misses.",
+                    ),
+                    "acf_abs_returns_lag5": st.column_config.NumberColumn(
+                        "ACF(|r|, lag-5)", format="%.4f",
+                        help="Volatility clustering at one trading week.",
+                    ),
+                    "acf_abs_returns_lag22": st.column_config.NumberColumn(
+                        "ACF(|r|, lag-22)", format="%.4f",
+                        help="Volatility clustering at one trading month.",
+                    ),
+                    "hurst_exponent": st.column_config.NumberColumn(
+                        "Hurst (R/S)", format="%.4f",
+                        help="0.5 = random walk; >0.5 = persistent; <0.5 = "
+                             "mean-reverting. Computed via simple rescaled-range.",
+                    ),
+                },
+            )
+            st.caption(
+                f":material/info: BIST: **{n_vol_cluster} of {n_total}** "
+                f"tickers have lag-1 |r| autocorrelation > 0.20 (volatility "
+                f"clustering). **{n_persistent} of {n_total}** have Hurst > "
+                f"0.55 (persistent / trending regime). Sign-entropy at lag-1 "
+                f"with 2 states cannot detect either of these. The 'EMH "
+                f"passes' read from sign-entropy alone is incomplete."
+            )
 
 
 # ---------------------------------------------------------------------------

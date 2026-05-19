@@ -338,3 +338,133 @@ def test_transfer_entropy_subtab_renders_with_extensions():
     at.session_state["methods_lab_subtab_bist"] = "Transfer Entropy"
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
+
+
+# ---------------------------------------------------------------------------
+# PR #74: predictability beyond sign-entropy
+# ---------------------------------------------------------------------------
+
+def test_hurst_rs_random_walk_near_half():
+    """Cumulative sum of i.i.d. noise → ideal random walk, Hurst ≈ 0.5."""
+    from src.info_theory import hurst_rs
+    rng = np.random.default_rng(11)
+    n = 4000
+    # Random walk = cumulative sum. R/S Hurst on the WALK should be ≈ 0.5.
+    walk = rng.standard_normal(n).cumsum()
+    # Take differences to get the noise; Hurst on the noise (uncorrelated)
+    # should also be ≈ 0.5 by definition.
+    h_noise = hurst_rs(rng.standard_normal(n), min_n=20, max_n=300)
+    # R/S on i.i.d. noise produces H slightly above 0.5 with small-sample
+    # bias. Anything in [0.4, 0.6] is consistent with the null.
+    assert 0.4 <= h_noise <= 0.6, f"H on i.i.d. noise should be ≈0.5; got {h_noise}"
+
+
+def test_hurst_rs_persistent_above_half():
+    """An AR(1) with positive coefficient is persistent → Hurst > 0.5."""
+    from src.info_theory import hurst_rs
+    rng = np.random.default_rng(12)
+    n = 3000
+    # AR(1) with phi=0.5 → positive correlation → persistent at short
+    # scales. R/S Hurst will be noticeably above 0.5.
+    eps = rng.standard_normal(n)
+    x = np.empty(n)
+    x[0] = eps[0]
+    for i in range(1, n):
+        x[i] = 0.5 * x[i - 1] + eps[i]
+    h = hurst_rs(x, min_n=20, max_n=300)
+    assert h > 0.55, f"Persistent AR(1) should give H > 0.55; got {h}"
+
+
+def test_hurst_rs_short_series_returns_nan():
+    from src.info_theory import hurst_rs
+    h = hurst_rs(np.arange(50), min_n=20, max_n=200)
+    assert np.isnan(h)
+
+
+def test_autocorr_bounds_and_zero_variance():
+    """_autocorr returns NaN on zero-variance and respects [-1, 1] bounds."""
+    from src.info_theory import _autocorr
+    # Zero variance
+    assert np.isnan(_autocorr(np.ones(100), 1))
+    # Random series
+    rng = np.random.default_rng(13)
+    ac = _autocorr(rng.standard_normal(500), 1)
+    assert -1.0 <= ac <= 1.0
+    # Pure AR(1) with phi=0.7 should give lag-1 ACF ≈ 0.7
+    x = np.empty(2000)
+    x[0] = 0.0
+    for i in range(1, 2000):
+        x[i] = 0.7 * x[i - 1] + rng.standard_normal()
+    ac1 = _autocorr(x, 1)
+    assert 0.6 <= ac1 <= 0.8, f"AR(0.7) lag-1 ACF should be ~0.7; got {ac1}"
+
+
+def test_predictability_diagnostics_per_ticker_schema():
+    """The per-ticker DataFrame has the documented columns."""
+    from src.info_theory import predictability_diagnostics_per_ticker
+    rng = np.random.default_rng(14)
+    n = 600
+    df = pd.DataFrame({
+        "A": rng.standard_normal(n),
+        "B": rng.standard_normal(n),
+    })
+    out = predictability_diagnostics_per_ticker(df)
+    required = {
+        "ticker", "sign_entropy_bits", "acf_returns_lag1",
+        "acf_abs_returns_lag1", "acf_abs_returns_lag5",
+        "acf_abs_returns_lag22", "hurst_exponent",
+    }
+    assert required <= set(out.columns)
+    assert len(out) == 2
+
+
+def test_predictability_diagnostics_on_disk_schema():
+    """Real-data on-disk artifact has the expected shape + value bounds."""
+    path = _REPO_ROOT / "data" / "bist" / "results" / "predictability_diagnostics.csv"
+    if not path.exists():
+        pytest.skip("predictability_diagnostics.csv missing — run pipeline")
+    df = pd.read_csv(path)
+    assert len(df) > 0
+    # Sign entropy bounded [0, 1+ε]
+    se = df["sign_entropy_bits"].dropna()
+    assert (se >= 0).all() and (se <= 1.0 + 1e-6).all()
+    # All autocorrelations bounded
+    for col in ["acf_returns_lag1", "acf_abs_returns_lag1",
+                "acf_abs_returns_lag5", "acf_abs_returns_lag22"]:
+        v = df[col].dropna()
+        assert (v >= -1.0 - 1e-6).all() and (v <= 1.0 + 1e-6).all(), col
+    # Hurst plausible: NaN allowed for very short series, real values in
+    # [0, 1].
+    h = df["hurst_exponent"].dropna()
+    assert (h > 0).all() and (h < 1.5).all()  # 1.5 upper for some bias headroom
+
+
+def test_load_predictability_diagnostics_empty_on_miss():
+    from app.utils import _load_predictability_diagnostics
+    assert _load_predictability_diagnostics("nonexistent_universe_xyz").empty
+
+
+def test_load_predictability_diagnostics_real_data():
+    path = _REPO_ROOT / "data" / "bist" / "results" / "predictability_diagnostics.csv"
+    if not path.exists():
+        pytest.skip("artifact missing")
+    from app.utils import _load_predictability_diagnostics
+    out = _load_predictability_diagnostics("bist")
+    assert not out.empty
+    assert "hurst_exponent" in out.columns
+
+
+def test_bist_has_volatility_clustering_finding():
+    """Regression: the headline finding (≥30% of BIST tickers have ACF(|r|,
+    lag-1) > 0.20) must hold. If the diagnostics pipeline ever changes
+    in a way that destroys this finding, the test fails — the result is
+    too prominent in docs+dashboard to silently break."""
+    path = _REPO_ROOT / "data" / "bist" / "results" / "predictability_diagnostics.csv"
+    if not path.exists():
+        pytest.skip("artifact missing")
+    df = pd.read_csv(path)
+    frac = (df["acf_abs_returns_lag1"].dropna() > 0.20).mean()
+    assert frac >= 0.30, (
+        f"Volatility clustering finding broken: only {frac*100:.1f}% of BIST tickers "
+        f"have ACF(|r|, lag-1) > 0.20. Expected ≥ 30%."
+    )
