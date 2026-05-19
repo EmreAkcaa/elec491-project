@@ -310,6 +310,38 @@ def render(
     else:
         start_dt, end_dt = pd.Timestamp(min_date), pd.Timestamp(max_date)
 
+    # ── As-of date — caps compute slice past-only ───────────────────────
+    # Defaults to max_date (back-compat: existing users see no behavior
+    # change). When set < max_date, the Spread & Dislocation tab computes
+    # everything past-only up to this date — used by drill-in from the
+    # Signals page so a user scrubbed to 2024-01-15 sees Pair Analysis
+    # as it would have looked on that day.
+    if "pa_as_of_date" not in st.session_state:
+        st.session_state["pa_as_of_date"] = max_date
+    _asof_col, _asof_caption_col = st.columns([2, 5])
+    with _asof_col:
+        pa_as_of = st.date_input(
+            "As-of date (compute cutoff)",
+            min_value=min_date, max_value=max_date,
+            key="pa_as_of_date",
+        )
+    as_of_ts = pd.Timestamp(pa_as_of)
+    _is_historical_asof = as_of_ts < pd.Timestamp(max_date)
+    # When as_of < max, treat it as the effective end of the display
+    # window across ALL tabs. Cleaner than per-tab slicing: every chart
+    # naturally shows history up to as_of with no future data visible.
+    if _is_historical_asof and as_of_ts < end_dt:
+        end_dt = as_of_ts
+    with _asof_caption_col:
+        if _is_historical_asof:
+            _drill_in = st.session_state.pop("pa_as_of_source", None) == "drill_in_from_signals"
+            _src_note = " (drilled in from Signals)" if _drill_in else ""
+            st.caption(
+                f":material/lock: **As-of date: {as_of_ts.strftime('%Y-%m-%d')}**"
+                f"{_src_note}. Every chart + metric below is computed past-only "
+                "at this date — no data from after this date is visible."
+            )
+
     returns       = full_returns.loc[start_dt:end_dt]
     prices_window = adj_close.loc[start_dt:end_dt]
 
@@ -683,13 +715,32 @@ def render(
         # flashing for no reason. First-compute (cold cache) still gets
         # the shimmer overlay from app/utils.py inject_custom_css.
         try:
+            # Honor pa_as_of_date: pass a past-only-sliced adj_close so the
+            # OLS fit + Z-score + signal state machine all stop at as_of_ts.
+            # ``compute_spread`` fits OLS on the LAST ``lookback`` days of
+            # the input — passing the slice means those 252 days end at
+            # as_of_ts, not at the panel's max date (which would silently
+            # leak future data).
+            _adj_for_compute = adj_close.loc[:as_of_ts] if _is_historical_asof else adj_close
+            _adj_cache_key_asof = (
+                f"{adj_cache_key}:asof={as_of_ts.strftime('%Y-%m-%d')}"
+                if _is_historical_asof else adj_cache_key
+            )
             spread, beta, intercept, zscore, half_life, signals_df = _compute_dislocation(
-                adj_close, adj_cache_key,
+                _adj_for_compute, _adj_cache_key_asof,
                 ticker_a, ticker_b, ols_lookback, zscore_window, entry_z, exit_z,
             )
 
-            spread_w = spread.loc[start_dt:end_dt]
-            zscore_w = zscore.loc[start_dt:end_dt]
+            # Display windowing: cap end at as_of_ts when historical.
+            _display_end = min(end_dt, as_of_ts) if _is_historical_asof else end_dt
+            spread_w = spread.loc[start_dt:_display_end]
+            zscore_w = zscore.loc[start_dt:_display_end]
+
+            # Filter signals to events at-or-before as_of_ts.
+            if _is_historical_asof and not signals_df.empty:
+                signals_df = signals_df[
+                    pd.to_datetime(signals_df["date"]) <= as_of_ts
+                ].copy()
 
             # ── Log-Price Spread ────────────────────────────────────────
             with st.container(border=True):

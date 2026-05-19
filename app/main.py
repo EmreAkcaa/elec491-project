@@ -306,17 +306,22 @@ _PAGE_PATHS: dict[str, str] = {
     "Cross-Market":    "views/01_cross_market.py",
     "Market Overview": "views/02_market_overview.py",
     "Time Machine":    "views/03_time_machine.py",
+    "Signals":         "views/06_signals.py",
     "Pair Analysis":   "views/04_pair_analysis.py",
     "Methods Lab":     "views/05_methods_lab.py",
 }
 
 # Build the visible-pages list for the active universe.
+# Signals sits between Time Machine and Pair Analysis — "see the network →
+# see time evolution → see what's signaling now → deep-dive one pair →
+# methods" reads as a natural progression.
 visible_titles: list[str] = []
 if _cap(_active_universe, 'eligible_for_cross_market', True):
     visible_titles.append("Cross-Market")
 visible_titles.append("Market Overview")
 visible_titles.append("Time Machine")
 if _cap(_active_universe, 'has_pair_trading', True):
+    visible_titles.append("Signals")
     visible_titles.append("Pair Analysis")
 visible_titles.append("Methods Lab")
 
