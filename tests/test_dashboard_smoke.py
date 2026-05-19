@@ -55,8 +55,23 @@ for _p in (str(_REPO_ROOT), str(_APP_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-DASHBOARD_PATH = _APP_DIR / "dashboard.py"
+DASHBOARD_PATH = _APP_DIR / "main.py"  # PHASE 2: dashboard.py → main.py
 APPTEST_TIMEOUT = 90  # seconds; dashboard's first run includes heavy imports
+
+# PHASE 2: per-page script paths for direct testing. AppTest's `switch_page`
+# has known issues with widget-state caching across navigations (it tries to
+# collect previous-page widget state on the next `run()` and chokes when
+# segmented_control values no longer match the new page's options). For
+# per-page render tests, we load the page script directly with the sidebar
+# context pre-set in `session_state` — same behaviour as a fresh user
+# session navigating from main.py into that page.
+PAGE_PATHS = {
+    "Cross-Market":    _APP_DIR / "views" / "01_cross_market.py",
+    "Market Overview": _APP_DIR / "views" / "02_market_overview.py",
+    "Time Machine":    _APP_DIR / "views" / "03_time_machine.py",
+    "Pair Analysis":   _APP_DIR / "views" / "04_pair_analysis.py",
+    "Methods Lab":     _APP_DIR / "views" / "05_methods_lab.py",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -565,10 +580,26 @@ def test_capability_getattr_fallback_for_missing_attr():
 # ---------------------------------------------------------------------------
 
 def _open(*, universe: str, nav_page: str) -> AppTest:
-    """Run the dashboard with explicit session_state values."""
-    at = AppTest.from_file(str(DASHBOARD_PATH))
+    """Run the requested page script with explicit session_state values.
+
+    PHASE 2: previously this opened `app/dashboard.py` and set `nav_page` so
+    the in-script route check picked the right page. Now we open the page
+    script directly (e.g., `app/views/03_time_machine.py`) with the sidebar
+    context pre-set. Bypasses AppTest's `switch_page` widget-state caching
+    quirks across navigations.
+    """
+    page_path = PAGE_PATHS[nav_page]
+    at = AppTest.from_file(str(page_path))
+    # Seed both legacy and Phase-1 sidebar keys so `current_universe()`
+    # resolves correctly regardless of which form the page reads from.
     at.session_state["universe"] = universe
-    at.session_state["nav_page"] = nav_page
+    if universe.startswith("bist"):
+        at.session_state["dataset"] = "bist"
+        at.session_state["bist_basis"] = {
+            "bist": "try", "bist_usd": "usd", "bist_gold": "gold",
+        }.get(universe, "try")
+    else:
+        at.session_state["dataset"] = universe
     at.run(timeout=APPTEST_TIMEOUT)
     return at
 

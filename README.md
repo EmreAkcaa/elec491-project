@@ -5,7 +5,7 @@ colorFrom: blue
 colorTo: red
 sdk: streamlit
 sdk_version: 1.41.1
-app_file: app/dashboard.py
+app_file: app/main.py
 pinned: false
 license: mit
 short_description: BIST-100 / S&P-500 / EEG correlation-network dashboard
@@ -44,8 +44,8 @@ uv sync --extra eeg                                                  # optional:
 uv run python run_pipeline.py                                        # BIST (default; ~10-30 min, +~12 min if [snn] installed)
 uv run python run_pipeline.py --config config/settings_sp500.yaml    # S&P-500 (~95 min including parallel TE on 12 cores)
 uv run python run_pipeline_eeg.py                                    # EEG (optional rerun; ~15 min + ~5 min MNE download for cold cache)
-uv run streamlit run app/dashboard.py                                # http://localhost:8501; sidebar selector flips between BIST / S&P / EEG
-DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/dashboard.py       # alternative: boot directly into the S&P universe
+uv run streamlit run app/main.py                                     # http://localhost:8501; sidebar selector flips between BIST / S&P / EEG
+DASHBOARD_UNIVERSE=sp500 uv run streamlit run app/main.py            # alternative: boot directly into the S&P universe
 uv run python scripts/sp500_vs_bist.py                               # cross-market table (after both financial pipelines run)
 uv run python -m pytest -q                                           # 120 tests (BIST + SNN + capability gates)
 ```
