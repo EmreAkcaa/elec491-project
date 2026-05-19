@@ -21,6 +21,49 @@ def utils_mod():
     return utils
 
 
+def test_render_chart_title_clear_does_not_leak_undefined():
+    """Regression: `fig.update_layout(title=None)` leaves a stale empty
+    Title() object that serializes to `"title": {}` in JSON. Plotly.js
+    reads `title.text` as undefined and renders the literal string
+    "undefined" in the chart canvas.
+
+    The fix is `title=dict(text="")` which serializes to
+    `"title": {"text": ""}` — Plotly.js renders no title at all.
+
+    This test pins the SEMANTIC: the title-clear path used by
+    `render_chart` must produce JSON where `layout.title.text` is the
+    empty string (or absent), never an empty dict.
+    """
+    import json
+    import plotly.graph_objects as go
+
+    # Mimic the upstream "apply_chart_style set a title" path then
+    # apply the render_chart title-clear logic.
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[1, 2, 3], y=[1, 2, 3]))
+    fig.update_layout(title="Some upstream title we want to strip")
+
+    # === This is the code path that ships in render_chart. ===
+    cur_margin = dict(fig.layout.margin.to_plotly_json())
+    cur_margin["t"] = 10
+    fig.update_layout(title=dict(text=""), margin=cur_margin)
+    # =========================================================
+
+    serialized = json.loads(fig.to_json())
+    title_obj = serialized["layout"].get("title")
+    # title_obj must be either absent, or carry text=""; an empty dict
+    # `{}` is the broken state that leaks "undefined" to the front end.
+    assert title_obj != {}, (
+        "render_chart's title-clear produced an empty title dict. "
+        "Plotly.js will render this as the literal string 'undefined' "
+        "in the chart canvas. Use `title=dict(text='')` not `title=None`."
+    )
+    if title_obj is not None:
+        assert title_obj.get("text", "") == "", (
+            f"Expected title.text='' or absent; got {title_obj.get('text')!r}"
+        )
+
+
 def test_data_paths_bist_explicit(utils_mod):
     """data_raw('bist') / data_processed('bist') / data_results('bist')
     must point into data/bist/{raw,processed,results}/ regardless of

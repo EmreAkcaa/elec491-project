@@ -314,15 +314,20 @@ def render_chart(
     # are almost always blocking something behind". Single-place fix that
     # cleans up ~28 callsites across dashboard / pair_analysis / time_machine /
     # cross_market / eee_analysis without touching them.
-    # Also actively strip any title left by upstream calls (apply_chart_style
-    # injects via the legacy path when callers pass `title=` there).
     if default_title:
         st.markdown(f"**{default_title}**")
     try:
         # Defensive: shrink top margin + clear any pre-existing layout title.
+        # Plotly subtlety (verified on 5.24.1, 2026-05-19): calling
+        # `update_layout(title=None)` does NOT remove the title attribute —
+        # it leaves an empty Title() object that serializes to
+        # `"title": {}` in JSON. Plotly.js then reads `title.text` as
+        # `undefined` and renders the literal string "undefined" inside the
+        # chart canvas. Setting `title=dict(text="")` instead serializes to
+        # `"title": {"text": ""}` which Plotly.js renders as no title at all.
         cur_margin = dict(fig.layout.margin.to_plotly_json())
         cur_margin["t"] = 10
-        fig.update_layout(title=None, margin=cur_margin)
+        fig.update_layout(title=dict(text=""), margin=cur_margin)
     except Exception:
         # Plotly version drift safety — never block a chart on margin fiddling.
         pass
