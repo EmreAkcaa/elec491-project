@@ -39,6 +39,7 @@ from utils import (
     load_te_lag_sweep, load_rolling_te, load_te_with_ci,
     load_mi_excess_with_ci,
     load_predictability_diagnostics,
+    load_te_conditional_market, load_te_sector_matrix,
     downsample_matrix_for_display,
 )
 
@@ -1200,158 +1201,42 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
         else:
             st.info("Run the pipeline to generate the net transfer-entropy matrix.")
 
-        # ---- PR #71: p-value distribution + FDR-significant edges table ----
-        # The pipeline always wrote transfer_entropy_pvalues.parquet but the
-        # page never read it. The p-value distribution is the most honest
-        # one-glance summary of how much TE signal exists: a uniform [0,1]
-        # histogram = no information flow anywhere; a spike near 0 = real
-        # directional flows that survive surrogate testing.
+        # ---- FDR-significant directed edges (uses pvals + sig_mask) -----
         pvals = load_te_pvalues()
         sig_mask = load_te_significance()
-        if not pvals.empty:
+        if not pvals.empty and not sig_mask.empty and not raw_te.empty:
+            sig_arr = sig_mask.to_numpy()
+            te_arr = raw_te.to_numpy()
+            tickers = list(sig_mask.columns)
+            sig_rows: list[dict] = []
+            for i in range(sig_arr.shape[0]):
+                for j in range(sig_arr.shape[1]):
+                    if i == j or not bool(sig_arr[i, j]):
+                        continue
+                    sig_rows.append({
+                        "source": tickers[i],
+                        "target": tickers[j],
+                        "te (nats)": float(te_arr[i, j]),
+                        "p-value": float(pvals.iloc[i, j]),
+                    })
             st.markdown("---")
-            st.markdown(
-                "**Statistical significance distribution** — p-values from the "
-                "surrogate-null test on all directed pairs. Under the null "
-                "hypothesis of no information flow, p-values are uniform on "
-                "[0, 1]; a left-skewed mass near 0 means real directed-flow "
-                "signal exists beyond what circular-block-bootstrap shuffles "
-                "produce by chance."
-            )
-            # Flatten off-diagonal p-values (diag is self → undefined/NaN)
-            p_flat = pvals.to_numpy()
-            mask = ~np.eye(p_flat.shape[0], dtype=bool)
-            p_off = p_flat[mask]
-            p_off = p_off[np.isfinite(p_off)]
-            if len(p_off) > 0:
-                fig_p = go.Figure()
-                fig_p.add_trace(go.Histogram(
-                    x=p_off, nbinsx=40,
-                    marker_color=get_colors()["primary"],
-                    name="observed p-values",
-                    hovertemplate="p ∈ [%{x:.3f}, %{x:.3f}+bin]<br>count = %{y}<extra></extra>",
-                ))
-                # Uniform-null reference line
-                expected = len(p_off) / 40
-                fig_p.add_hline(
-                    y=expected, line_dash="dash",
-                    line_color=get_colors()["muted"],
-                    annotation_text=f"uniform-null expectation ({expected:.0f}/bin)",
-                    annotation_position="top right", annotation_font_size=10,
+            if sig_rows:
+                sig_df = pd.DataFrame(sig_rows).sort_values("te (nats)", ascending=False)
+                sig_df["te (nats)"] = sig_df["te (nats)"].round(5)
+                sig_df["p-value"] = sig_df["p-value"].round(4)
+                st.markdown(
+                    f"**Directed flows surviving {correction} at α = {alpha:g}** "
+                    f"({len(sig_df)} edges / {total_pairs} directed pairs tested)"
                 )
-                fig_p.add_vline(
-                    x=alpha if total_pairs else 0.05,
-                    line_dash="dot",
-                    line_color=get_colors()["secondary"],
-                    annotation_text=f"α = {alpha if total_pairs else 0.05:g}",
-                    annotation_position="top",
-                    annotation_font_size=10,
+                st.dataframe(sig_df, use_container_width=True, hide_index=True)
+            elif total_pairs:
+                st.caption(
+                    f"No directed pairs survive {correction} at α = {alpha:g} on the "
+                    f"full {total_pairs}-pair grid with K = {shuffles} surrogate shuffles "
+                    f"(BH cutoff ~9.5e-6 for the top edge; K=1000 caps min p at 1e-3). "
+                    f"The network plot above ranks by raw TE magnitude. Real edges surface "
+                    f"on smaller hypothesis sets — see the lag-1 panel below."
                 )
-                apply_chart_style(
-                    fig_p, height=300,
-                    xaxis_title="p-value",
-                    yaxis_title="count of directed pairs",
-                )
-                render_chart(
-                    fig_p, chart_id="te_pvalue_hist",
-                    filename_base="te_pvalue_distribution",
-                    default_title="Transfer-entropy p-value distribution (uniform = no signal)",
-                )
-
-            # Show the actual significant edges if any survived FDR
-            if not sig_mask.empty:
-                # sig_mask is N×N boolean. Read raw TE values for the True cells.
-                if not raw_te.empty:
-                    sig_arr = sig_mask.to_numpy()
-                    te_arr = raw_te.to_numpy()
-                    tickers = list(sig_mask.columns)
-                    sig_rows: list[dict] = []
-                    for i in range(sig_arr.shape[0]):
-                        for j in range(sig_arr.shape[1]):
-                            if i == j or not bool(sig_arr[i, j]):
-                                continue
-                            sig_rows.append({
-                                "source": tickers[i],
-                                "target": tickers[j],
-                                "te (nats)": float(te_arr[i, j]),
-                                "p-value": float(pvals.iloc[i, j]) if not pvals.empty else float("nan"),
-                            })
-                    if sig_rows:
-                        sig_df = pd.DataFrame(sig_rows).sort_values("te (nats)", ascending=False)
-                        st.markdown(
-                            f"**Directed flows that survive {correction} at α = {alpha:g}** "
-                            f"— {len(sig_df)} edges out of {total_pairs} directed pairs tested."
-                        )
-                        sig_df["te (nats)"] = sig_df["te (nats)"].round(5)
-                        sig_df["p-value"] = sig_df["p-value"].round(4)
-                        st.dataframe(
-                            sig_df, use_container_width=True, hide_index=True,
-                        )
-                    elif total_pairs:
-                        st.caption(
-                            f"No directed pairs survived {correction} at α = {alpha:g} "
-                            f"with K = {shuffles} surrogate shuffles. To resolve smaller "
-                            f"p-values, increase `transfer_entropy.significance_shuffles` "
-                            f"in `config/settings.yaml` and re-run the pipeline. The "
-                            f"network plot above ranks by raw TE magnitude regardless."
-                        )
-
-        # ---- PR #73 G1: lag-sweep table ----------------------------------
-        # The full-grid 5,256-pair TE at K=1000 is multiple-testing-limited
-        # (BH cutoff ≈ 9.5e-6; K=1000 minimum p-value ≈ 1e-3). On a
-        # pre-selected hypothesis set of 10-20 top-correlation pairs, the
-        # BH cutoff is far more forgiving (α/20 = 0.0025 ≥ 1e-3) and real
-        # directional flows surface. We compute TE at lags {1, 5, 22}
-        # (daily / weekly / monthly) on this small set; FDR is applied
-        # PER-LAG so a finding at one lag doesn't compete with another.
-        lag_sweep = load_te_lag_sweep()
-        if not lag_sweep.empty:
-            st.markdown("---")
-            st.markdown(
-                "**Lag-sweep on top-correlation hypothesis set** — TE at "
-                "daily / weekly / monthly lags, FDR applied per-lag."
-            )
-            sweep_disp = lag_sweep.copy()
-            sweep_disp["pair"] = sweep_disp["ticker_a"] + " → " + sweep_disp["ticker_b"]
-            # Pretty up direction
-            sweep_disp.loc[sweep_disp["direction"] == "a_to_b", "pair"] = (
-                sweep_disp.loc[sweep_disp["direction"] == "a_to_b", "ticker_a"]
-                + " → "
-                + sweep_disp.loc[sweep_disp["direction"] == "a_to_b", "ticker_b"]
-            )
-            sweep_disp.loc[sweep_disp["direction"] == "b_to_a", "pair"] = (
-                sweep_disp.loc[sweep_disp["direction"] == "b_to_a", "ticker_b"]
-                + " → "
-                + sweep_disp.loc[sweep_disp["direction"] == "b_to_a", "ticker_a"]
-            )
-            sweep_disp["te"] = sweep_disp["te"].round(5)
-            sweep_disp["p_value"] = sweep_disp["p_value"].round(4)
-            sweep_disp["survives_fdr"] = sweep_disp["significant"].map({True: "yes", False: ""})
-            # Show only the rows where SOMETHING happened (FDR-yes or uncorrected p<0.10)
-            show = sweep_disp[(sweep_disp["significant"]) | (sweep_disp["p_value"] < 0.10)]
-            if show.empty:
-                show = sweep_disp.sort_values("p_value").head(15)
-            st.dataframe(
-                show[["pair", "lag", "te", "p_value", "survives_fdr"]],
-                use_container_width=True, hide_index=True,
-                column_config={
-                    "pair": st.column_config.TextColumn("Directional pair"),
-                    "lag": st.column_config.NumberColumn("Lag (days)", format="%d"),
-                    "te": st.column_config.NumberColumn("TE (nats)", format="%.5f"),
-                    "p_value": st.column_config.NumberColumn("p-value", format="%.4f"),
-                    "survives_fdr": st.column_config.TextColumn(
-                        "Survives FDR",
-                        help="Per-lag Benjamini–Hochberg correction at α=0.05.",
-                    ),
-                },
-            )
-            n_sig_per_lag = lag_sweep.groupby("lag")["significant"].sum().to_dict()
-            sig_summary = ", ".join(f"lag={l}: {int(c)}" for l, c in sorted(n_sig_per_lag.items()))
-            st.caption(
-                f":material/info: FDR survivors per lag — {sig_summary}. "
-                "Empty lags mean directional flow is not detectable at that timescale "
-                "with K=1000 shuffles on this hypothesis set."
-            )
 
         # ---- PR #73 G3: rolling TE chart --------------------------------
         rolling_te = load_rolling_te()
@@ -1424,7 +1309,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
                 default_title="Rolling TE per pair (filled marker = p<0.05 in that window)",
             )
 
-        # ---- PR #73 G4: TE confidence intervals --------------------------
+        # ---- TE confidence intervals on the FDR-survivor pairs ----------
         te_ci = load_te_with_ci()
         if not te_ci.empty:
             st.markdown("---")
@@ -1455,6 +1340,95 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
                     "robust?": st.column_config.TextColumn("CI excludes 0?"),
                 },
             )
+
+        # ---- Conditional TE: directed flow after market-factor removal ---
+        # Tests whether the surviving directed flows are market-mediated
+        # artifacts. CTE(X→Y | XU100) > TE(X→Y) means the flow is genuinely
+        # pair-specific and not just both following the market.
+        cte_df = load_te_conditional_market()
+        if not cte_df.empty:
+            st.markdown("---")
+            st.markdown(
+                "**Are these flows market-mediated?** TE compared with "
+                "conditional TE that controls for the BIST market index."
+            )
+            cte_disp = cte_df.copy()
+            cte_disp["pair_dir"] = cte_disp["source"] + " → " + cte_disp["target"]
+            for col in ("te", "cte", "delta"):
+                cte_disp[col] = cte_disp[col].round(5)
+            cte_disp["p_value"] = cte_disp["p_value"].round(4)
+            cte_disp["verdict"] = cte_disp["delta"].apply(
+                lambda d: "pair-specific" if d > 0 else "market-mediated"
+            )
+            st.dataframe(
+                cte_disp[["pair_dir", "te", "cte", "delta", "p_value", "verdict"]],
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "pair_dir": st.column_config.TextColumn("Directional pair"),
+                    "te": st.column_config.NumberColumn("TE (nats)", format="%.5f"),
+                    "cte": st.column_config.NumberColumn("CTE | XU100", format="%.5f"),
+                    "delta": st.column_config.NumberColumn("Δ = CTE − TE", format="%+.5f"),
+                    "p_value": st.column_config.NumberColumn(
+                        "p-value", format="%.4f",
+                        help="Surrogate-null p-value of the conditional TE. "
+                             "4-way joint estimator has more bias than 3-way "
+                             "TE; treat magnitudes as ordinal vs TE.",
+                    ),
+                    "verdict": st.column_config.TextColumn("Verdict"),
+                },
+            )
+
+        # ---- Sector-aggregated TE: lead-lag at sector resolution ---------
+        # 13 sectors → 156 directed pairs (vs 5256 ticker-level). FDR
+        # cutoff ~30× more forgiving; uncorrected significance at K=1000
+        # surfaces the underlying sectoral lead-lag structure.
+        sec_te = load_te_sector_matrix()
+        if not sec_te.empty:
+            st.markdown("---")
+            sec_n_fdr = int(sec_te["significant_fdr"].sum())
+            sec_n_unc = int(sec_te["significant_uncorrected"].sum())
+            st.markdown(
+                "**Sector-aggregated TE** — equal-weight sector portfolios, "
+                f"{len(sec_te)} directed sector pairs. "
+                f"{sec_n_fdr} FDR-survivors / {sec_n_unc} uncorrected at α = 0.05."
+            )
+            sectors = sorted(set(sec_te["source"]) | set(sec_te["target"]))
+            mat = pd.DataFrame(0.0, index=sectors, columns=sectors)
+            for _, r in sec_te.iterrows():
+                mat.loc[r["source"], r["target"]] = float(r["te"])
+            vmax = float(np.nanmax(np.abs(mat.to_numpy()))) if mat.size else 1.0
+            render_matrix_heatmap(
+                mat,
+                chart_id="te_sector_heatmap",
+                filename_base="te_sector_flow_heatmap",
+                title_key="te_sector_hm",
+                default_title="Sector → sector transfer entropy (nats)",
+                zmin=0.0, zmax=max(vmax, 1e-6),
+                diverging=False, height=440,
+                hover_label="TE",
+            )
+            st.markdown("**Top 15 uncorrected-significant edges**")
+            top_sec = (
+                sec_te[sec_te["significant_uncorrected"]]
+                .sort_values("te", ascending=False).head(15).copy()
+            )
+            if top_sec.empty:
+                st.caption("No uncorrected-significant sector edges.")
+            else:
+                top_sec["te"] = top_sec["te"].round(5)
+                top_sec["p_value"] = top_sec["p_value"].round(4)
+                top_sec["fdr"] = top_sec["significant_fdr"].map({True: "yes", False: ""})
+                st.dataframe(
+                    top_sec[["source", "target", "te", "p_value", "fdr"]],
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "source": st.column_config.TextColumn("Source sector"),
+                        "target": st.column_config.TextColumn("Target sector"),
+                        "te": st.column_config.NumberColumn("TE (nats)", format="%.5f"),
+                        "p_value": st.column_config.NumberColumn("p-value", format="%.4f"),
+                        "fdr": st.column_config.TextColumn("FDR"),
+                    },
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -1844,115 +1818,6 @@ def render_info_theory(sector_map: dict, *, u=None):
             "`it_summary` artifacts under `data/<market>/results/`."
         )
 
-        # ---- Panel B: MI heatmap + MI-vs-Gaussian scatter ----
-        mi = load_mi_matrix()
-        mi_g = load_mi_gaussian_matrix()
-        top_excess = load_mi_nonlinear_excess_top()
-
-        if not mi.empty and not mi_g.empty:
-            st.markdown("**MI vs Pearson — where the linear model misses non-linear coupling**")
-            colb1, colb2 = st.columns(2)
-
-            with colb1:
-                # Strip the diagonal so heatmap colours are not dominated by H(X_i)
-                off = mi.copy()
-                np.fill_diagonal(off.values, np.nan)
-                order = load_dendrogram_order()
-                render_matrix_heatmap(
-                    off,
-                    chart_id="it_mi_heatmap",
-                    filename_base="it_mi_heatmap",
-                    title_key="it_mi_heatmap",
-                    default_title="Pairwise mutual information (bits, off-diagonal only)",
-                    ordered_tickers=order,
-                    zmin=0.0, zmax=float(np.nanpercentile(off.values, 99)),
-                    diverging=False, height=440,
-                    hover_label="MI (bits)",
-                )
-
-            with colb2:
-                idx = mi.index.tolist()
-                pts = []
-                for i, a in enumerate(idx):
-                    for j in range(i + 1, len(idx)):
-                        b = idx[j]
-                        if b in mi_g.columns and a in mi_g.index:
-                            pts.append({
-                                "pair": f"{a}–{b}",
-                                "mi_emp": float(mi.iloc[i, j]),
-                                "mi_gauss": float(mi_g.loc[a, b]),
-                            })
-                pts_df = pd.DataFrame(pts)
-                top_set = (
-                    set(
-                        tuple(sorted([r.ticker_a, r.ticker_b]))
-                        for _, r in top_excess.iterrows()
-                    )
-                    if not top_excess.empty else set()
-                )
-                pts_df["nonlinear"] = pts_df["pair"].apply(
-                    lambda p: tuple(sorted(p.split("–"))) in top_set
-                )
-                # For S&P-scale universes (485 tickers → 117k pairs ≈ 6 MB
-                # serialized), keep all flagged-nonlinear pairs and downsample
-                # the bulk to a representative top-N by combined MI magnitude.
-                # Keeps the visual story intact and the websocket payload bounded.
-                _scatter_cap = 2000
-                if len(pts_df) > _scatter_cap:
-                    pts_df = pts_df.assign(
-                        _rank=(pts_df["mi_emp"] + pts_df["mi_gauss"]).abs()
-                    ).sort_values("_rank", ascending=False)
-                    keep_hi = pts_df[pts_df["nonlinear"]]
-                    keep_bulk = pts_df[~pts_df["nonlinear"]].head(
-                        max(0, _scatter_cap - len(keep_hi))
-                    )
-                    pts_df = pd.concat([keep_hi, keep_bulk]).drop(columns="_rank")
-                fig_sc = go.Figure()
-                base = pts_df[~pts_df.nonlinear]
-                hi = pts_df[pts_df.nonlinear]
-                fig_sc.add_trace(go.Scatter(
-                    x=base["mi_gauss"], y=base["mi_emp"],
-                    mode="markers",
-                    marker=dict(size=4, color="rgba(150,150,150,0.45)"),
-                    name="all pairs",
-                    hovertext=base["pair"], hovertemplate="%{hovertext}<br>"
-                    "Gauss MI %{x:.3f}<br>Empirical MI %{y:.3f}<extra></extra>",
-                ))
-                if not hi.empty:
-                    fig_sc.add_trace(go.Scatter(
-                        x=hi["mi_gauss"], y=hi["mi_emp"],
-                        mode="markers",
-                        marker=dict(size=8, color="#E63946", symbol="diamond"),
-                        name="non-linear excess",
-                        hovertext=hi["pair"], hovertemplate="%{hovertext}<br>"
-                        "Gauss MI %{x:.3f}<br>Empirical MI %{y:.3f}<extra></extra>",
-                    ))
-                if not pts_df.empty:
-                    m = float(max(pts_df["mi_emp"].max(), pts_df["mi_gauss"].max()))
-                    fig_sc.add_trace(go.Scatter(
-                        x=[0, m], y=[0, m],
-                        mode="lines", line=dict(color="black", dash="dot", width=1),
-                        name="y = x", hoverinfo="skip",
-                    ))
-                apply_chart_style(
-                    fig_sc, height=440,
-                    xaxis_title="Gaussian MI = −½ log(1 − ρ²) (bits)",
-                    yaxis_title="Empirical MI (plug-in, bits)",
-                )
-                render_chart(
-                    fig_sc, chart_id="it_mi_vs_gauss",
-                    filename_base="it_mi_vs_gaussian",
-                    title_key="it_mi_vs_gauss",
-                    default_title="Empirical MI vs Gaussian baseline (red = nonlinear excess)",
-                )
-
-            if not top_excess.empty:
-                st.markdown("**Top non-linear-excess pairs** (empirical MI above the Gaussian baseline)")
-                st.dataframe(
-                    top_excess.rename(columns={"nonlinear_excess": "Δ MI (bits)"}),
-                    use_container_width=True, hide_index=True,
-                )
-
         # ---- Panel C: rolling D_eff(t) + ΔH(t) with crisis markers ----
         rolling = load_rolling_info_theory()
         if not rolling.empty:
@@ -2026,225 +1891,18 @@ def render_info_theory(sector_map: dict, *, u=None):
             ])
             st.dataframe(tbl, use_container_width=True, hide_index=True)
 
-        # ---- Panel E: per-ticker information diagnostics (3 columns) ----
-        # PR #71: sign-entropy + nonlinear-coupling columns. PR #73: added
-        # permutation entropy as a 3rd column. The 3 measures catch
-        # different kinds of structure:
-        #   sign-entropy  → directional predictability (2-state, lag-1)
-        #   nonlinear coupling → joint information Pearson misses
-        #   permutation entropy → 4-bar ordinal patterns the 2-state view drops
-        sign_ent = load_entropy_rate_signs()
-        full_excess = load_mi_nonlinear_excess()
-        perm_ent = load_permutation_entropy()
-        if not sign_ent.empty or not full_excess.empty or not perm_ent.empty:
-            st.markdown(
-                "**Per-ticker information diagnostics** — which individual "
-                f"{_items_label(u).lower() if '_items_label' in dir() else 'tickers'} "
-                "stand out on each information measure?"
-            )
-
-            # Pre-compute the three top-15 sets so we can flag star-tickers
-            # that appear in MORE THAN ONE list (most clearly non-random).
-            _top_sign = (
-                set(sign_ent.sort_values("entropy_rate_bits").head(15)["ticker"])
-                if not sign_ent.empty else set()
-            )
-            _top_pe = (
-                set(perm_ent.sort_values("permutation_entropy_norm").head(15)["ticker"])
-                if not perm_ent.empty else set()
-            )
-            if not full_excess.empty:
-                _e = full_excess.copy()
-                for t in _e.columns:
-                    if t in _e.index:
-                        _e.loc[t, t] = 0.0
-                _top_nl = set(_e.abs().sum(axis=1).sort_values(ascending=False).head(15).index)
-            else:
-                _top_nl = set()
-
-            def _star(ticker: str) -> str:
-                hits = sum([
-                    ticker in _top_sign,
-                    ticker in _top_pe,
-                    ticker in _top_nl,
-                ])
-                return "★" * hits if hits >= 2 else ""
-
-            _col_pred, _col_nonlin, _col_pe = st.columns(3)
-
-            with _col_pred:
-                st.markdown(
-                    "**Most directionally predictable** "
-                    "(lowest sign-entropy — deviation from 1 bit = weak EMH violation)"
-                )
-                if sign_ent.empty:
-                    st.caption("No per-ticker sign-entropy on disk.")
-                else:
-                    disp = sign_ent.copy()
-                    disp = disp.sort_values("entropy_rate_bits", ascending=True).head(15)
-                    disp["deviation_from_1_bit"] = (1.0 - disp["entropy_rate_bits"]).round(4)
-                    disp["entropy_rate_bits"] = disp["entropy_rate_bits"].round(4)
-                    disp.insert(0, "·", disp["ticker"].map(_star))
-                    st.dataframe(
-                        disp.reset_index(drop=True),
-                        use_container_width=True, hide_index=True,
-                        column_config={
-                            "·": st.column_config.TextColumn("·", width="small"),
-                            "ticker": st.column_config.TextColumn("Ticker"),
-                            "entropy_rate_bits": st.column_config.NumberColumn(
-                                "H(sign_t | sign_{t-1})  [bits]",
-                                format="%.4f",
-                                help="Conditional entropy of tomorrow's sign given today's. "
-                                     "1.0 = independent (efficient). Below 1.0 = today's "
-                                     "sign carries information about tomorrow's.",
-                            ),
-                            "deviation_from_1_bit": st.column_config.NumberColumn(
-                                "Δ from 1.0 bit",
-                                format="%.4f",
-                                help="How far this ticker is from a fair coin flip. "
-                                     "Multiply by ~100 for a rough % edge.",
-                            ),
-                        },
-                    )
-
-            with _col_nonlin:
-                st.markdown(
-                    "**Most non-linearly coupled** "
-                    "(sum of nonlinear excess across all partners — beyond what Pearson explains)"
-                )
-                if full_excess.empty:
-                    st.caption("No full nonlinear-excess matrix on disk.")
-                else:
-                    excess = full_excess.copy()
-                    for t in excess.columns:
-                        if t in excess.index:
-                            excess.loc[t, t] = 0.0
-                    per_ticker = excess.abs().sum(axis=1).sort_values(ascending=False).head(15)
-                    nl_df = pd.DataFrame({
-                        "ticker": per_ticker.index,
-                        "total_nonlinear_excess_bits": per_ticker.values.round(4),
-                    })
-                    nl_df.insert(0, "·", nl_df["ticker"].map(_star))
-                    st.dataframe(
-                        nl_df, use_container_width=True, hide_index=True,
-                        column_config={
-                            "·": st.column_config.TextColumn("·", width="small"),
-                            "ticker": st.column_config.TextColumn("Ticker"),
-                            "total_nonlinear_excess_bits": st.column_config.NumberColumn(
-                                "Σ excess MI [bits]",
-                                format="%.4f",
-                                help="Sum of (empirical MI − Gaussian-baseline MI) across "
-                                     "all partners. High score → this ticker's joint "
-                                     "behaviour carries information Pearson misses.",
-                            ),
-                        },
-                    )
-
-            with _col_pe:
-                st.markdown(
-                    "**Most ordinally predictable** "
-                    "(lowest permutation entropy — multi-bar patterns sign-entropy misses)"
-                )
-                if perm_ent.empty:
-                    st.caption("No per-ticker permutation entropy on disk.")
-                else:
-                    pe_disp = perm_ent.sort_values("permutation_entropy_norm").head(15).copy()
-                    pe_disp["permutation_entropy_norm"] = pe_disp["permutation_entropy_norm"].round(4)
-                    pe_disp.insert(0, "·", pe_disp["ticker"].map(_star))
-                    st.dataframe(
-                        pe_disp.reset_index(drop=True)[["·", "ticker", "permutation_entropy_norm"]],
-                        use_container_width=True, hide_index=True,
-                        column_config={
-                            "·": st.column_config.TextColumn("·", width="small"),
-                            "ticker": st.column_config.TextColumn("Ticker"),
-                            "permutation_entropy_norm": st.column_config.NumberColumn(
-                                "PE (D=4, normalised)",
-                                format="%.4f",
-                                help="Shannon entropy of 4-bar ordinal patterns / "
-                                     "log₂(24). 1.0 = patterns uniform (random); "
-                                     "lower = more pattern structure.",
-                            ),
-                        },
-                    )
-
-            st.caption(
-                ":material/info: A `★` marks tickers appearing in 2+ of the three top-15 lists — "
-                "the most clearly non-random by multiple measures. All three columns surface "
-                "artifacts the pipeline writes but the dashboard previously didn't read."
-            )
-
-            # ---- Bootstrap CIs on top non-linear-excess pairs (PR #73 G4) ----
-            mi_ci = load_mi_excess_with_ci()
-            if not mi_ci.empty:
-                st.markdown(
-                    "**Top non-linear-excess pairs with 95% confidence intervals** "
-                    "(joint circular-block bootstrap, K=500)"
-                )
-                disp_ci = mi_ci.copy()
-                disp_ci["pair"] = disp_ci["ticker_a"] + " / " + disp_ci["ticker_b"]
-                disp_ci["CI"] = disp_ci.apply(
-                    lambda r: f"[{r['excess_ci_low']:+.4f}, {r['excess_ci_high']:+.4f}]", axis=1,
-                )
-                disp_ci["robust?"] = disp_ci["includes_zero"].map({True: "marginal", False: "yes"})
-                st.dataframe(
-                    disp_ci[["pair", "excess_point", "CI", "robust?"]],
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        "pair": st.column_config.TextColumn("Pair"),
-                        "excess_point": st.column_config.NumberColumn("Excess (bits)", format="%.4f"),
-                        "CI": st.column_config.TextColumn("95% CI (bits)"),
-                        "robust?": st.column_config.TextColumn(
-                            "CI excludes 0?",
-                            help="Yes = nonlinear coupling is robust under bootstrap; "
-                                 "marginal = the CI straddles zero (estimator noise plausible).",
-                        ),
-                    },
-                )
-
-            # ---- PE distribution histogram ----
-            if not perm_ent.empty:
-                pe_values = perm_ent["permutation_entropy_norm"].dropna().to_numpy()
-                if pe_values.size > 0:
-                    fig_pe = go.Figure()
-                    fig_pe.add_trace(go.Histogram(
-                        x=pe_values, nbinsx=20,
-                        marker_color=get_colors()["primary"],
-                        hovertemplate="PE ∈ [%{x:.4f}, +bin]<br>count = %{y}<extra></extra>",
-                    ))
-                    fig_pe.add_vline(
-                        x=1.0, line_dash="dot",
-                        line_color=get_colors()["muted"],
-                        annotation_text="PE = 1.0 (uniform / max)",
-                        annotation_position="top right",
-                        annotation_font_size=10,
-                    )
-                    apply_chart_style(
-                        fig_pe, height=240,
-                        xaxis_title="Permutation entropy (normalised)",
-                        yaxis_title=f"Count of {_items_label(u).lower() if '_items_label' in dir() else 'tickers'}",
-                    )
-                    render_chart(
-                        fig_pe, chart_id="it_perm_entropy_hist",
-                        filename_base="permutation_entropy_distribution",
-                        default_title=f"Permutation entropy distribution (mean = {pe_values.mean():.4f})",
-                    )
-
-        # ---- Panel F (PR #74): Predictability stylised facts -----------
-        # Sign-entropy at lag-1 with 2-state coarse-graining ignores
-        # return magnitude entirely. Three classic financial diagnostics
-        # the dashboard was missing — surface them so the headline
-        # "sign-entropy ≈ 1 → market is unpredictable" can't be read
-        # without honest qualification.
+        # ---- Panel E: Per-ticker predictability diagnostics -------------
+        # Three classic financial stylised facts that sign-entropy (lag-1,
+        # 2-state) cannot see: volatility clustering, Hurst exponent,
+        # raw return autocorrelation.
         predict_df = load_predictability_diagnostics()
         if not predict_df.empty:
             st.markdown("---")
             section_header(
-                "Predictability beyond sign-entropy",
-                "Sign-entropy ≈ 1.0 only says yesterday's SIGN doesn't "
-                "predict today's. It says nothing about MAGNITUDE or "
-                "long-range memory — both of which are routinely predictable "
-                "on liquid equity markets. Three classic stylised facts "
-                "below.",
+                "Per-ticker predictability diagnostics",
+                "Volatility clustering (ACF of |returns|), Hurst exponent, "
+                "and raw return autocorrelation — three concrete measures "
+                "of what's predictable about each ticker's return process.",
             )
 
             # Headline KPIs

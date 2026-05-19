@@ -2049,6 +2049,36 @@ def load_predictability_diagnostics() -> pd.DataFrame:
     return _load_predictability_diagnostics(current_universe())
 
 
+@st.cache_data
+def _load_te_conditional_market(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "te_conditional_market.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_te_conditional_market() -> pd.DataFrame:
+    """Conditional TE table for the G1 survivors, conditioning on the
+    BIST market index. Schema: ``[ticker_a, ticker_b, direction, source,
+    target, te, cte, delta, p_value, n_obs]``."""
+    return _load_te_conditional_market(current_universe())
+
+
+@st.cache_data
+def _load_te_sector_matrix(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "te_sector_matrix.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_te_sector_matrix() -> pd.DataFrame:
+    """Sector-aggregated TE long-form table. Schema: ``[source, target,
+    te, p_value, significant_fdr, significant_uncorrected,
+    n_tickers_source, n_tickers_target]``."""
+    return _load_te_sector_matrix(current_universe())
+
+
 # ---------------------------------------------------------------------------
 # Transfer entropy statistical artifacts (PR #71 — IT orphan surface)
 # ---------------------------------------------------------------------------
