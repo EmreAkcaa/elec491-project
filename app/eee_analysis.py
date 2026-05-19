@@ -16,11 +16,12 @@ except ImportError:
 from utils import (
     get_colors, SECTOR_PALETTE, apply_chart_style, section_header, render_chart,
     render_matrix_heatmap,
+    current_universe, _load_log_returns,
     load_eigenvalue_spectrum, load_denoised_corr, load_denoised_mst_edges,
     load_denoised_mst_metrics,
     load_mst_edges, load_mst_metrics, load_batch_corr,
     load_partial_corr, load_partial_corr_edges, load_glasso_metadata,
-    load_precision_matrix,
+    load_precision_matrix, load_glasso_alpha_path,
     load_wavelet_metadata, load_wavelet_mst_edges, load_wavelet_corr,
     load_wavelet_mst_metrics,
     load_te_edges, load_te_node_roles, load_te_matrix, load_net_te_matrix,
@@ -180,6 +181,7 @@ def _plot_network(
         x=edge_x, y=edge_y, mode="lines",
         line=dict(width=0.5, color="#ccc"),
         hoverinfo="skip",
+        showlegend=False,
     ))
 
     # Nodes colored by sector; sized by metric (if provided) else degree
@@ -217,7 +219,10 @@ def _plot_network(
             size = lo + normalised * (hi - lo)
             metric_text = f"<br>{metric_label}: {metric_val:.4f}"
         else:
-            size = 8 + deg * 2
+            # Clamp the legacy degree-based fallback to size_range so that
+            # high-degree nodes (e.g. GLASSO partial-corr hubs with deg ≥ 20)
+            # don't balloon to ~50px and overlap their neighbours.
+            size = max(lo, min(hi, 8 + deg * 2))
             metric_text = ""
 
         fig.add_trace(go.Scatter(
@@ -463,6 +468,42 @@ def render_rmt(sector_map: dict, *, u=None):
         )
 
 
+@st.cache_data(show_spinner="Refitting Graphical LASSO with custom α…")
+def _recompute_glasso(
+    universe_key: str, alpha: float, max_iter: int = 200,
+) -> tuple["pd.DataFrame", dict, "pd.DataFrame", "pd.DataFrame"]:
+    """Refit GLASSO on the fly for an interactive α override.
+
+    Cached by (universe_key, alpha) so repeat slider stops are free. Returns
+    the four artifacts the pipeline produces (edges, meta, partial_corr,
+    precision) with matching schemas so downstream rendering is invariant to
+    whether the data came from disk or this recompute.
+
+    Skips cross-validation (alpha is supplied), so cost is the single
+    GraphicalLasso fit — typically 1-5 s on BIST (~73 tickers), longer on S&P.
+    """
+    from src.partial_correlation import (
+        fit_graphical_lasso, extract_partial_corr_edges,
+    )
+
+    returns = _load_log_returns(universe_key)
+    precision_df, partial_df, alpha_used = fit_graphical_lasso(
+        returns, alpha=alpha, max_iter=max_iter,
+    )
+    edges_df = extract_partial_corr_edges(partial_df, threshold=0.01)
+    n_tickers = len(partial_df)
+    total_offdiag = (n_tickers * (n_tickers - 1) / 2) if n_tickers > 1 else 1.0
+    meta = {
+        "alpha": float(alpha_used),
+        "n_edges": int(len(edges_df)),
+        "n_tickers": int(n_tickers),
+        "sparsity_pct": round(
+            100 * (1 - len(edges_df) / total_offdiag), 2
+        ),
+    }
+    return edges_df, meta, partial_df, precision_df
+
+
 @st.fragment
 def render_glasso(sector_map: dict, *, u=None):
     """Render Graphical LASSO section."""
@@ -474,11 +515,89 @@ def render_glasso(sector_map: dict, *, u=None):
             "If A correlates with B only because both correlate with C, the GLASSO removes the A-B edge.",
         )
 
-        edges = load_partial_corr_edges()
-        meta = load_glasso_metadata()
+        # Permanent explainer for the L1 regularization knob — sits above the
+        # source selector so the slider's effect is obvious before users touch
+        # it. Bullet form keeps it scannable; the expander hides it after
+        # first read but it persists across reloads via streamlit's widget key.
+        with st.expander(
+            ":material/help: How **α** (L1 regularization) shapes the network",
+            expanded=False,
+        ):
+            st.markdown(
+                "GLASSO penalises the L1 norm of off-diagonal precision entries. "
+                "**α** sets how aggressively weak partial correlations get zeroed out:\n\n"
+                "- **Higher α → stronger penalty → sparser network.** Only the most "
+                "robust direct dependencies survive. Push α high enough and every "
+                "edge is pruned (precision matrix becomes diagonal → everything "
+                "conditionally independent).\n"
+                "- **Lower α → weaker penalty → denser network.** More edges, "
+                "including weaker / noisier ones. At α = 0 GLASSO collapses to the "
+                "unpenalised inverse covariance, which is often ill-conditioned "
+                "when N is close to T.\n"
+                "- **Pipeline default uses 5-fold cross-validation** "
+                "(`GraphicalLassoCV`) to pick α by held-out log-likelihood — a "
+                "data-driven middle ground. The custom slider below skips CV and "
+                "uses the α you choose directly."
+            )
+
+        # Manual α entry. Defaults to the pipeline's CV-chosen α so the
+        # initial state mirrors the on-disk artifacts; type any value to refit
+        # GLASSO live. Recomputes are cached by (universe, α) so values you
+        # revisit are instant. Values within fp-noise of the pipeline α reuse
+        # the disk artifacts directly — no spurious refit on first mount.
+        _pipeline_meta = load_glasso_metadata() or {}
+        _pipeline_alpha = float(_pipeline_meta.get("alpha", 0.05) or 0.05)
+        alpha_value = st.number_input(
+            "α (L1 regularization strength)",
+            min_value=1e-6,
+            max_value=10.0,
+            value=_pipeline_alpha,
+            step=0.0001,
+            format="%.6f",
+            key="glasso_alpha_input",
+            help=(
+                f"Pipeline CV picked α ≈ {_pipeline_alpha:.6f}. "
+                "Lower α → denser network (more edges, including weaker ones). "
+                "Higher α → sparser network (only the strongest direct links survive). "
+                "Type a new value and the page refits GLASSO with that α."
+            ),
+        )
+
+        if abs(alpha_value - _pipeline_alpha) < 1e-6:
+            # Pipeline default — reuse disk artifacts (no refit cost).
+            edges = load_partial_corr_edges()
+            meta = load_glasso_metadata()
+            partial = load_partial_corr()
+            precision = load_precision_matrix()
+        else:
+            try:
+                edges, meta, partial, precision = _recompute_glasso(
+                    current_universe(), float(alpha_value),
+                )
+            except Exception as exc:
+                st.error(
+                    f"Refitting Graphical LASSO with α = {alpha_value:.4f} failed: {exc}"
+                )
+                st.caption(
+                    "Falling back to the pipeline result. Try a different α or "
+                    "check the logs."
+                )
+                edges = load_partial_corr_edges()
+                meta = load_glasso_metadata()
+                partial = load_partial_corr()
+                precision = load_precision_matrix()
+
         if edges.empty:
-            st.info("Run the pipeline to generate GLASSO results.")
-            return
+            if abs(alpha_value - _pipeline_alpha) >= 1e-6:
+                st.warning(
+                    f"No edges survive at α = {meta.get('alpha', 0):.4f} — the L1 "
+                    "penalty has pruned the entire network. Lower α to recover edges."
+                )
+                # Still render the matrices below; only the network/table sections
+                # have nothing to show, so guard them but not the heatmaps.
+            else:
+                st.info("Run the pipeline to generate GLASSO results.")
+                return
 
         # Metrics
         c1, c2, c3 = st.columns(3)
@@ -486,28 +605,85 @@ def render_glasso(sector_map: dict, *, u=None):
         c2.metric("Sparsity", f"{meta.get('sparsity_pct', 0):.1f}%")
         c3.metric("Regularization (alpha)", f"{meta.get('alpha', 0):.4f}")
 
-        col_net, col_table = st.columns([3, 2])
+        # Row 1: partial correlation network (full width — needs the room so
+        # the kamada-kawai layout can spread out and ticker labels stay legible).
+        fig = _plot_network(edges, sector_map,
+                            edge_weight_col="abs_partial_corr",
+                            title="Partial Correlation Network",
+                            height=720,
+                            sector_node_label=_sector_label(u))
+        render_chart(fig, chart_id="glasso_net", filename_base="glasso_network",
+                     title_key="glasso_net",
+                     default_title="Partial Correlation Network (Direct Dependencies)")
 
-        with col_net:
-            # Partial correlation network
-            fig = _plot_network(edges, sector_map,
-                                edge_weight_col="abs_partial_corr",
-                                title="Partial Correlation Network",
-                                sector_node_label=_sector_label(u))
-            render_chart(fig, chart_id="glasso_net", filename_base="glasso_network",
-                         title_key="glasso_net",
-                         default_title="Partial Correlation Network (Direct Dependencies)")
+        # Row 2: per-ticker connection inspector. Native plotly click events
+        # would require collapsing the one-trace-per-node structure of
+        # _plot_network (each node is its own Scatter trace, so a click yields
+        # a curve_number, not a ticker). Dropdown is the lightweight option
+        # that lets users drill into a specific node's neighbours.
+        _item = getattr(u, "item_label", "Ticker") if u is not None else "Ticker"
+        _sec = _sector_label(u)
 
-        with col_table:
-            st.markdown("**Strongest Direct Dependencies**")
+        # Skip the inspector + top-30 sections entirely when there are no
+        # edges (custom α set high enough to prune everything). The matrices
+        # below still render — they're informative even with zero edges.
+        if not edges.empty:
+            st.markdown(f"**Inspect a {_item}'s Direct Connections**")
+            all_tickers = sorted(set(edges["source"]).union(set(edges["target"])))
+            if all_tickers:
+                selected = st.selectbox(
+                    f"Select {_item.lower()}",
+                    all_tickers,
+                    key="glasso_inspect_ticker",
+                    label_visibility="collapsed",
+                )
+                mask = (edges["source"] == selected) | (edges["target"] == selected)
+                conn = edges.loc[mask].copy()
+                if conn.empty:
+                    st.info(
+                        f"{selected} has no direct dependencies in the GLASSO network — "
+                        f"isolated under L1 regularization at α = {meta.get('alpha', 0):.4f}."
+                    )
+                else:
+                    conn["neighbor"] = np.where(
+                        conn["source"] == selected, conn["target"], conn["source"]
+                    )
+                    conn["neighbor_sector"] = conn["neighbor"].map(sector_map)
+                    conn = conn[["neighbor", "partial_correlation", "neighbor_sector"]]
+                    conn = conn.sort_values(
+                        "partial_correlation",
+                        key=lambda s: s.abs(),
+                        ascending=False,
+                    )
+                    st.caption(
+                        f"**{selected}** ({sector_map.get(selected, 'Unknown')}) connects to "
+                        f"**{len(conn)}** other {_item.lower()}{'s' if len(conn) != 1 else ''} "
+                        f"under GLASSO."
+                    )
+                    st.dataframe(
+                        conn,
+                        use_container_width=True,
+                        height=min(420, 70 + 35 * len(conn)),
+                        column_config={
+                            "neighbor": st.column_config.TextColumn(f"Connected {_item}"),
+                            "partial_correlation": st.column_config.NumberColumn(
+                                "Partial Corr.", format="%.4f"
+                            ),
+                            "neighbor_sector": st.column_config.TextColumn(_sec),
+                        },
+                        hide_index=True,
+                    )
+
+            # Row 3: strongest direct dependencies — top-30 globally (own row,
+            # full width). `_sec` and `_item` were hoisted above for the inspector.
+            st.markdown("---")
+            st.markdown("**Strongest Direct Dependencies (top 30 globally)**")
             display_edges = edges.head(30).copy()
             display_edges["sector_1"] = display_edges["source"].map(sector_map)
             display_edges["sector_2"] = display_edges["target"].map(sector_map)
-            _sec = _sector_label(u)
-            _item = getattr(u, "item_label", "Ticker") if u is not None else "Ticker"
             st.dataframe(
                 display_edges[["source", "target", "partial_correlation", "sector_1", "sector_2"]],
-                use_container_width=True, height=500,
+                use_container_width=True, height=420,
                 column_config={
                     "source": st.column_config.TextColumn(f"Source {_item}"),
                     "target": st.column_config.TextColumn(f"Target {_item}"),
@@ -517,61 +693,170 @@ def render_glasso(sector_map: dict, *, u=None):
                 },
             )
 
-        # Partial correlation + precision matrix heatmaps
+        # Row 4: partial correlation heatmap (full width). `partial` was
+        # already populated above based on the α source toggle.
         st.markdown("---")
         order = load_dendrogram_order()
-        col_pc, col_prec = st.columns(2)
-
-        with col_pc:
-            st.markdown(
-                f"**Partial Correlation Matrix** — direct dependencies after conditioning "
-                f"on all other {_items_label(u).lower()} (clipped to ±0.3 for visibility)."
+        st.markdown(
+            f"**Partial Correlation Matrix** — direct dependencies after conditioning "
+            f"on all other {_items_label(u).lower()} (clipped to ±0.3 for visibility)."
+        )
+        if not partial.empty:
+            # Zero the diagonal so it doesn't dominate the colorscale.
+            # Use to_numpy(copy=True) → fresh writable ndarray, then wrap back
+            # into a DataFrame. partial.copy() alone yields a read-only ndarray
+            # under pandas 2.x copy-on-write, so np.fill_diagonal(...values)
+            # raises "underlying array is read-only".
+            _pc_arr = partial.to_numpy(copy=True)
+            np.fill_diagonal(_pc_arr, 0.0)
+            pc_display = pd.DataFrame(_pc_arr, index=partial.index, columns=partial.columns)
+            render_matrix_heatmap(
+                pc_display,
+                chart_id="glasso_partial_heatmap",
+                filename_base="glasso_partial_corr_heatmap",
+                title_key="glasso_pc_hm",
+                default_title="Partial correlation heatmap",
+                ordered_tickers=order,
+                zmin=-0.3, zmax=0.3, diverging=True,
+                height=520, hover_label="partial ρ",
             )
-            partial = load_partial_corr()
-            if not partial.empty:
-                # Zero diagonal so it doesn't dominate the colorscale
-                pc_display = partial.copy()
-                np.fill_diagonal(pc_display.values, 0.0)
-                render_matrix_heatmap(
-                    pc_display,
-                    chart_id="glasso_partial_heatmap",
-                    filename_base="glasso_partial_corr_heatmap",
-                    title_key="glasso_pc_hm",
-                    default_title="Partial correlation heatmap",
-                    ordered_tickers=order,
-                    zmin=-0.3, zmax=0.3, diverging=True,
-                    height=460, hover_label="partial ρ",
-                )
-            else:
-                st.info("Run the pipeline to generate the partial correlation matrix.")
+        else:
+            st.info("Run the pipeline to generate the partial correlation matrix.")
 
-        with col_prec:
-            st.markdown("**Precision Matrix Sparsity** — non-zero off-diagonal entries are direct conditional dependencies. Zero entries imply conditional independence under Gaussianity.")
-            precision = load_precision_matrix()
-            if not precision.empty:
-                # Build a binary sparsity pattern of |Θ_ij| above a small floor
-                prec_abs = precision.abs()
-                # Zero the diagonal
-                np.fill_diagonal(prec_abs.values, 0.0)
-                threshold = 1e-3
-                sparsity = (prec_abs > threshold).astype(float)
-                n_offdiag = sparsity.values.sum() // 2  # symmetric
-                total_offdiag = (sparsity.shape[0] * (sparsity.shape[0] - 1)) // 2
-                density = (n_offdiag / total_offdiag * 100) if total_offdiag else 0.0
-                render_matrix_heatmap(
-                    sparsity,
-                    chart_id="glasso_precision_heatmap",
-                    filename_base="glasso_precision_sparsity",
-                    title_key="glasso_prec_hm",
-                    default_title=f"Precision matrix sparsity ({int(n_offdiag)} edges, {density:.1f}% density)",
-                    ordered_tickers=order,
-                    zmin=0.0, zmax=1.0, diverging=False,
-                    height=460, hover_label="|Θ| > 1e-3",
-                    colorbar_tickvals=(0.0, 1.0),
-                    colorbar_ticktext=("zero", "non-zero"),
-                )
+        # Row 5: precision matrix sparsity (stacked below, not side-by-side).
+        # `precision` was populated above based on the α source toggle.
+        st.markdown("**Precision Matrix Sparsity** — non-zero off-diagonal entries are direct conditional dependencies. Zero entries imply conditional independence under Gaussianity.")
+        if not precision.empty:
+            # Build a binary sparsity pattern of |Θ_ij| above a small floor.
+            # Same CoW concern as the partial-corr block above: copy through a
+            # writable ndarray before fill_diagonal.
+            _prec_arr = precision.abs().to_numpy(copy=True)
+            np.fill_diagonal(_prec_arr, 0.0)
+            prec_abs = pd.DataFrame(_prec_arr, index=precision.index, columns=precision.columns)
+            threshold = 1e-3
+            sparsity = (prec_abs > threshold).astype(float)
+            n_offdiag = sparsity.values.sum() // 2  # symmetric
+            total_offdiag = (sparsity.shape[0] * (sparsity.shape[0] - 1)) // 2
+            density = (n_offdiag / total_offdiag * 100) if total_offdiag else 0.0
+            render_matrix_heatmap(
+                sparsity,
+                chart_id="glasso_precision_heatmap",
+                filename_base="glasso_precision_sparsity",
+                title_key="glasso_prec_hm",
+                default_title=f"Precision matrix sparsity ({int(n_offdiag)} edges, {density:.1f}% density)",
+                ordered_tickers=order,
+                zmin=0.0, zmax=1.0, diverging=False,
+                height=520, hover_label="|Θ| > 1e-3",
+                colorbar_tickvals=(0.0, 1.0),
+                colorbar_ticktext=("zero", "non-zero"),
+            )
+        else:
+            st.info("Run the pipeline to generate the precision matrix.")
+
+        # Row 6: precision-sparsity timeline. Reads precomputed snapshots from
+        # data/<market>/results/glasso_alpha_path.npz (BIST only) and lets the
+        # user scrub through α thresholds at which the sparsity pattern
+        # changes. Slider is independent of the α used for the rendering
+        # above — this is a separate, view-only path so it doesn't trigger
+        # any refit.
+        path_data = load_glasso_alpha_path()
+        if path_data is not None and len(path_data["alphas"]) > 1:
+            st.markdown("---")
+            st.markdown(
+                "**Precision Sparsity Timeline** — scrub α to watch direct "
+                "connections drop out as the L1 penalty grows. Each step is a "
+                "precomputed snapshot from `run_pipeline.py`; sliding is "
+                "instant (no recompute)."
+            )
+
+            alphas_path = path_data["alphas"]
+            sparsity_pcts_path = path_data["sparsity_pct"]
+            n_edges_path = path_data["n_edges"]
+            patterns_path = path_data["patterns"]
+            path_tickers = path_data["tickers"]
+            n_snapshots = len(alphas_path)
+
+            selected_alpha = st.select_slider(
+                f"α (drag to scrub through {n_snapshots} snapshots)",
+                options=[float(a) for a in alphas_path],
+                value=float(alphas_path[0]),
+                format_func=lambda x: f"{x:.6f}",
+                key="glasso_path_slider",
+            )
+            sel_idx = int(np.argmin(np.abs(alphas_path - selected_alpha)))
+
+            cur_alpha = float(alphas_path[sel_idx])
+            cur_sparsity = float(sparsity_pcts_path[sel_idx])
+            cur_edges = int(n_edges_path[sel_idx])
+
+            # Delta: which tickers just became isolated at this step?
+            # Isolation = row-sum (degree) dropped from >0 to 0 since the
+            # previous snapshot (which corresponds to a smaller α).
+            if sel_idx > 0:
+                prev_pattern = patterns_path[sel_idx - 1]
+                cur_pattern = patterns_path[sel_idx]
+                prev_degree = prev_pattern.sum(axis=1)
+                cur_degree = cur_pattern.sum(axis=1)
+                newly_isolated = [
+                    path_tickers[i]
+                    for i in range(len(path_tickers))
+                    if prev_degree[i] > 0 and cur_degree[i] == 0
+                ]
+                if newly_isolated:
+                    delta_text = (
+                        f"**{len(newly_isolated)} ticker(s)** newly isolated "
+                        f"at this step: {', '.join(newly_isolated)}."
+                    )
+                else:
+                    delta_text = (
+                        "No tickers were fully isolated at this step "
+                        "(some edges still pruned, but every node keeps "
+                        "at least one neighbour)."
+                    )
             else:
-                st.info("Run the pipeline to generate the precision matrix.")
+                delta_text = (
+                    "First snapshot (smallest α with a unique sparsity "
+                    "pattern). All subsequent snapshots are progressively "
+                    "sparser."
+                )
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("α (this snapshot)", f"{cur_alpha:.6f}")
+            m2.metric("Sparsity", f"{cur_sparsity:.1f}%")
+            m3.metric("Direct edges", cur_edges)
+            st.caption(delta_text)
+
+            # Render the snapshot's binary sparsity pattern. Reuse the
+            # dendrogram order loaded above so the timeline lines up
+            # visually with the static precision sparsity heatmap.
+            pattern_df = pd.DataFrame(
+                patterns_path[sel_idx].astype(float),
+                index=path_tickers,
+                columns=path_tickers,
+            )
+            render_matrix_heatmap(
+                pattern_df,
+                chart_id="glasso_path_heatmap",
+                filename_base="glasso_path_sparsity",
+                title_key="glasso_path_hm",
+                default_title=(
+                    f"Precision sparsity at α = {cur_alpha:.6f} "
+                    f"({cur_edges} edges, {cur_sparsity:.1f}% sparsity)"
+                ),
+                ordered_tickers=order,
+                zmin=0.0, zmax=1.0, diverging=False,
+                height=520, hover_label=f"|Θ| > 1e-3 at α={cur_alpha:.4f}",
+                colorbar_tickvals=(0.0, 1.0),
+                colorbar_ticktext=("zero", "non-zero"),
+            )
+        elif current_universe() == "bist":
+            st.markdown("---")
+            st.info(
+                "**Precision Sparsity Timeline** not available — "
+                "`glasso_alpha_path.npz` is missing. Rerun "
+                "`uv run python run_pipeline.py` to generate it "
+                "(adds ~3-5 min, BIST only)."
+            )
 
 
 @st.fragment
