@@ -1,8 +1,27 @@
-"""StoNeCoAl — multi-universe correlation-network dashboard (BIST 100, S&P 500)."""
+"""Market Overview page content.
 
-import os
-import sys
-from pathlib import Path
+PHASE 2 — Stage 1 (multi-page migration). Extracted from
+`app/dashboard.py` (formerly lines ~828–1977) into a standalone
+module with a clean `render()` contract.
+
+This page owns the 5 full-period static-analysis sub-tabs:
+  - Data & Stats
+  - Correlation (full-period heatmap)
+  - Clustering & Network
+  - Rolling Analysis (3 inner sub-tabs)
+  - Pairs & Dislocations (finance-only)
+
+Plus the page-header KPI strip with the date-range picker.
+The page owns the `date_range` widget because the windowed
+`returns` / `prices_window` slice it produces is consumed by
+every sub-tab below.
+
+Stage 2 (next) wraps this `render(...)` in a thin page script
+(`app/pages/02_market_overview.py`) that the new
+`app/main.py` router hooks into via `st.navigation(...)`.
+"""
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -10,8 +29,6 @@ import plotly.express as px
 import plotly.figure_factory as ff
 import plotly.graph_objects as go
 import streamlit as st
-from scipy.cluster.hierarchy import linkage, leaves_list  # noqa: F401
-from scipy.spatial.distance import squareform  # noqa: F401
 
 try:
     import networkx as nx
@@ -19,95 +36,29 @@ try:
 except ImportError:
     HAS_NETWORKX = False
 
-_APP_DIR      = Path(__file__).resolve().parent
-_PROJECT_ROOT = _APP_DIR.parent
-for _p in (str(_PROJECT_ROOT), str(_APP_DIR)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# EEG bulk-data materialisation
-# ──────────────────────────────────────────────────────────────────────────────
-# HF Spaces caps per-repo storage at 1 GB. Our 2 EEG processed parquets are
-# 308 MB each — too big to ship in the Space repo. The canonical HF workaround
-# is to put bulk data in a companion Dataset repo (50 GB per file) and have
-# the Space download it on first launch.
-#
-# Local dev: parquets already on disk → no-op early-return.
-# HF Spaces:  files absent → snapshot_download from EEG_DATASET_REPO once;
-#             cached under ~/.cache/huggingface on subsequent reruns.
-# Fallback:   if the download fails, EEG silently drops from the sidebar
-#             selector (available_universes() detects the absence and filters).
-def _materialise_eeg_data_if_needed() -> None:
-    import os as _os
-    # CI / smoke tests opt-out: setting STONECOAL_SKIP_EEG_DOWNLOAD=1 avoids
-    # a slow / failing network call when EEG isn't part of the test surface.
-    if _os.environ.get("STONECOAL_SKIP_EEG_DOWNLOAD", "").lower() in ("1", "true", "yes"):
-        return
-
-    eeg_dir = _PROJECT_ROOT / "data" / "eeg_motor_left_right" / "processed"
-    sentinel = eeg_dir / "log_returns.parquet"
-    if sentinel.exists() and sentinel.stat().st_size > 1_000_000:
-        return  # local dev, or already-cached HF Spaces rebuild
-
-    repo_id = _os.environ.get("EEG_DATASET_REPO", "FlyingSubmarine33/stonecoal-eeg")
-    print(f"[EEG] Bulk parquets not on disk; fetching from dataset repo {repo_id} …")
-    try:
-        from huggingface_hub import snapshot_download
-        eeg_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_download(
-            repo_id=repo_id,
-            repo_type="dataset",
-            local_dir=str(eeg_dir),
-            allow_patterns=["*.parquet", "*.csv"],
-        )
-        print(f"[EEG] Materialised bulk data from {repo_id} into {eeg_dir}")
-    except Exception as exc:  # noqa: BLE001 — best-effort; failure is non-fatal
-        # Don't crash the dashboard — available_universes() will see the
-        # missing files and quietly omit EEG from the sidebar selector.
-        print(f"[EEG] Could not fetch from {repo_id}: {exc}")
-        print(f"[EEG] Dashboard will run with BIST + S&P only. To enable EEG, "
-              f"upload the parquets with: uv run python scripts/upload_eeg_to_hf_dataset.py")
-
-
-_materialise_eeg_data_if_needed()
-
-
-from src.rolling_correlation import (  # noqa: E402
+from src.rolling_correlation import (
     compute_rolling_market_stats,
     compute_rolling_pair_correlation,
     compute_rolling_sector_stats,
-    compute_window_correlation,
 )
 
-from utils import (  # noqa: E402
-    PROJECT_ROOT, data_processed, current_universe,
-    load_adj_close, load_log_returns, load_summary_stats, load_batch_corr,
-    load_coverage, load_top_bottom, load_metadata, load_fetch_metadata,
-    load_xu100, load_linkage, load_dendrogram_order, load_cluster_assignments,
-    load_mst_edges, load_mst_metrics, load_dislocation_candidates, load_anomalies,
+from utils import (
+    SECTOR_PALETTE, apply_chart_style,
+    load_anomalies, load_batch_corr, load_cluster_assignments, load_coverage,
+    load_dendrogram_order, load_dislocation_candidates, load_linkage,
+    load_metadata, load_mst_edges, load_mst_metrics,
     load_rolling_market_stats_precomputed, load_rolling_sector_stats_precomputed,
+    load_summary_stats, load_top_bottom, load_xu100,
     draw_event_markers, event_marker_manager_ui,
-    get_colors, SECTOR_PALETTE, CHART_LAYOUT, apply_chart_style, inject_custom_css,
-    section_header, render_chart, render_matrix_heatmap,
+    get_colors, render_chart, render_matrix_heatmap, render_subtabs,
+    section_header,
 )
-from chart_themes import render_theme_popover  # noqa: E402
-
-# HF Spaces rebuilds the container on every deploy, so the stale-module cache
-# problem that motivated importlib.reload on Streamlit Cloud no longer applies.
-# Removing the reload eliminates Universe class identity churn across reruns —
-# previously a contributor to "Tried to use SessionInfo before it was
-# initialized" warnings in the server logs (PR #23).
-from universe_registry import available_universes, get_universe  # noqa: E402
+from chart_themes import render_theme_popover
 
 
 def _cap(u, attr, default):
-    """Defensive capability lookup. If Streamlit Cloud has a stale `Universe`
-    class cached without a Phase I field, fall back to ``default`` rather than
-    crashing the dashboard with AttributeError. Treat finance defaults as the
-    safe fallback for unknown universes since the original dashboard was
-    finance-only."""
+    """Defensive capability lookup. Re-imported here so market_overview.py
+    is fully self-contained — same fallback semantic as dashboard.py."""
     return getattr(u, attr, default)
 
 
@@ -117,32 +68,22 @@ def _cap(u, attr, default):
 
 @st.cache_data(show_spinner=False)
 def _compute_corr(_returns: pd.DataFrame, cache_key: str, min_periods: int, method: str):
-    # `_returns` underscore-prefix → Streamlit skips hashing the DataFrame;
-    # the explicit `cache_key` (built cheaply by the caller from universe +
-    # date endpoints + shape) drives cache identity. Replaces the previous
-    # JSON ser/de pattern which cost 121 ms (38 ms to_json on every rerun
-    # + 83 ms read_json on miss) per call on S&P-500 returns.
+    """`_returns` underscore-prefix → Streamlit skips hashing the DataFrame;
+    the explicit `cache_key` drives cache identity."""
     return _returns.corr(method=method, min_periods=min_periods)
-
-
-# UX polish: removed the orphan `_pit_corr` helper — its only caller
-# (`_render_pit_correlation`) was deleted along with the now-dead PIT
-# sub-sub-tab. Time Machine has its own equivalent helper at
-# app/time_machine.py:_pit_correlation_live.
 
 
 @st.cache_data(show_spinner=False)
 def _mst_layout(_edges: pd.DataFrame, cache_key: str):
     """Build a layout for the main MST. PHASE Y (Y2): try precomputed JSON
     layout from `data/<universe>/results/layouts/main_mst.json` FIRST;
-    fall back to live nx.spring_layout / kamada_kawai when missing.
-    Saves ~1-2 s on S&P 485-node MST after first paint."""
+    fall back to live `nx.spring_layout` / `nx.kamada_kawai_layout` when
+    missing. Saves ~1–2 s on S&P 485-node MST after first paint."""
     from utils import load_mst_layout
     _G = nx.Graph()
     for _, r in _edges.iterrows():
         _G.add_edge(r["source"], r["target"], weight=r["distance"])
 
-    # Precomputed-first path (Phase Y / Y2).
     precomputed = load_mst_layout("main_mst")
     if precomputed:
         graph_nodes = set(_G.nodes())
@@ -150,20 +91,12 @@ def _mst_layout(_edges: pd.DataFrame, cache_key: str):
         if len(pos_filtered) == len(graph_nodes):
             return pos_filtered
 
-    # Kamada-Kawai is O(N^3) and stalls for ~minute on the 485-node S&P MST.
-    # spring_layout (Fruchterman-Reingold) with a fixed iteration count
-    # gives a comparable-quality layout on the same MST in ~1 second; we
-    # only fall back to it for large graphs so small graphs (BIST/EEG/<200
-    # nodes) keep the cleaner Kamada-Kawai layout.
     if _G.number_of_nodes() > 200:
         return nx.spring_layout(_G, weight="weight", iterations=80, seed=42)
     return nx.kamada_kawai_layout(_G, weight="weight")
 
 
 def _heatmap_axis_tickfont(n: int) -> int:
-    """Tickfont size scaled to ticker count. Returns 0 to flag "hide the
-    labels entirely" — callers translate that into `showticklabels=False`
-    plus a sentinel font size (plotly rejects size=0)."""
     if n <= 80:
         return 7
     if n <= 200:
@@ -172,19 +105,14 @@ def _heatmap_axis_tickfont(n: int) -> int:
 
 
 def _heatmap_axis_dtick(n: int) -> int:
-    """Show every label up to ~80 tickers, then thin out so plotly
-    doesn't try to render hundreds of axis annotations per heatmap."""
     if n <= 80:
         return 1
     if n <= 200:
         return 5
-    return max(1, n // 30)  # ~30 visible labels max
+    return max(1, n // 30)
 
 
 def _heatmap_height(n: int, max_px: int = 1100) -> int:
-    """Bound the heatmap pixel height so the browser doesn't have to
-    paint a 5000px-tall canvas. ~12 px/cell up to the cap, then a
-    flat plateau that lets plotly downsample-render."""
     return min(max_px, max(700, n * 12))
 
 
@@ -197,8 +125,6 @@ def _compute_market_stats(_returns: pd.DataFrame, cache_key: str, window, step, 
 
 @st.cache_data(show_spinner=False)
 def _compute_pair(_returns: pd.DataFrame, cache_key: str, a, b, window, method, wtype, ewm_span=None):
-    # `ewm_span` is honoured only when wtype == "ewm"; the underlying
-    # compute_rolling_pair_correlation ignores it for rolling/expanding.
     return compute_rolling_pair_correlation(
         _returns, a, b,
         window=window, method=method, window_type=wtype,
@@ -216,31 +142,21 @@ def _compute_sector(_returns: pd.DataFrame, cache_key: str, sec_map_items, windo
 # ══════════════════════════════════════════════════════════════════════════════
 # Fragment-scoped sub-tab renderers
 # ══════════════════════════════════════════════════════════════════════════════
-# Streamlit reruns the entire dashboard.py script on every widget interaction.
-# Fragments (stable since Streamlit 1.37) scope re-execution to just their
-# decorated function when an internal widget changes — other tabs/sub-tabs
-# don't re-render, killing the perceived "gray screen" on slider drags etc.
-#
-# Each fragment reads its dependencies from module globals set by the linear
-# script flow (returns, returns_cache_key, _active_universe, etc.). On fragment
-# rerun those globals are NOT recomputed; that's correct because nothing inside
-# the fragment changes them — they only change via outer widgets (which trigger
-# a full script rerun anyway).
-#
-# We deliberately do NOT fragment:
-#   - Rolling Market Stats → widgets are outer (rc_*), fragmenting just this
-#     sub-tab gives marginal win.
-
-
-# UX polish: `_open_pair_analysis_button` helper removed — every callsite
-# (Rolling Pair sub-tab, Pairs & Dislocations Top/Bottom, Dislocation
-# Candidates) shipped the same buggy session_state round-trip. Users now
-# navigate to Pair Analysis from the top nav and type the pair directly,
-# which is the canonical path and survives all rerun cycles cleanly.
+# PHASE 2 / Stage 1: helpers parameterised so they don't close over module
+# globals from the old single-script dashboard.py. Each accepts its
+# data dependencies as explicit kwargs; widget state is still read from
+# `st.session_state` directly (form-bound keys like `rc_*` survive across
+# widget interactions naturally).
 
 
 @st.fragment
-def _render_correlation_heatmap() -> None:
+def _render_correlation_heatmap(
+    *,
+    returns: pd.DataFrame,
+    returns_cache_key: str,
+    dynamic_min_periods: int,
+    active_universe,
+) -> None:
     """Full-period correlation heatmap. Owns heat_method + use_clustering_order
     widgets. Computes `corr` via @st.cache_data — the Pairs & Dislocations tab
     later recomputes the same `_compute_corr(...)` call using the heat_method
@@ -258,9 +174,6 @@ def _render_correlation_heatmap() -> None:
             "Reorder by hierarchical clustering", value=True, key="mo_corr_reorder",
         )
 
-    # PHASE S (S11): removed `with st.spinner(...)`. `_compute_corr` is
-    # @st.cache_data so 95% of calls hit cache (<10 ms). The new S9
-    # spinner-overlay handles genuine slow paths via .stale class.
     corr = _compute_corr(returns, returns_cache_key, dynamic_min_periods, heat_method)
     leaf_order = load_dendrogram_order()
 
@@ -271,9 +184,9 @@ def _render_correlation_heatmap() -> None:
         corr_display = corr
 
     with st.container(border=True):
-        _series_lower = _cap(_active_universe, 'series_label', 'Log return').lower()
+        _series_lower = _cap(active_universe, 'series_label', 'Log return').lower()
         _samp_unit = (
-            "trading days" if _cap(_active_universe, 'domain', 'finance') == "finance"
+            "trading days" if _cap(active_universe, 'domain', 'finance') == "finance"
             else "samples"
         )
         st.caption(
@@ -299,25 +212,30 @@ def _render_correlation_heatmap() -> None:
             st.download_button(
                 "Download CSV",
                 data=corr_display.to_csv().encode("utf-8"),
-                file_name=f"correlation_{_active_universe.key}.csv",
+                file_name=f"correlation_{active_universe.key}.csv",
                 mime="text/csv",
                 key="mo_heatmap_csv_dl",
             )
 
 
-# UX polish: removed the orphaned `_render_pit_correlation` fragment
-# (~120 lines). Phase 1 promoted Point-in-Time correlation out to the
-# top-level Time Machine page and removed its callsite from
-# Market Overview > Correlation, but the function definition was left
-# behind as dead code. Time Machine is now the canonical PIT surface.
-
-
 @st.fragment
-def _render_rolling_pair() -> None:
+def _render_rolling_pair(
+    *,
+    returns: pd.DataFrame,
+    returns_cache_key: str,
+    prices_window: pd.DataFrame,
+    rc_window: int,
+    rc_method: str,
+    rc_window_type: str,
+    show_defaults: bool,
+    custom_events,
+    item_label: str,
+    items_label: str,
+) -> None:
     """Rolling Analysis → Pair Correlation sub-tab. Owns pair_a/pair_b
     selectors. Shares session_state keys (pa_ticker_a / pa_ticker_b)
     with the Pair Analysis page so a pick made in either view carries
-    over to the other (audit item A5)."""
+    over to the other."""
     ticker_list = sorted(returns.columns.tolist())
     if (
         "pa_ticker_a" not in st.session_state
@@ -333,14 +251,12 @@ def _render_rolling_pair() -> None:
         )
     pc1, pc2 = st.columns(2)
     with pc1:
-        pair_a = st.selectbox(f"{_item_rc} A", ticker_list, key="pa_ticker_a")
+        pair_a = st.selectbox(f"{item_label} A", ticker_list, key="pa_ticker_a")
     with pc2:
-        pair_b = st.selectbox(f"{_item_rc} B", ticker_list, key="pa_ticker_b")
+        pair_b = st.selectbox(f"{item_label} B", ticker_list, key="pa_ticker_b")
 
     if pair_a and pair_b and pair_a != pair_b:
-        # When window_type == "ewm", convert α → span (pandas formula:
-        # span = 2/α - 1). Otherwise pass None and the underlying
-        # compute_rolling_pair_correlation ignores ewm_span.
+        # When window_type == "ewm", convert α → span (pandas: span = 2/α − 1).
         _ewm_span = None
         if rc_window_type == "ewm":
             _alpha = float(st.session_state.get("rc_ewm_alpha", 0.05))
@@ -380,13 +296,7 @@ def _render_rolling_pair() -> None:
         render_chart(fig_pair, chart_id="mo_pair_corr", filename_base="pair_correlation",
                      title_key="mo_pair_corr", default_title="Pair Rolling Correlation")
 
-        # UX polish: removed the "Analyze X/Y in Pair Analysis" cross-page
-        # nav button here for consistency with the same removal in the
-        # Pairs & Dislocations sub-tab — the button's session_state
-        # round-trip was fragile. Users open the Pair Analysis page from
-        # the top nav and type their pair there directly.
-
-        # Two normalized price lines (matches original behaviour).
+        # Normalized price lines.
         if pair_a in prices_window.columns and pair_b in prices_window.columns:
             pa = prices_window[pair_a] / prices_window[pair_a].iloc[0] * 100
             pb = prices_window[pair_b] / prices_window[pair_b].iloc[0] * 100
@@ -399,18 +309,8 @@ def _render_rolling_pair() -> None:
             render_chart(fig_spread, chart_id="mo_pair_spread", filename_base="pair_spread",
                          title_key="mo_pair_spread", default_title="Pair Price Spread")
     elif pair_a == pair_b:
-        st.info(f"Select two different {_items_rc.lower()}.")
+        st.info(f"Select two different {items_label.lower()}.")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PHASE S (S8) — fragment-scoped toggle helpers
-# ══════════════════════════════════════════════════════════════════════════════
-# These wrap the min/max envelope toggle and the per-sector breakdown toggle.
-# The toggles previously triggered a FULL script rerun (with the gray-fade
-# overlay + scroll position loss + sporadic top-nav reset reports). By
-# placing each toggle + its conditional chart inside `@st.fragment`, the
-# toggle scopes its rerun to the fragment, leaving the rest of the page
-# untouched. Caller passes the precomputed stats DataFrame in.
 
 @st.fragment
 def _render_minmax_envelope_block(market_stats, rc_method_label: str) -> None:
@@ -462,482 +362,158 @@ def _render_per_sector_breakdown_block(sector_stats, intra_cols, sector_label: s
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Page config & global styling
+# Main page entry point
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Universe initialisation MUST run before st.set_page_config so the
-# browser tab title reflects the active universe on first paint.
-#
-# Phase 1 split: the sidebar now exposes (dataset, bist_basis) instead of
-# a single flat universe key. `current_universe()` (in app/utils.py) is the
-# resolver. Seed both keys from the legacy DASHBOARD_UNIVERSE env var so
-# existing deploy configs keep working.
-_AVAIL_UNIVERSES = available_universes()
-_AVAIL_KEYS      = [u.key for u in _AVAIL_UNIVERSES] or ["bist"]
-_LEGACY_ENV      = os.environ.get("DASHBOARD_UNIVERSE", "bist")
+def render(
+    *,
+    full_returns: pd.DataFrame,
+    adj_close: pd.DataFrame,
+    min_date,
+    max_date,
+    active_universe,
+) -> None:
+    """Render the Market Overview page.
 
-# Map a legacy single-key env var to the (dataset, bist_basis) pair.
-_LEGACY_TO_PAIR = {
-    "bist":      ("bist", "try"),
-    "bist_usd":  ("bist", "usd"),
-    "bist_gold": ("bist", "gold"),
-}
-if _LEGACY_ENV in _LEGACY_TO_PAIR:
-    _BOOT_DATASET, _BOOT_BASIS = _LEGACY_TO_PAIR[_LEGACY_ENV]
-elif _LEGACY_ENV in _AVAIL_KEYS:
-    _BOOT_DATASET, _BOOT_BASIS = _LEGACY_ENV, "try"
-else:
-    # Pick the first available dataset (could be sp500 or eeg if BIST absent).
-    _BOOT_DATASET = _AVAIL_KEYS[0] if not _AVAIL_KEYS[0].startswith("bist") else "bist"
-    _BOOT_BASIS = "try"
+    Args:
+        full_returns: Universe-keyed log returns DataFrame, full history.
+        adj_close: Universe-keyed adjusted close prices, full history.
+        min_date: Earliest available date (date object).
+        max_date: Latest available date (date object).
+        active_universe: Universe dataclass for the active universe (used
+            for capability flags, labels, sector_label, etc.).
 
-# Defensive: HF Spaces health-probes and reconnecting browser tabs can invoke
-# this script before Streamlit has a full session context. Touching
-# session_state then raises "Tried to use SessionInfo before it was
-# initialized". Fall back to the boot pair without crashing — the user's real
-# request will re-run the script with a proper session attached.
-try:
-    if "dataset" not in st.session_state:
-        st.session_state["dataset"] = _BOOT_DATASET
-    if "bist_basis" not in st.session_state:
-        st.session_state["bist_basis"] = _BOOT_BASIS
-    # Validate dataset against on-disk availability.
-    _disk_datasets = set()
-    for _k in _AVAIL_KEYS:
-        _disk_datasets.add("bist" if _k.startswith("bist") else _k)
-    if st.session_state["dataset"] not in _disk_datasets:
-        st.session_state["dataset"] = _BOOT_DATASET
-    _active_universe_key = current_universe()
-    # Final fallback: if the resolved key isn't on disk, fall back.
-    if _active_universe_key not in _AVAIL_KEYS:
-        _active_universe_key = _AVAIL_KEYS[0]
-except Exception:  # noqa: BLE001 — SessionInfo not yet initialised
-    _active_universe_key = (
-        _LEGACY_ENV if _LEGACY_ENV in _AVAIL_KEYS else _AVAIL_KEYS[0]
+    The page owns the date_range widget at the top of the header strip;
+    the windowed `returns` / `prices_window` derived from it is what every
+    sub-tab below consumes. `returns_cache_key` is built from the universe
+    key + date endpoints + shape so all cached helpers (`_compute_corr`,
+    `_compute_market_stats`, `_compute_pair`, `_compute_sector`) key on
+    a cheap deterministic string.
+    """
+    pipe_meta = load_metadata()
+    market_summary = pipe_meta.get("market_summary", {})
+
+    # ── Header strip: date range | theme | 5 KPI cards (7 cols) ─────────
+    _date_col, _theme_col, m1, m2, m3, m4, m5 = st.columns(
+        [1.5, 0.9, 1.05, 1.05, 1.1, 1.1, 1.5]
     )
 
-_active_universe = get_universe(_active_universe_key)
+    with _theme_col:
+        render_theme_popover()
 
-st.set_page_config(
-    page_title=f"StoNeCoAl — {_cap(_active_universe, 'short_label', 'BIST 100')}",
-    page_icon="<svg xmlns='http://www.w3.org/2000/svg'/>",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-inject_custom_css()
-
-
-# ── PHASE 0 — Background pre-warm of cross-universe loaders ─────────────
-# Cold dashboard boot pays the parquet-read cost on the first interaction
-# for every universe the user touches. On HF Spaces with Persistent
-# Storage warm, that's still ~200-500 ms per universe for log_returns +
-# metadata. By kicking off background loads for ALL universes on the
-# FIRST script run of a session, subsequent universe switches in the
-# sidebar hit the @st.cache_data hot path instead of cold disk.
-#
-# `_load_log_returns` and `_load_metadata` are @st.cache_data and
-# universe-keyed, so calling them with each universe key populates the
-# cache for the session. We dispatch via ThreadPoolExecutor so the
-# main thread isn't blocked — the first paint proceeds while loaders
-# warm in parallel. Wrapped in try/except so a single missing parquet
-# (e.g. an EEG dataset that wasn't downloaded yet) doesn't disrupt
-# dashboard boot.
-#
-# Guarded by a session_state flag so we only fire the pre-warm ONCE
-# per session, not on every script rerun.
-if "_prewarm_dispatched" not in st.session_state:
-    st.session_state["_prewarm_dispatched"] = True
-    try:
-        import concurrent.futures as _cf
-        # PHASE Y (Y3): two-tier warm. Tier 1 is cheap (log_returns +
-        # metadata for ALL universes) — keeps any dataset switch fast.
-        # Tier 2 deep-warms the active universe with the heavy artifacts
-        # that any page on it will touch (batch_corr, MSTs, cluster
-        # assignments, eigenvalue spectrum, summary stats). Tier 2 only
-        # fires for the active universe so we don't 5× memory on cold
-        # container boot.
-        from utils import (  # noqa: E402
-            _load_log_returns, _load_metadata,
-            _load_batch_corr, _load_mst_edges, _load_mst_metrics,
-            _load_cluster_assignments, _load_dendrogram_order,
-            _load_eigenvalue_spectrum, _load_summary_stats,
-            current_universe,
+    with _date_col:
+        date_range = st.date_input(
+            "Date range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
         )
-        _prewarm_keys = [u.key for u in _AVAIL_UNIVERSES]
-        _prewarm_executor = _cf.ThreadPoolExecutor(
-            max_workers=min(8, len(_prewarm_keys) * 2 + 6),
-        )
-        # Tier 1 — cheap warm across ALL universes.
-        for _k in _prewarm_keys:
-            _prewarm_executor.submit(_load_log_returns, _k)
-            _prewarm_executor.submit(_load_metadata, _k)
-        # Tier 2 — deep warm for the currently active universe only.
-        try:
-            _active_key = current_universe()
-            if _active_key in _prewarm_keys:
-                for _deep_loader in (
-                    _load_batch_corr, _load_mst_edges, _load_mst_metrics,
-                    _load_cluster_assignments, _load_dendrogram_order,
-                    _load_eigenvalue_spectrum, _load_summary_stats,
-                ):
-                    _prewarm_executor.submit(_deep_loader, _active_key)
-        except Exception:  # noqa: BLE001 — deep warm is best-effort
-            pass
-        # Fire-and-forget: don't shutdown(wait=True), which would block
-        # first paint. Threads complete in background; executor GCs.
-    except Exception as _prewarm_exc:  # noqa: BLE001 — best-effort warm-up; never crash boot
-        # PHASE S (S15): log the failure so silent loader regressions
-        # surface in HF Spaces logs. Still never crashes boot.
-        print(f"[prewarm] background warm-up failed: {_prewarm_exc!r}")
 
+    if len(date_range) == 2:
+        start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
+    else:
+        start_dt, end_dt = pd.Timestamp(min_date), pd.Timestamp(max_date)
 
-# ── Sidebar: 3-dataset selector + BIST numéraire sub-switcher ────────────
-# Phase 1: replace the flat 5-key universe selectbox with two controls.
-# Primary "Dataset" radio (BIST 100 / S&P 500 / EEG) + a secondary
-# "Base currency" segmented_control (TRY / USD / Gold) that only appears
-# when Dataset == BIST. The three BIST numéraire variants are the same
-# 73 tickers re-expressed in different bases; surfacing them as a
-# sub-switcher (instead of three sibling universes flat in the same list)
-# mirrors how an analyst thinks about them and lets the demo move
-# "flip the basis to remove the TRY noise" with one click.
-#
-# Tab-state preservation: switching `bist_basis` doesn't reset `nav_page`
-# because the BIST family shares ONE namespace (the three keys all map to
-# the same `nav_page_bist`). Switching `dataset` between BIST / S&P / EEG
-# reads the corresponding `nav_page_{dataset}` so each dataset remembers
-# its own last-active top-nav target.
-_DATASET_LABELS = {
-    "bist":                "BIST 100 — Türkiye",
-    "sp500":               "S&P 500 — United States",
-    "eeg_motor_left_right": "EEG Motor Imagery — PhysioNet",
-}
-_BASIS_LABELS = {"try": "TRY", "usd": "USD", "gold": "Gold"}
+    returns = full_returns.loc[start_dt:end_dt]
+    prices_window = adj_close.loc[start_dt:end_dt]
+    window_length = len(returns)
+    dynamic_min_periods = max(30, int(window_length * 0.6))
 
-# Derive which TOP-LEVEL datasets are present on disk. BIST family
-# (bist / bist_usd / bist_gold) collapses to a single "bist" dataset
-# selector entry; other keys appear verbatim.
-_dataset_options: list[str] = []
-if any(k.startswith("bist") for k in _AVAIL_KEYS):
-    _dataset_options.append("bist")
-if "sp500" in _AVAIL_KEYS:
-    _dataset_options.append("sp500")
-if "eeg_motor_left_right" in _AVAIL_KEYS:
-    _dataset_options.append("eeg_motor_left_right")
-# Fallback so something always renders even if AVAIL_KEYS is empty.
-if not _dataset_options:
-    _dataset_options = ["bist"]
+    m1.metric(_cap(active_universe, 'items_label', 'Tickers'), f"{returns.shape[1]}")
+    m2.metric(
+        "Samples" if _cap(active_universe, 'domain', 'finance') == "neuroscience" else "Trading Days",
+        f"{returns.shape[0]:,}",
+    )
+    m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
+    m4.metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
+    m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
 
-with st.sidebar:
-    if len(_dataset_options) > 1:
-        st.markdown("**Dataset**")
-        st.selectbox(
-            "Dataset",
-            _dataset_options,
-            format_func=lambda k: _DATASET_LABELS.get(k, k),
-            key="dataset",
-            label_visibility="collapsed",
-        )
-    elif _dataset_options:
-        # Only one top-level dataset present; static caption.
-        _only = _dataset_options[0]
-        st.markdown(f"**Dataset:** {_DATASET_LABELS.get(_only, _only)}")
-
-    # BIST sub-switcher (only when the BIST family is the active dataset
-    # AND at least one alternative basis exists on disk).
-    if st.session_state.get("dataset") == "bist":
-        _basis_options = ["try"]
-        if "bist_usd" in _AVAIL_KEYS:
-            _basis_options.append("usd")
-        if "bist_gold" in _AVAIL_KEYS:
-            _basis_options.append("gold")
-        if len(_basis_options) > 1:
-            st.markdown("**Base currency**")
-            st.segmented_control(
-                "Base currency",
-                _basis_options,
-                format_func=lambda b: _BASIS_LABELS.get(b, b),
-                key="bist_basis",
-                label_visibility="collapsed",
-            )
-
-    # Re-read the active universe AFTER both controls so the description
-    # caption + downstream loaders use the resolved key.
-    _active_universe = get_universe(current_universe())
-    st.caption(_cap(_active_universe, 'description', ''))
-    st.markdown("---")
-    # Sprint 2 PR-M: chart-settings panel hoisted out of the sidebar into a
-    # header-strip popover. The sidebar previously rendered 5 always-visible
-    # expanders (Colors / Typography / Lines & Axes / Layout / Export Defaults)
-    # eating ~280 px the demo audience never touched. Sidebar now only carries
-    # the Dataset selector + Base currency sub-switcher + description.
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Top Header & Navigation
-# ══════════════════════════════════════════════════════════════════════════════
-
-st.markdown(
-    f"<div style='display:flex; align-items:center; gap:12px; padding:0; margin:0;'>"
-    f"<span style='font-size:1.3rem; font-weight:800; letter-spacing:-0.02em; "
-    f"color:#2B2D42;'>StoNeCoAl</span>"
-    f"<span style='font-size:0.72rem; color:#8D99AE; letter-spacing:0.06em;'>"
-    f"{_cap(_active_universe, 'short_label', 'BIST 100').upper()} NETWORK ANALYSIS</span></div>",
-    unsafe_allow_html=True,
-)
-
-# Phase 1: per-dataset nav_page namespacing. Each top-level dataset
-# (bist / sp500 / eeg_motor_left_right) keeps its OWN last-active
-# top-nav target in `nav_page_{dataset}` — so switching BIST → S&P and
-# back returns the user to whichever nav they had on BIST. The three
-# BIST numéraire variants (try/usd/gold) share one `nav_page_bist`
-# because they have identical capability flags.
-_dataset_key = st.session_state.get("dataset", _BOOT_DATASET)
-_nav_page_key = f"nav_page_{_dataset_key}"
-
-# UX polish: removed `_goto_pair_analysis` and `_goto_cross_market`
-# session_state consumers. The only writer (`_open_pair_analysis_button`)
-# has been deleted along with all 4 callsites; `_goto_cross_market` had
-# no writers and was already dead code. Cross-page nav now goes through
-# the top segmented_control directly.
-
-# Nav label for the overview page is domain-aware: "Market Overview" reads
-# wrong when the active universe is EEG (no market), so non-finance domains
-# get "Network Overview". Used for both the segmented-control label AND the
-# session_state value, so the two stay in sync across universe switches.
-_overview_label = (
-    "Market Overview"
-    if _cap(_active_universe, 'domain', 'finance') == "finance"
-    else "Network Overview"
-)
-
-# Phase 1 top-nav: five lenses for finance, three for EEG.
-#   Cross-Market    — BIST vs S&P comparison (finance only)
-#   Market Overview — full-period static analysis
-#   Time Machine    — date-driven correlation/MST/dislocation evolution
-#   Pair Analysis   — two-leg deep-dive (finance only)
-#   Methods Lab     — RMT / GLASSO / Wavelet / TE / IT / SNN depth
-# EEG keeps Market Overview + Time Machine + Methods Lab; the others
-# are gated by `eligible_for_cross_market` / `has_pair_trading`.
-_eligible_for_cross_market = _cap(_active_universe, 'eligible_for_cross_market', True)
-_nav_options_list: list[str] = []
-if _eligible_for_cross_market:
-    _nav_options_list.append("Cross-Market")
-_nav_options_list.append(_overview_label)
-_nav_options_list.append("Time Machine")
-if _cap(_active_universe, 'has_pair_trading', True):
-    _nav_options_list.append("Pair Analysis")
-_nav_options_list.append("Methods Lab")
-# PHASE S (S1): tuple for identity stability. Streamlit's segmented_control
-# may treat a fresh list-instance as a widget-shape change and reset its
-# selected value even when content is identical across reruns — a tuple
-# avoids the identity churn.
-_nav_options = tuple(_nav_options_list)
-
-# Default landing: Cross-Market for finance, the overview otherwise.
-_default_nav = "Cross-Market" if _eligible_for_cross_market else _overview_label
-
-# PHASE S (S1) — nav-state preservation on basis flip.
-# User complaint: "choosing a base currency resets the top navbar navigation."
-# Root cause: bist_usd / bist_gold have eligible_for_cross_market=False, so
-# flipping TRY → USD removes "Cross-Market" from `_nav_options`, the clamp
-# below fires, and the user gets snapped to Market Overview. Same pattern
-# bites the EEG transition (no Pair Analysis).
-#
-# Fix: when we clamp a lost nav target, stash it on a `__pending` key. On a
-# subsequent rerun where the stashed target IS in the new options AND the
-# user hasn't navigated elsewhere since (still on _default_nav), restore it.
-# Net effect: TRY → USD → TRY round-trip preserves the user's Cross-Market
-# selection. EEG → BIST round-trip preserves the user's Pair Analysis pick.
-_pending_key = f"{_nav_page_key}__pending"
-_stored = st.session_state.get(_nav_page_key)
-if _stored not in _nav_options:
-    if _stored is not None and _stored != _default_nav:
-        st.session_state[_pending_key] = _stored
-    # Pop FIRST to fully clear the widget's prior state, THEN set the new
-    # value. Plain overwrite (`session_state[k] = v`) sometimes leaves a
-    # stale widget-internal cache around in Streamlit's segmented_control,
-    # which AppTest surfaces as a "value not in options" ValueError. Pop
-    # forces re-initialisation.
-    st.session_state.pop(_nav_page_key, None)
-    st.session_state[_nav_page_key] = _default_nav
-elif _pending_key in st.session_state:
-    _pending_value = st.session_state[_pending_key]
-    if _pending_value in _nav_options and _stored == _default_nav:
-        # User round-tripped: restore stashed target. Same pop-then-set
-        # pattern for the same widget-cache reason.
-        st.session_state.pop(_nav_page_key, None)
-        st.session_state[_nav_page_key] = _pending_value
-        st.session_state.pop(_pending_key, None)
-    elif _stored != _default_nav:
-        # User navigated away from the default; drop stash (intent changed).
-        st.session_state.pop(_pending_key, None)
-
-# Sprint 2 PR-P: no `default=` here (would conflict with key= binding to
-# session_state). The clamp block above guarantees a valid value exists.
-_nav = st.segmented_control(
-    "Navigate",
-    _nav_options,
-    key=_nav_page_key,
-    label_visibility="collapsed",
-)
-
-# ── Cross-Market route ───────────────────────────────────────────────────────
-# This page reads from BOTH universes directly (not via current_universe()),
-# so route it BEFORE the per-universe data loads.
-if _nav == "Cross-Market":
-    from cross_market import render as _render_xmarket
-    _render_xmarket()
-    st.stop()
-
-# ── Methods Lab route ────────────────────────────────────────────────────────
-# Promoted from a Market Overview sub-tab. Thin wrapper around
-# eee_analysis.render() (which loads its own cluster_assignments etc.).
-# Routes BEFORE the shared data load because eee_analysis manages its
-# own loaders.
-if _nav == "Methods Lab":
-    from methods_lab import render as _render_methods
-    _render_methods()
-    st.stop()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Shared Data Loading  (per active universe)
-# ══════════════════════════════════════════════════════════════════════════════
-
-adj_close = load_adj_close()
-full_returns = load_log_returns()
-min_date = adj_close.index.min().date()
-max_date = adj_close.index.max().date()
-
-# ── Pair Analysis route ──────────────────────────────────────────────────────
-if _nav == "Pair Analysis":
-    coverage_df = load_coverage()
-    from pair_analysis import render as _render_pair
-    _render_pair(adj_close, full_returns, coverage_df, min_date, max_date)
-    st.stop()
-
-# ── Time Machine route ───────────────────────────────────────────────────────
-# Date-driven correlation/MST/dislocation evolution. The canonical
-# Point-in-Time surface — promoted to top nav in Phase 1, fast-pathed
-# via precomputed snapshots in Phase 3 (BIST TRY + S&P at w=252) with
-# live-compute fallback for other (universe, window, method) combos.
-if _nav == "Time Machine":
-    from time_machine import render as _render_tm
-    _render_tm(adj_close, full_returns, min_date, max_date)
-    st.stop()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Market Overview — Inline Settings & Key Metrics
-# ══════════════════════════════════════════════════════════════════════════════
-
-pipe_meta = load_metadata()
-market_summary = pipe_meta.get("market_summary", {})
-
-# PHASE S (S5): Freshness popover removed per user direction. The
-# fetch-metadata is still on disk at data/<universe>/results/
-# pipeline_metadata.json + fetch_metadata.json if anyone needs it.
-# Header strip now: date range | theme | 5 KPI cards (7 columns).
-_date_col, _theme_col, m1, m2, m3, m4, m5 = st.columns(
-    [1.5, 0.9, 1.05, 1.05, 1.1, 1.1, 1.5]
-)
-
-with _theme_col:
-    render_theme_popover()
-
-with _date_col:
-    date_range = st.date_input(
-        "Date range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
+    returns_cache_key = (
+        f"{active_universe.key}:{start_dt.date().isoformat()}:"
+        f"{end_dt.date().isoformat()}:{returns.shape[0]}x{returns.shape[1]}"
     )
 
-if len(date_range) == 2:
-    start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
-else:
-    start_dt, end_dt = pd.Timestamp(min_date), pd.Timestamp(max_date)
+    # ── Sub-tab layout (Pairs & Dislocations gated by capability) ───────
+    _tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
+    if _cap(active_universe, 'has_pair_trading', True):
+        _tab_labels.append("Pairs & Dislocations")
+    _active_main_tab = render_subtabs("market_overview", tuple(_tab_labels))
+    _show_tab_data    = _active_main_tab == "Data & Stats"
+    _show_tab_corr    = _active_main_tab == "Correlation"
+    _show_tab_cluster = _active_main_tab == "Clustering & Network"
+    _show_tab_rolling = _active_main_tab == "Rolling Analysis"
+    _show_tab_pairs   = (
+        _active_main_tab == "Pairs & Dislocations"
+        and "Pairs & Dislocations" in _tab_labels
+    )
 
-returns = full_returns.loc[start_dt:end_dt]
-prices_window = adj_close.loc[start_dt:end_dt]
-window_length = len(returns)
-dynamic_min_periods = max(30, int(window_length * 0.6))
+    # ── Tab 1 — Data & Stats ──────────────────────────────────────────────
+    if _show_tab_data:
+        _render_tab_data_stats(
+            returns=returns, prices_window=prices_window,
+            start_dt=start_dt, end_dt=end_dt,
+            active_universe=active_universe,
+            market_summary=market_summary,
+        )
 
-m1.metric(_cap(_active_universe, 'items_label', 'Tickers'), f"{returns.shape[1]}")
-m2.metric(
-    "Samples" if _cap(_active_universe, 'domain', 'finance') == "neuroscience" else "Trading Days",
-    f"{returns.shape[0]:,}",
-)
-m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
-m4.metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
-m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
+    # ── Tab 2 — Correlation ──────────────────────────────────────────────
+    if _show_tab_corr:
+        _render_correlation_heatmap(
+            returns=returns,
+            returns_cache_key=returns_cache_key,
+            dynamic_min_periods=dynamic_min_periods,
+            active_universe=active_universe,
+        )
 
-# Cheap deterministic cache key for @st.cache_data helpers. The actual
-# DataFrame is passed underscore-prefixed (Streamlit skips hashing it);
-# identity comes from this string. Universe + date endpoints + shape
-# uniquely identifies any returns slice we feed the helpers. Replaces the
-# previous `_returns_json = returns.to_json(...)` pattern that cost ~38 ms
-# per script rerun on S&P-500 (10 MB JSON ser/de roundtrip).
-returns_cache_key = (
-    f"{_active_universe.key}:{start_dt.date().isoformat()}:"
-    f"{end_dt.date().isoformat()}:{returns.shape[0]}x{returns.shape[1]}"
-)
+    # ── Tab 3 — Clustering & Network ─────────────────────────────────────
+    if _show_tab_cluster:
+        _render_tab_clustering(active_universe=active_universe)
 
+    # ── Tab 4 — Rolling Analysis ─────────────────────────────────────────
+    if _show_tab_rolling:
+        _render_tab_rolling(
+            returns=returns, returns_cache_key=returns_cache_key,
+            prices_window=prices_window,
+            active_universe=active_universe,
+            min_date=min_date, max_date=max_date,
+        )
 
-# PHASE S (S6): hero strip removed per user direction. The "Ward
-# clustering on Mantegna correlation distance reproduces…" callout
-# was analyst narration ("reproduces", "Drill into"), not a useful
-# UI affordance. ARI/NMI are still computed and displayed inside the
-# Clustering & Network sub-tab itself — that's the canonical surface.
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Market Overview — Sub-Tab Layout (Pairs & Dislocations gated by capability)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Phase 1: EEE Analysis sub-tab promoted out of Market Overview to the
-# top-level "Methods Lab" nav target. Point-in-Time Snapshot sub-sub-tab
-# (formerly inside Correlation) moved out to the top-level "Time Machine"
-# nav target. Market Overview now hosts ONLY the full-period static
-# analysis lenses.
-#
-# PHASE Y (Y1): replaced `st.tabs(...)` with `render_subtabs(...)` so only
-# the active sub-tab body executes. Each `with tab_X:` block below is now
-# `if _show_tab_X:` — no indentation change on body code; only the gate
-# line flips from a context manager to a conditional.
-from utils import render_subtabs  # noqa: E402 — late import (renders need page context)
-_tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
-if _cap(_active_universe, 'has_pair_trading', True):
-    _tab_labels.append("Pairs & Dislocations")
-_active_main_tab = render_subtabs("market_overview", tuple(_tab_labels))
-_show_tab_data    = _active_main_tab == "Data & Stats"
-_show_tab_corr    = _active_main_tab == "Correlation"
-_show_tab_cluster = _active_main_tab == "Clustering & Network"
-_show_tab_rolling = _active_main_tab == "Rolling Analysis"
-# tab_pairs uses a different gating pattern (nested `if tab_pairs is not None: with tab_pairs:`
-# in the body block below) to avoid 100+ lines of indentation churn. Set
-# to a real container when active OR None when inactive — the existing
-# nested-if guard then handles both "EEG hides tab" and "sub-tab not selected".
-tab_pairs = st.container() if (_active_main_tab == "Pairs & Dislocations" and "Pairs & Dislocations" in _tab_labels) else None
+    # ── Tab 5 — Pairs & Dislocations (finance only) ──────────────────────
+    if _show_tab_pairs:
+        _render_tab_pairs(
+            returns=returns, returns_cache_key=returns_cache_key,
+            dynamic_min_periods=dynamic_min_periods,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Tab 1 — Data & Stats
+# Tab-body helpers (auto-extracted from dashboard.py during PHASE 2 / Stage 1)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _show_tab_data:
-
+def _render_tab_data_stats(
+    *,
+    returns: pd.DataFrame,
+    prices_window: pd.DataFrame,
+    start_dt,
+    end_dt,
+    active_universe,
+    market_summary: dict,
+) -> None:
+    """Auto-extracted from dashboard.py during PHASE 2 / Stage 1."""
     # ── Section 1: Coverage & Normalized Prices ─────────────────────────────
     with st.container(border=True):
-        if _cap(_active_universe, 'has_index_series', True):
+        if _cap(active_universe, 'has_index_series', True):
             section_header(
                 "Data Coverage & Price Performance",
-                f"Left: per-{_cap(_active_universe, 'item_label', 'Ticker').lower()} data availability "
+                f"Left: per-{_cap(active_universe, 'item_label', 'Ticker').lower()} data availability "
                 f"(90% threshold). Right: all prices rebased to 100 — the bold black "
-                f"line is {_cap(_active_universe, 'index_ticker', 'XU100')}.",
+                f"line is {_cap(active_universe, 'index_ticker', 'XU100')}.",
             )
         else:
             section_header(
-                f"Data Coverage & {_cap(_active_universe, 'series_label', 'Log return')} Performance",
-                f"Left: per-{_cap(_active_universe, 'item_label', 'Ticker').lower()} data availability. "
-                f"Right: {_cap(_active_universe, 'series_label', 'Log return').lower()} time-series for a "
+                f"Data Coverage & {_cap(active_universe, 'series_label', 'Log return')} Performance",
+                f"Left: per-{_cap(active_universe, 'item_label', 'Ticker').lower()} data availability. "
+                f"Right: {_cap(active_universe, 'series_label', 'Log return').lower()} time-series for a "
                 f"representative subset of channels (first 30 s).",
             )
 
@@ -961,14 +537,14 @@ if _show_tab_data:
                               yaxis=dict(dtick=1, tickfont=dict(size=7)))
             render_chart(fig_cov, chart_id="mo_coverage", filename_base="data_coverage",
                          title_key="mo_coverage",
-                         default_title=f"Data Coverage by {_cap(_active_universe, 'item_label', 'Ticker')}")
+                         default_title=f"Data Coverage by {_cap(active_universe, 'item_label', 'Ticker')}")
 
         with col_right:
-            if _cap(_active_universe, 'has_index_series', True):
+            if _cap(active_universe, 'has_index_series', True):
                 # Financial universe: rebased prices + bold market-index overlay.
                 norm_prices = prices_window.divide(prices_window.iloc[0]) * 100
                 xu100 = load_xu100()
-                _index_label = _cap(_active_universe, 'index_ticker', 'XU100')  # "XU100" / "^GSPC"
+                _index_label = _cap(active_universe, 'index_ticker', 'XU100')  # "XU100" / "^GSPC"
                 if not xu100.empty:
                     xu100_window = xu100.loc[start_dt:end_dt]
                     if not xu100_window.empty:
@@ -1006,7 +582,7 @@ if _show_tab_data:
                         x=q50.index, y=q50.values,
                         mode="lines",
                         line=dict(width=1.2, color=get_colors()["muted"]),
-                        name=f"Median ({len(_ticker_cols)} {_cap(_active_universe, 'items_label', 'tickers').lower()})",
+                        name=f"Median ({len(_ticker_cols)} {_cap(active_universe, 'items_label', 'tickers').lower()})",
                         hovertemplate="Median: %{y:.1f}<extra></extra>",
                     ))
                     if _index_label in norm_prices.columns:
@@ -1066,15 +642,15 @@ if _show_tab_data:
                             y=series + cumulative_offset,
                             mode="lines", name=ch,
                             line=dict(width=0.8, color=SECTOR_PALETTE[i % len(SECTOR_PALETTE)]),
-                            hovertemplate=f"{ch}: %{{y:.2f}} {_cap(_active_universe, 'series_units', '')}<extra></extra>",
+                            hovertemplate=f"{ch}: %{{y:.2f}} {_cap(active_universe, 'series_units', '')}<extra></extra>",
                         ))
                         cumulative_offset += spacing
                     apply_chart_style(
                         fig_volt, height=max(400, n_show * 38),
                         xaxis_title="Time (seconds)",
                         yaxis_title=(
-                            f"{_cap(_active_universe, 'series_label', 'Log return')} "
-                            f"({_cap(_active_universe, 'series_units', '')}) — stacked"
+                            f"{_cap(active_universe, 'series_label', 'Log return')} "
+                            f"({_cap(active_universe, 'series_units', '')}) — stacked"
                         ),
                         showlegend=True,
                         legend=dict(orientation="v", yanchor="top", y=1.0,
@@ -1085,7 +661,7 @@ if _show_tab_data:
                         filename_base="voltage_trace",
                         title_key="mo_voltage",
                         default_title=(
-                            f"{_cap(_active_universe, 'series_label', 'Log return')} Time-Series "
+                            f"{_cap(active_universe, 'series_label', 'Log return')} Time-Series "
                             f"(first {n_samples / sample_rate_hz:.0f}s, "
                             f"{n_show} sample channels)"
                         ),
@@ -1093,11 +669,11 @@ if _show_tab_data:
 
     # ── Section 2: Descriptive Stats & Distribution ─────────────────────────
     with st.container(border=True):
-        _is_finance     = _cap(_active_universe, 'domain', 'finance') == "finance"
-        _item_label     = _cap(_active_universe, 'item_label', 'Ticker')
-        _items_label    = _cap(_active_universe, 'items_label', 'Tickers')
-        _series_label   = _cap(_active_universe, 'series_label', 'Log return')
-        _series_units   = _cap(_active_universe, 'series_units', '')
+        _is_finance     = _cap(active_universe, 'domain', 'finance') == "finance"
+        _item_label     = _cap(active_universe, 'item_label', 'Ticker')
+        _items_label    = _cap(active_universe, 'items_label', 'Tickers')
+        _series_label   = _cap(active_universe, 'series_label', 'Log return')
+        _series_units   = _cap(active_universe, 'series_units', '')
         _series_axis    = f"{_series_label} ({_series_units})" if _series_units else _series_label
 
         if _is_finance:
@@ -1244,7 +820,7 @@ if _show_tab_data:
                              title_key="mo_hist", default_title=_hist_title)
 
     # ── Section 3: Return Anomalies (financial universes only) ──────────────
-    if _cap(_active_universe, 'has_anomaly_detection', True):
+    if _cap(active_universe, 'has_anomaly_detection', True):
       with st.container(border=True):
           section_header(
               "Return Anomalies",
@@ -1330,7 +906,7 @@ if _show_tab_data:
     # ── Section 9: Universe-wide correlation summary ────────────────────────
     with st.container(border=True):
         section_header(
-            "Market Summary" if _cap(_active_universe, 'domain', 'finance') == "finance"
+            "Market Summary" if _cap(active_universe, 'domain', 'finance') == "finance"
             else "Network Summary"
         )
         if market_summary:
@@ -1342,30 +918,17 @@ if _show_tab_data:
             cols[4].metric("Max", f"{market_summary.get('max_pairwise_corr', 0):.4f}")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Tab 2 — Correlation
-# ══════════════════════════════════════════════════════════════════════════════
-
-if _show_tab_corr:
-    # Phase 1: Point-in-Time Snapshot sub-sub-tab promoted out to the
-    # top-level "Time Machine" page. This tab now hosts ONLY the full-
-    # period correlation heatmap; the @st.fragment scoping still applies
-    # because `_render_correlation_heatmap()` is fragment-decorated.
-    _render_correlation_heatmap()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Tab 3 — Clustering & Network
-# ══════════════════════════════════════════════════════════════════════════════
-
-if _show_tab_cluster:
-
+def _render_tab_clustering(
+    *,
+    active_universe,
+) -> None:
+    """Auto-extracted from dashboard.py during PHASE 2 / Stage 1."""
     # ── Section 4: Dendrogram & Cluster Assignments ─────────────────────────
     with st.container(border=True):
-        _items_cl   = _cap(_active_universe, 'items_label', 'Tickers')
-        _item_cl    = _cap(_active_universe, 'item_label', 'Ticker')
-        _sector_cl  = _cap(_active_universe, 'sector_label', 'Sector')
-        _series_cl  = _cap(_active_universe, 'series_label', 'log return').lower()
+        _items_cl   = _cap(active_universe, 'items_label', 'Tickers')
+        _item_cl    = _cap(active_universe, 'item_label', 'Ticker')
+        _sector_cl  = _cap(active_universe, 'sector_label', 'Sector')
+        _series_cl  = _cap(active_universe, 'series_label', 'log return').lower()
         section_header(
             f"Hierarchical Clustering & {_sector_cl} Validation",
             f"Dendrogram built from d = sqrt(2(1-rho)). {_items_cl} merging at lower heights "
@@ -1432,7 +995,7 @@ if _show_tab_cluster:
                     # the banking sector; S&P checks mega-cap tech;
                     # EEG checks central-motor / occipital / prefrontal
                     # electrode triples.
-                    for group_label, members in (_cap(_active_universe, 'sanity_check_groups', None) or {}).items():
+                    for group_label, members in (_cap(active_universe, 'sanity_check_groups', None) or {}).items():
                         present = cluster_df[cluster_df["ticker"].isin(members)]
                         if present.empty:
                             continue
@@ -1482,9 +1045,9 @@ if _show_tab_cluster:
 
     # ── Section 5: MST Network ──────────────────────────────────────────────
     with st.container(border=True):
-        _items_mst    = _cap(_active_universe, 'items_label', 'Tickers')
-        _sector_mst   = _cap(_active_universe, 'sector_label', 'Sector')
-        _domain_mst   = _cap(_active_universe, 'domain', 'finance')
+        _items_mst    = _cap(active_universe, 'items_label', 'Tickers')
+        _sector_mst   = _cap(active_universe, 'sector_label', 'Sector')
+        _domain_mst   = _cap(active_universe, 'domain', 'finance')
         _bridge_scope = "across the market" if _domain_mst == "finance" else "across the network"
         section_header(
             "Minimum Spanning Tree",
@@ -1511,7 +1074,7 @@ if _show_tab_cluster:
             # on S&P, subsequent universe re-renders are instant.
             pos = _mst_layout(
                 mst_edges,
-                f"{_active_universe.key}:mst:{len(mst_edges)}",
+                f"{active_universe.key}:mst:{len(mst_edges)}",
             )
 
             edge_traces = []
@@ -1588,7 +1151,7 @@ if _show_tab_cluster:
             # Hub table behind an expander — was always-on in the right column
             # of a [3,2] split, now hidden by default to let the MST breathe.
             with st.expander(f"Hub {_items_mst} (by degree)", expanded=False):
-                _item_mst = _cap(_active_universe, 'item_label', 'Ticker')
+                _item_mst = _cap(active_universe, 'item_label', 'Ticker')
                 display_metrics = mst_metrics.copy()
                 display_metrics["betweenness_centrality"] = display_metrics[
                     "betweenness_centrality"
@@ -1609,16 +1172,20 @@ if _show_tab_cluster:
             st.info("Run the clustering pipeline to generate the MST network.")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Tab 4 — Rolling Analysis
-# ══════════════════════════════════════════════════════════════════════════════
-
-if _show_tab_rolling:
-
-    _is_finance_rc = _cap(_active_universe, 'domain', 'finance') == "finance"
-    _item_rc       = _cap(_active_universe, 'item_label', 'Ticker')
-    _items_rc      = _cap(_active_universe, 'items_label', 'Tickers')
-    _sector_rc     = _cap(_active_universe, 'sector_label', 'Sector')
+def _render_tab_rolling(
+    *,
+    returns: pd.DataFrame,
+    returns_cache_key: str,
+    prices_window: pd.DataFrame,
+    active_universe,
+    min_date,
+    max_date,
+) -> None:
+    """Auto-extracted from dashboard.py during PHASE 2 / Stage 1."""
+    _is_finance_rc = _cap(active_universe, 'domain', 'finance') == "finance"
+    _item_rc       = _cap(active_universe, 'item_label', 'Ticker')
+    _items_rc      = _cap(active_universe, 'items_label', 'Tickers')
+    _sector_rc     = _cap(active_universe, 'sector_label', 'Sector')
 
     with st.container(border=True):
         section_header(
@@ -1862,124 +1429,115 @@ if _show_tab_rolling:
                 st.info(f"Run the clustering pipeline to enable {_sector_rc.lower()} breakdown.")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Tab 5 — Pairs & Dislocations  (financial universes only)
-# ══════════════════════════════════════════════════════════════════════════════
+def _render_tab_pairs(
+    *,
+    returns: pd.DataFrame,
+    returns_cache_key: str,
+    dynamic_min_periods: int,
+) -> None:
+    """Auto-extracted from dashboard.py during PHASE 2 / Stage 1."""
 
-# Skip the whole block when the active universe has no pair-trading semantics.
-# tab_pairs is None for EEG (we never added the tab in that case).
-if tab_pairs is not None:
-  with tab_pairs:
+    # ── Section 7: Top/Bottom Pairs & Correlation Distribution ──────────────
+    with st.container(border=True):
+        section_header(
+            "Top/Bottom Pairs & Correlation Distribution",
+            "Most/least correlated pairs (left) and the full distribution of pairwise "
+            "correlations (right). Click a pair to investigate in the Pair Analysis view.",
+        )
 
-      # ── Section 7: Top/Bottom Pairs & Correlation Distribution ──────────────
-      with st.container(border=True):
-          section_header(
-              "Top/Bottom Pairs & Correlation Distribution",
-              "Most/least correlated pairs (left) and the full distribution of pairwise "
-              "correlations (right). Click a pair to investigate in the Pair Analysis view.",
-          )
+        col_pairs, col_dist = st.columns([3, 2])
 
-          col_pairs, col_dist = st.columns([3, 2])
+        with col_pairs:
+            pairs = load_top_bottom()
+            top_pairs = pairs[pairs["rank_type"] == "top"][
+                ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
+            ].reset_index(drop=True)
+            bottom_pairs = pairs[pairs["rank_type"] == "bottom"][
+                ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
+            ].reset_index(drop=True)
 
-          with col_pairs:
-              pairs = load_top_bottom()
-              top_pairs = pairs[pairs["rank_type"] == "top"][
-                  ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
-              ].reset_index(drop=True)
-              bottom_pairs = pairs[pairs["rank_type"] == "bottom"][
-                  ["ticker_1", "ticker_2", "sector_1", "sector_2", "correlation"]
-              ].reset_index(drop=True)
+            # UX polish: dropped the "Analyze X/Y in Pair Analysis"
+            # cross-page buttons + their selectbox companions. The button
+            # was buggy (cross-page state plumbing through
+            # `_goto_pair_analysis` was fragile across reruns) and the
+            # selectbox added clicks. Users who want to deep-dive a pair
+            # type its name directly in the Pair Analysis page.
+            tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
+            with tab_top:
+                st.dataframe(top_pairs, use_container_width=True, hide_index=True)
+            with tab_bottom:
+                st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
 
-              # UX polish: dropped the "Analyze X/Y in Pair Analysis"
-              # cross-page buttons + their selectbox companions. The button
-              # was buggy (cross-page state plumbing through
-              # `_goto_pair_analysis` was fragile across reruns) and the
-              # selectbox added clicks. Users who want to deep-dive a pair
-              # type its name directly in the Pair Analysis page.
-              tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
-              with tab_top:
-                  st.dataframe(top_pairs, use_container_width=True, hide_index=True)
-              with tab_bottom:
-                  st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
+        with col_dist:
+            # `corr` used to be set as a script-level global inside
+            # `with tab_corr:` (when the heatmap was not yet @st.fragment).
+            # Now that the heatmap is fragment-scoped, `corr` is local to
+            # `_render_correlation_heatmap()`. Recompute it here using the
+            # current heat_method from session_state — `_compute_corr` is
+            # @st.cache_data so we get a cache HIT (the heatmap fragment
+            # already computed the same call with the same args).
+            _heat_method_for_dist = st.session_state.get("heat_method", "pearson")
+            corr = _compute_corr(
+                returns, returns_cache_key, dynamic_min_periods, _heat_method_for_dist,
+            )
+            mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
+            upper_vals = corr.where(mask).stack().values
+            upper_vals = upper_vals[~np.isnan(upper_vals)]
 
-          with col_dist:
-              # `corr` used to be set as a script-level global inside
-              # `with tab_corr:` (when the heatmap was not yet @st.fragment).
-              # Now that the heatmap is fragment-scoped, `corr` is local to
-              # `_render_correlation_heatmap()`. Recompute it here using the
-              # current heat_method from session_state — `_compute_corr` is
-              # @st.cache_data so we get a cache HIT (the heatmap fragment
-              # already computed the same call with the same args).
-              _heat_method_for_dist = st.session_state.get("heat_method", "pearson")
-              corr = _compute_corr(
-                  returns, returns_cache_key, dynamic_min_periods, _heat_method_for_dist,
-              )
-              mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
-              upper_vals = corr.where(mask).stack().values
-              upper_vals = upper_vals[~np.isnan(upper_vals)]
+            fig_corr_dist = go.Figure()
+            fig_corr_dist.add_trace(go.Histogram(
+                x=upper_vals, nbinsx=60,
+                marker_color=get_colors()["primary"], opacity=0.75,
+                hovertemplate="Corr: %{x:.3f}<br>Count: %{y}<extra></extra>",
+            ))
+            mean_val = np.mean(upper_vals)
+            median_val = np.median(upper_vals)
+            fig_corr_dist.add_vline(x=mean_val, line_dash="dash", line_color=get_colors()["secondary"],
+                                     annotation_text=f"Mean: {mean_val:.3f}", annotation_font_size=10)
+            fig_corr_dist.add_vline(x=median_val, line_dash="dot", line_color=get_colors()["tertiary"],
+                                     annotation_text=f"Median: {median_val:.3f}", annotation_font_size=10)
+            apply_chart_style(fig_corr_dist, height=420,
+                              xaxis_title="Pairwise Correlation", yaxis_title="Frequency",
+                              showlegend=False)
+            render_chart(fig_corr_dist, chart_id="mo_corr_dist", filename_base="correlation_distribution",
+                         title_key="mo_corr_dist", default_title="Correlation Distribution")
 
-              fig_corr_dist = go.Figure()
-              fig_corr_dist.add_trace(go.Histogram(
-                  x=upper_vals, nbinsx=60,
-                  marker_color=get_colors()["primary"], opacity=0.75,
-                  hovertemplate="Corr: %{x:.3f}<br>Count: %{y}<extra></extra>",
-              ))
-              mean_val = np.mean(upper_vals)
-              median_val = np.median(upper_vals)
-              fig_corr_dist.add_vline(x=mean_val, line_dash="dash", line_color=get_colors()["secondary"],
-                                       annotation_text=f"Mean: {mean_val:.3f}", annotation_font_size=10)
-              fig_corr_dist.add_vline(x=median_val, line_dash="dot", line_color=get_colors()["tertiary"],
-                                       annotation_text=f"Median: {median_val:.3f}", annotation_font_size=10)
-              apply_chart_style(fig_corr_dist, height=420,
-                                xaxis_title="Pairwise Correlation", yaxis_title="Frequency",
-                                showlegend=False)
-              render_chart(fig_corr_dist, chart_id="mo_corr_dist", filename_base="correlation_distribution",
-                           title_key="mo_corr_dist", default_title="Correlation Distribution")
+    # ── Section 8: Dislocation Candidates ───────────────────────────────────
+    with st.container(border=True):
+        section_header(
+            "Dislocation Candidates",
+            "Historically correlated pairs ranked by mean-reversion characteristics. "
+            "Pairs with shorter half-lives and active Z-score dislocations are ranked higher.",
+        )
 
-      # ── Section 8: Dislocation Candidates ───────────────────────────────────
-      with st.container(border=True):
-          section_header(
-              "Dislocation Candidates",
-              "Historically correlated pairs ranked by mean-reversion characteristics. "
-              "Pairs with shorter half-lives and active Z-score dislocations are ranked higher.",
-          )
+        _candidates = load_dislocation_candidates()
+        if not _candidates.empty:
+            _display_cols = [
+                "ticker_a", "ticker_b", "sector_a", "sector_b",
+                "correlation", "beta", "half_life", "current_zscore",
+                "n_signals", "rank_score",
+            ]
+            _disp_cands = _candidates[[c for c in _display_cols if c in _candidates.columns]].copy()
 
-          _candidates = load_dislocation_candidates()
-          if not _candidates.empty:
-              _display_cols = [
-                  "ticker_a", "ticker_b", "sector_a", "sector_b",
-                  "correlation", "beta", "half_life", "current_zscore",
-                  "n_signals", "rank_score",
-              ]
-              _disp_cands = _candidates[[c for c in _display_cols if c in _candidates.columns]].copy()
-
-              # UX polish: dropped the candidate-pair selectbox + cross-page
-              # "Analyze in Pair Analysis" button (buggy cross-page state).
-              # The dataframe itself is sortable; users pick by sorting the
-              # `rank_score` / `current_zscore` columns and typing the ticker
-              # pair in Pair Analysis directly.
-              st.dataframe(
-                  _disp_cands,
-                  use_container_width=True,
-                  hide_index=True,
-                  column_config={
-                      "correlation": st.column_config.NumberColumn(format="%.4f"),
-                      "beta": st.column_config.NumberColumn(format="%.4f"),
-                      "half_life": st.column_config.NumberColumn("Half-Life (days)", format="%.1f"),
-                      "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
-                      "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
-                  },
-              )
-          else:
-              st.info(
-                  "No dislocation candidates available. Run the pipeline "
-                  "(`python run_pipeline.py`) to generate ranked candidate pairs."
-              )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Phase 1 note: EEE Analysis used to live here as a sub-tab. It was
-# promoted to the top-level "Methods Lab" nav target so methodology
-# depth (RMT / GLASSO / Wavelet / TE / IT / SNN) reads as a first-class
-# lens to graders. Routing now happens in the top-nav block above.
-# ══════════════════════════════════════════════════════════════════════════════
+            # UX polish: dropped the candidate-pair selectbox + cross-page
+            # "Analyze in Pair Analysis" button (buggy cross-page state).
+            # The dataframe itself is sortable; users pick by sorting the
+            # `rank_score` / `current_zscore` columns and typing the ticker
+            # pair in Pair Analysis directly.
+            st.dataframe(
+                _disp_cands,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "correlation": st.column_config.NumberColumn(format="%.4f"),
+                    "beta": st.column_config.NumberColumn(format="%.4f"),
+                    "half_life": st.column_config.NumberColumn("Half-Life (days)", format="%.1f"),
+                    "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
+                    "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
+                },
+            )
+        else:
+            st.info(
+                "No dislocation candidates available. Run the pipeline "
+                "(`python run_pipeline.py`) to generate ranked candidate pairs."
+            )

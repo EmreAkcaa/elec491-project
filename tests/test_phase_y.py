@@ -52,10 +52,16 @@ def test_render_subtabs_default_first_option():
     """When no prior state exists, the first option is the default."""
     from streamlit.testing.v1 import AppTest
 
-    DASHBOARD_PATH = _APP_DIR / "dashboard.py"
-    at = AppTest.from_file(str(DASHBOARD_PATH))
+    # PHASE 2: dashboard.py → main.py. Test the Market Overview page
+    # script directly (not via switch_page — AppTest has known issues
+    # with widget-state caching across navigations).
+    MARKET_OVERVIEW_PATH = _APP_DIR / "views" / "02_market_overview.py"
+    at = AppTest.from_file(str(MARKET_OVERVIEW_PATH))
     at.session_state["dataset"] = "bist"
-    at.session_state["nav_page_bist"] = "Market Overview"
+    # PHASE 2: nav_page_bist no longer drives routing (top-nav replaced
+    # by Streamlit native sidebar nav). Loading the page script directly
+    # bypasses the page-routing logic so this line is now a no-op kept
+    # for back-compat with any code that reads nav_page_bist.
     at.run(timeout=90)
     assert not at.exception, f"Render crashed: {list(at.exception)}"
     # The first sub-tab "Data & Stats" should be active by default.
@@ -68,11 +74,17 @@ def test_render_subtabs_preserved_across_basis_flip():
     (TRY → USD) since dataset stays "bist"."""
     from streamlit.testing.v1 import AppTest
 
-    DASHBOARD_PATH = _APP_DIR / "dashboard.py"
-    at = AppTest.from_file(str(DASHBOARD_PATH))
+    # PHASE 2: dashboard.py → main.py. Test the Market Overview page
+    # script directly (not via switch_page — AppTest has known issues
+    # with widget-state caching across navigations).
+    MARKET_OVERVIEW_PATH = _APP_DIR / "views" / "02_market_overview.py"
+    at = AppTest.from_file(str(MARKET_OVERVIEW_PATH))
     at.session_state["dataset"] = "bist"
     at.session_state["bist_basis"] = "try"
-    at.session_state["nav_page_bist"] = "Market Overview"
+    # PHASE 2: nav_page_bist no longer drives routing (top-nav replaced
+    # by Streamlit native sidebar nav). Loading the page script directly
+    # bypasses the page-routing logic so this line is now a no-op kept
+    # for back-compat with any code that reads nav_page_bist.
     # Pre-set a non-default sub-tab.
     at.session_state["market_overview_subtab_bist"] = "Clustering & Network"
     at.run(timeout=90)
@@ -85,10 +97,13 @@ def test_render_subtabs_namespaced_per_dataset():
     """Sub-tab key includes the dataset, so BIST and S&P don't share state."""
     from streamlit.testing.v1 import AppTest
 
-    DASHBOARD_PATH = _APP_DIR / "dashboard.py"
-    at = AppTest.from_file(str(DASHBOARD_PATH))
+    # PHASE 2: dashboard.py → main.py. Test the Market Overview page
+    # script directly (not via switch_page — AppTest has known issues
+    # with widget-state caching across navigations).
+    MARKET_OVERVIEW_PATH = _APP_DIR / "views" / "02_market_overview.py"
+    at = AppTest.from_file(str(MARKET_OVERVIEW_PATH))
     at.session_state["dataset"] = "sp500"
-    at.session_state["nav_page_sp500"] = "Market Overview"
+    # nav_page_sp500 is a no-op in multi-page mode (see Phase 2 note above).
     # Pre-set a BIST sub-tab to a non-default value; S&P should be
     # independent and default to "Data & Stats".
     at.session_state["market_overview_subtab_bist"] = "Rolling Analysis"

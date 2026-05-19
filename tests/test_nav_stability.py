@@ -1,23 +1,31 @@
-"""Tests for PHASE S (S1) — top-nav state preservation across sidebar changes.
+"""Tests for top-nav-equivalent state preservation across sidebar changes.
 
-User complaint: "choosing a base currency resets the top navbar navigation."
+History:
+  - **Phase S #1** (PR #59): added per-dataset `nav_page_{dataset}` +
+    `nav_page_{dataset}__pending` to the SINGLE-SCRIPT dashboard so the
+    top-nav segmented_control survived basis flips that hid capability-
+    gated tabs.
+  - **Phase 2** (this PR): replaced the custom top-nav segmented_control
+    with Streamlit's native multi-page navigation. Phase S's stash
+    semantic is preserved but the keys change:
+        nav_page_{dataset}            → last_page_{dataset}
+        nav_page_{dataset}__pending   → last_page_{dataset}__pending
+    The clamp logic now lives in `app/main.py` (the new entry script).
 
-Root cause: `bist_usd` / `bist_gold` universes have
-`eligible_for_cross_market=False`, so flipping the basis TRY → USD removes
-"Cross-Market" from `_nav_options`. The clamp at dashboard.py snaps the
-selection to `_default_nav` (Market Overview for USD/Gold), losing the
-user's prior pick.
+User-facing intent (unchanged across the migration):
+  - On BIST, click Cross-Market.
+  - Flip basis TRY → USD (Cross-Market disappears for bist_usd).
+  - Streamlit auto-redirects to default page (Market Overview).
+  - The previously-active page ("Cross-Market") is stashed on
+    `last_page_bist__pending`.
+  - Flip basis USD → TRY (Cross-Market reappears).
+  - main.py detects the stash + current default-page state, calls
+    `st.switch_page` to restore Cross-Market.
 
-Fix (S1): when the clamp fires, stash the original value on a `__pending`
-session-state key. On a later rerun where the stashed value IS in the new
-options AND the user hasn't navigated elsewhere, restore it. Net effect:
-TRY → USD → TRY round-trip preserves a Cross-Market selection.
-
-These tests use single-run scenarios (pre-set session state, run once,
-assert) because Streamlit's AppTest framework persists segmented_control
-widget value across `at.run()` calls in a way that doesn't synchronise
-cleanly with externally-mutated session_state — a framework limitation
-that doesn't apply to real Streamlit sessions.
+These tests verify the stash logic on a SINGLE render (no `switch_page`
+across runs — AppTest has known widget-state caching quirks there). The
+clamp logic in main.py reads/writes session_state synchronously during
+the render, so single-render tests cover the state machine fully.
 """
 
 from __future__ import annotations
@@ -41,7 +49,7 @@ for _p in (str(_REPO_ROOT), str(_APP_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-DASHBOARD_PATH = _APP_DIR / "dashboard.py"
+MAIN_PATH = _APP_DIR / "main.py"
 APPTEST_TIMEOUT = 90
 
 
@@ -66,79 +74,81 @@ needs_bist_family = pytest.mark.skipif(
 
 
 # ---------------------------------------------------------------------------
-# Single-run scenarios that exercise the S1 clamp + pending-stash logic.
-# Each test pre-sets session_state and runs once, asserting on the final
-# session_state value. This isolates the test from AppTest's widget-cache
-# quirks while still verifying the production logic end-to-end.
+# Single-run scenarios that exercise main.py's last_page + pending stash.
 # ---------------------------------------------------------------------------
 
 
 @needs_bist_family
-def test_pair_analysis_survives_usd_basis():
-    """Pair Analysis exists on every BIST variant. With dataset=bist and
-    basis=usd, a stored `nav_page_bist=Pair Analysis` should be preserved
-    (it's in the new options, so no clamp fires)."""
-    at = AppTest.from_file(str(DASHBOARD_PATH))
-    at.session_state["dataset"] = "bist"
-    at.session_state["bist_basis"] = "usd"
-    at.session_state["nav_page_bist"] = "Pair Analysis"
-    at.run(timeout=APPTEST_TIMEOUT)
-    assert not at.exception, f"Render crashed: {list(at.exception)}"
-    assert at.session_state["nav_page_bist"] == "Pair Analysis", (
-        "Pair Analysis is in the bist_usd nav options; the value must "
-        "be preserved without clamping."
-    )
-
-
-@needs_bist_family
-def test_cross_market_clamps_to_default_when_eligibility_off():
-    """When dataset=bist and basis=usd (which has eligible_for_cross_market=
-    False), a stored `nav_page_bist=Cross-Market` is invalid. The clamp
-    should snap to the default AND stash the original value on the
-    `__pending` key for later restoration."""
-    at = AppTest.from_file(str(DASHBOARD_PATH))
-    at.session_state["dataset"] = "bist"
-    at.session_state["bist_basis"] = "usd"
-    at.session_state["nav_page_bist"] = "Cross-Market"
-    at.run(timeout=APPTEST_TIMEOUT)
-    assert not at.exception, f"Render crashed: {list(at.exception)}"
-    assert at.session_state["nav_page_bist"] == "Market Overview", (
-        "Cross-Market isn't available for bist_usd; clamp must snap to "
-        "Market Overview (the default for non-eligible universes)."
-    )
-    assert "nav_page_bist__pending" in at.session_state, (
-        "The stashed value must hold the user's original pick so a later "
-        "basis flip back to TRY can restore it."
-    )
-    assert at.session_state["nav_page_bist__pending"] == "Cross-Market"
-
-
-@needs_bist_family
-def test_pending_stash_restored_on_basis_round_trip():
-    """The full round-trip property: dataset=bist with basis=try, but the
-    session arrived here from a USD render that had clamped Cross-Market →
-    Market Overview and stashed Cross-Market on the pending key. On this
-    run (back to TRY), the clamp logic should detect the pending value IS
-    in the new options AND the stored value equals the default, and
-    restore the stash."""
-    at = AppTest.from_file(str(DASHBOARD_PATH))
+def test_main_renders_with_default_state():
+    """No prior state — main.py picks default page (first visible)."""
+    at = AppTest.from_file(str(MAIN_PATH))
     at.session_state["dataset"] = "bist"
     at.session_state["bist_basis"] = "try"
-    at.session_state["nav_page_bist"] = "Cross-Market"
-    # Simulate the state we'd be in after USD clamp had stashed:
-    # nav=Market Overview (clamp's default), pending=Cross-Market.
-    # Then user flipped basis back to TRY — options include Cross-Market
-    # again. The restore branch should fire.
-    at.session_state["nav_page_bist"] = "Cross-Market"  # default for TRY
-    at.session_state["nav_page_bist__pending"] = "Cross-Market"
     at.run(timeout=APPTEST_TIMEOUT)
     assert not at.exception, f"Render crashed: {list(at.exception)}"
-    # Since stored == default == pending, the restore branch fires and
-    # the pending key is cleared. (Net: nav stays at Cross-Market, but
-    # the pending stash is consumed.)
-    assert at.session_state["nav_page_bist"] == "Cross-Market"
-    assert "nav_page_bist__pending" not in at.session_state, (
-        "Pending stash must be cleared after restore."
+    # main.py writes `last_page_bist` to track active page; default is
+    # Cross-Market (first visible page on BIST TRY).
+    assert at.session_state["last_page_bist"] == "Cross-Market"
+
+
+@needs_bist_family
+def test_cross_market_stash_when_capability_drops():
+    """When the user is on Cross-Market AND we render in a basis where it
+    is hidden (`bist_usd` has `eligible_for_cross_market=False`), the
+    Phase S semantic stashes Cross-Market on `__pending` for round-trip
+    restore.
+
+    Test pattern: simulate the after-flip state — user was on Cross-Market
+    (i.e., `last_page_bist == "Cross-Market"` from a prior TRY render),
+    but the current render is `bist_usd`. main.py should:
+      1. Detect Cross-Market not in visible pages
+      2. Stash it on `last_page_bist__pending`
+      3. Streamlit redirects to the new default (Market Overview)
+    """
+    at = AppTest.from_file(str(MAIN_PATH))
+    at.session_state["dataset"] = "bist"
+    at.session_state["bist_basis"] = "usd"  # bist_usd hides Cross-Market
+    # Pre-set state as if the user just flipped from TRY (Cross-Market).
+    at.session_state["last_page_bist"] = "Cross-Market"
+    at.run(timeout=APPTEST_TIMEOUT)
+    assert not at.exception, f"Render crashed: {list(at.exception)}"
+    # Pending stash should hold the lost page for later restore.
+    assert "last_page_bist__pending" in at.session_state, (
+        "Cross-Market was lost when capability dropped; main.py should "
+        "stash it on `last_page_bist__pending` for round-trip restore."
+    )
+    assert at.session_state["last_page_bist__pending"] == "Cross-Market"
+
+
+@needs_bist_family
+def test_pending_stash_restored_on_round_trip():
+    """User round-tripped: was on Cross-Market under TRY, flipped to USD
+    (Cross-Market stashed), now flipping back to TRY. main.py should
+    detect the stash + visible page + auto-restore via `st.switch_page`.
+
+    AppTest can't easily verify the `switch_page` call (it raises a
+    NoReturn-like exception that aborts the current render), but we CAN
+    verify that the stash is CONSUMED (key removed from session_state)
+    when the conditions for restore are met.
+    """
+    at = AppTest.from_file(str(MAIN_PATH))
+    at.session_state["dataset"] = "bist"
+    at.session_state["bist_basis"] = "try"  # back to TRY → Cross-Market visible
+    # Simulate the post-USD-detour state: stash holds Cross-Market;
+    # last_page is the default (since Cross-Market was hidden during USD).
+    at.session_state["last_page_bist__pending"] = "Cross-Market"
+    at.session_state["last_page_bist"] = "Cross-Market"  # restored value
+    at.run(timeout=APPTEST_TIMEOUT)
+    # main.py's logic: if stash exists AND it's visible AND we're on the
+    # default, it `switch_page`s to the stash + pops the pending key.
+    # If main.py succeeded in restoring, the pending key is gone.
+    # (If `switch_page` actually ran, AppTest would show a switch in
+    # `at.main` — but the exact verifiable side-effect is the pending
+    # key consumption.)
+    assert not at.exception, f"Render crashed: {list(at.exception)}"
+    # Pending key should be cleared after a successful restore.
+    assert "last_page_bist__pending" not in at.session_state, (
+        "Pending stash should be consumed after restore."
     )
 
 
@@ -147,35 +157,35 @@ def test_pending_stash_dropped_when_user_navigated_away():
     """If the user navigates AWAY from the default after a clamp, the
     pending stash should be dropped on the next render (the user's intent
     has changed; they don't want the restore)."""
-    at = AppTest.from_file(str(DASHBOARD_PATH))
+    at = AppTest.from_file(str(MAIN_PATH))
     at.session_state["dataset"] = "bist"
     at.session_state["bist_basis"] = "try"
-    # User is on Pair Analysis, NOT on the default. There's a stale pending
-    # stash from a prior USD detour. Restoring it would override the user's
-    # current pick — drop it.
-    at.session_state["nav_page_bist"] = "Pair Analysis"
-    at.session_state["nav_page_bist__pending"] = "Cross-Market"
+    # User is on Pair Analysis (not default Cross-Market). Stale pending
+    # holds a prior USD detour's "Cross-Market" — main.py should drop it
+    # since the user has deliberately moved elsewhere.
+    at.session_state["last_page_bist"] = "Pair Analysis"
+    at.session_state["last_page_bist__pending"] = "Cross-Market"
     at.run(timeout=APPTEST_TIMEOUT)
     assert not at.exception, f"Render crashed: {list(at.exception)}"
-    assert at.session_state["nav_page_bist"] == "Pair Analysis", (
-        "User's current Pair Analysis pick must be preserved — the stale "
-        "pending stash must not override it."
-    )
-    assert "nav_page_bist__pending" not in at.session_state, (
-        "Stash should be dropped once the user moved away from the default."
+    # Stash should be dropped because the user is no longer on the default.
+    assert "last_page_bist__pending" not in at.session_state, (
+        "User navigated to Pair Analysis from the default → stale pending "
+        "stash for Cross-Market must be dropped (intent changed)."
     )
 
 
 @needs_bist_family
-def test_nav_options_is_tuple_for_identity_stability():
-    """Sanity: confirm the `_nav_options` is a tuple (not a list). Tuples
-    are immutable and identity-stable across reruns when content is
-    unchanged — important for Streamlit segmented_control widget stability."""
-    at = AppTest.from_file(str(DASHBOARD_PATH))
-    at.session_state["dataset"] = "bist"
-    at.session_state["bist_basis"] = "try"
+def test_last_page_namespaced_per_dataset():
+    """`last_page_{dataset}` keys are independent across datasets so a
+    BIST round-trip via S&P doesn't leak state."""
+    at = AppTest.from_file(str(MAIN_PATH))
+    at.session_state["dataset"] = "sp500"
+    # Pre-set BIST's last-page to non-default; rendering with dataset=sp500
+    # should NOT inherit BIST's value (different key).
+    at.session_state["last_page_bist"] = "Pair Analysis"
     at.run(timeout=APPTEST_TIMEOUT)
     assert not at.exception, f"Render crashed: {list(at.exception)}"
-    # The segmented_control should render with our expected options.
-    # AppTest exposes segmented_control via its tree; we just confirm the
-    # script ran without ValueError or shape mismatch.
+    # S&P key should be set to S&P's first visible page (Cross-Market).
+    assert at.session_state["last_page_sp500"] == "Cross-Market"
+    # BIST key untouched.
+    assert at.session_state["last_page_bist"] == "Pair Analysis"
