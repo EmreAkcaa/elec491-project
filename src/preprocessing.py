@@ -117,6 +117,70 @@ def flag_anomalies(
     return flagged.reset_index(drop=True)
 
 
+def _apply_split_back_adjust(
+    adj_close: pd.DataFrame,
+    ticker: str,
+    date_str: str,
+    ratio: float,
+) -> tuple[bool, dict]:
+    """Back-adjust pre-event prices for a single (ticker, date, ratio) entry.
+
+    Sign convention:
+      ratio > 0  →  missed-split case (yfinance failed to back-adjust).
+                    Pre-event prices were too HIGH; multiply by 1/ratio to
+                    lower them. E.g., CCOLA 2024-08-01 ratio=10.81 →
+                    pre-event prices /= 10.81.
+      ratio < 0  →  over-adjusted case (yfinance applied a phantom forward
+                    split). Pre-event prices were too LOW; multiply by
+                    |ratio| to raise them. E.g., HEKTS 2021-04-30
+                    ratio=-1.45 → pre-event prices *= 1.45.
+
+    Returns (applied: bool, audit_row: dict). On success, mutates `adj_close`
+    in place via direct .loc assignment (caller already passed a copy).
+    """
+    audit = {
+        "ticker": ticker,
+        "date": date_str,
+        "ratio": ratio,
+        "applied": False,
+        "pre_price": float("nan"),
+        "post_price": float("nan"),
+        "reason": "",
+    }
+    if ticker not in adj_close.columns:
+        audit["reason"] = "ticker_not_in_panel"
+        return False, audit
+    ts = pd.Timestamp(date_str)
+    if ts not in adj_close.index:
+        # Snap to next trading day if the literal date isn't an index entry
+        # (e.g., the user wrote a Saturday by accident).
+        nxt = adj_close.index[adj_close.index >= ts]
+        if len(nxt) == 0:
+            audit["reason"] = "date_after_panel_end"
+            return False, audit
+        ts = nxt[0]
+        audit["date"] = ts.strftime("%Y-%m-%d")
+    pos = adj_close.index.get_loc(ts)
+    if pos == 0:
+        audit["reason"] = "event_on_first_day"
+        return False, audit
+    idx_prior = adj_close.index[pos - 1]
+    audit["pre_price"] = float(adj_close.loc[idx_prior, ticker])
+    audit["post_price"] = float(adj_close.loc[ts, ticker])
+
+    if ratio > 0:
+        adj_close.loc[:idx_prior, ticker] = adj_close.loc[:idx_prior, ticker] / ratio
+    elif ratio < 0:
+        adj_close.loc[:idx_prior, ticker] = adj_close.loc[:idx_prior, ticker] * abs(ratio)
+    else:
+        audit["reason"] = "zero_ratio"
+        return False, audit
+
+    audit["applied"] = True
+    audit["reason"] = "ok"
+    return True, audit
+
+
 def run_preprocessing(config: PipelineConfig) -> None:
     """Full preprocessing pipeline step."""
     logger.info("=== Preprocessing ===")
@@ -128,21 +192,81 @@ def run_preprocessing(config: PipelineConfig) -> None:
     filtered_adj, filtered_raw, coverage = filter_by_coverage(
         adj_close, raw_close, threshold=config.preprocessing.min_coverage_pct
     )
-
-    # Log returns
-    log_returns = compute_log_returns(filtered_adj)
+    # `filter_by_coverage` returns a view/slice; promote to a true copy
+    # so `_apply_split_back_adjust`'s in-place .loc assignments don't
+    # trigger pandas' SettingWithCopyWarning.
+    filtered_adj = filtered_adj.copy()
 
     # Apply manual anomaly nulls (mask known unhandled corporate actions that
-    # yfinance Adj-Close failed to back-adjust). Each entry is [ticker, "YYYY-MM-DD"];
-    # the (ticker, date) cell is set to NaN. Missing tickers/dates are logged but
-    # do not raise. Runs *before* flag_anomalies so the artifact reflects the
-    # corrected panel.
+    # yfinance Adj-Close failed to back-adjust). The schema supports two
+    # shapes per entry:
+    #
+    #   2-tuple [ticker, "YYYY-MM-DD"]:
+    #       null only the log_returns cell. Leaves the cliff in adj_close.
+    #       (Legacy behavior — `compute_spread` and other consumers that
+    #        read np.log(adj_close) directly still see the discontinuity.)
+    #
+    #   3-tuple [ticker, "YYYY-MM-DD", ratio]:
+    #       ALSO back-adjust adj_close BEFORE log returns are computed.
+    #       Sign convention:
+    #         ratio > 0   missed-split case   (pre-event /= ratio)
+    #         ratio < 0   over-adjusted case  (pre-event *= |ratio|)
+    #       The log_returns cell is still nulled defensively in case the
+    #       back-adjustment leaves a tiny residual that crosses the
+    #       anomaly threshold.
+    #
+    # Runs BEFORE compute_log_returns so downstream consumers of
+    # `adj_close.parquet` (pair_dislocation.compute_spread,
+    # snn_signals.build_input_features, dashboard Pair Analysis Spread tab)
+    # see a continuous price series.
+    audit_rows: list[dict] = []
+    if config.preprocessing.manual_anomaly_nulls:
+        # Stage 1: back-adjust adj_close for any 3-tuple entry.
+        adjusted_3tuples = 0
+        for entry in config.preprocessing.manual_anomaly_nulls:
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 3):
+                continue
+            try:
+                ticker, date_str, ratio = entry
+                ok, audit = _apply_split_back_adjust(
+                    filtered_adj, ticker, str(date_str), float(ratio),
+                )
+                audit_rows.append(audit)
+                if ok:
+                    adjusted_3tuples += 1
+                else:
+                    logger.warning(
+                        "manual_anomaly_nulls back-adjust failed (%s, %s, ratio=%s): %s",
+                        ticker, date_str, ratio, audit["reason"],
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "manual_anomaly_nulls back-adjust invalid entry %r: %s",
+                    entry, exc,
+                )
+        if adjusted_3tuples:
+            logger.info(
+                "Back-adjusted adj_close for %d corporate-action event(s) "
+                "(3-tuple manual_anomaly_nulls entries)", adjusted_3tuples,
+            )
+
+    # Log returns — now computed off the back-adjusted adj_close so
+    # 3-tuple events produce a clean log return for the event date.
+    log_returns = compute_log_returns(filtered_adj)
+
+    # Stage 2: null the log_returns cell for every manual_anomaly_nulls
+    # entry (defense-in-depth — back-adjusted entries should already produce
+    # a clean small log return at the event date, but the null is a
+    # belt-and-suspenders guarantee against floating-point residuals).
     if config.preprocessing.manual_anomaly_nulls:
         applied = 0
         skipped = 0
         for entry in config.preprocessing.manual_anomaly_nulls:
             try:
-                ticker, date_str = entry
+                if isinstance(entry, (list, tuple)) and len(entry) == 3:
+                    ticker, date_str, _ratio = entry
+                else:
+                    ticker, date_str = entry
                 ts = pd.Timestamp(date_str)
                 if ticker in log_returns.columns and ts in log_returns.index:
                     log_returns.loc[ts, ticker] = np.nan
@@ -160,6 +284,15 @@ def run_preprocessing(config: PipelineConfig) -> None:
                 skipped += 1
         logger.info(
             "Applied %d manual anomaly nulls (%d skipped)", applied, skipped,
+        )
+
+    # Audit log for 3-tuple entries. One row per attempt with applied/reason.
+    if audit_rows:
+        audit_df = pd.DataFrame(audit_rows)
+        audit_path = config.data_processed / "applied_split_adjustments.csv"
+        audit_df.to_csv(audit_path, index=False)
+        logger.info(
+            "Wrote %d-row audit log → %s", len(audit_df), audit_path.name,
         )
 
     # Anomaly detection

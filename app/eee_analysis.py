@@ -997,11 +997,15 @@ def render_snn(sector_map: dict, *, u=None):
             use_container_width=True,
             height=320,
             column_config={
-                "macro_f1": st.column_config.NumberColumn("F1", format="%.3f"),
-                "snn_sharpe": st.column_config.NumberColumn("SNN Sh", format="%+.2f"),
-                "classical_sharpe": st.column_config.NumberColumn("Cls Sh", format="%+.2f"),
-                "delta_sharpe": st.column_config.NumberColumn("Δ Sh", format="%+.2f"),
-                "snn_hit_rate": st.column_config.NumberColumn("Hit %", format="%.2f"),
+                "pair":               st.column_config.TextColumn("Pair"),
+                "macro_f1":           st.column_config.NumberColumn("F1", format="%.3f"),
+                "snn_sharpe":         st.column_config.NumberColumn("SNN Sharpe", format="%+.2f"),
+                "classical_sharpe":   st.column_config.NumberColumn("Classical Sharpe", format="%+.2f"),
+                "delta_sharpe":       st.column_config.NumberColumn("Δ Sharpe", format="%+.2f"),
+                "snn_hit_rate":       st.column_config.NumberColumn("Hit %", format="%.2f"),
+                "snn_n_trades":       st.column_config.NumberColumn("SNN trades"),
+                "classical_n_trades": st.column_config.NumberColumn("Classical trades"),
+                "n_test":             st.column_config.NumberColumn("Test obs"),
             },
         )
 

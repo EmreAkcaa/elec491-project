@@ -834,8 +834,10 @@ def _render_tab_data_stats(
                       disp.sort_values("abs_return", ascending=False),
                       use_container_width=True, hide_index=True, height=320,
                       column_config={
-                          "return_value": st.column_config.NumberColumn(format="%.4f"),
-                          "abs_return": st.column_config.NumberColumn("|return|", format="%.4f"),
+                          "date":         st.column_config.TextColumn("Date"),
+                          "ticker":       st.column_config.TextColumn("Ticker"),
+                          "return_value": st.column_config.NumberColumn("Return", format="%.4f"),
+                          "abs_return":   st.column_config.NumberColumn("|Return|", format="%.4f"),
                       },
                   )
 
@@ -1432,11 +1434,26 @@ def _render_tab_pairs(
             # `_goto_pair_analysis` was fragile across reruns) and the
             # selectbox added clicks. Users who want to deep-dive a pair
             # type its name directly in the Pair Analysis page.
+            # Labels on every column so the table doesn't render raw
+            # underscored names (`ticker_1`, `sector_2`, etc.).
+            _pairs_column_config = {
+                "ticker_1":    st.column_config.TextColumn("Ticker A"),
+                "ticker_2":    st.column_config.TextColumn("Ticker B"),
+                "sector_1":    st.column_config.TextColumn("Sector A"),
+                "sector_2":    st.column_config.TextColumn("Sector B"),
+                "correlation": st.column_config.NumberColumn("ρ", format="%.4f"),
+            }
             tab_top, tab_bottom = st.tabs(["Most Correlated", "Least Correlated"])
             with tab_top:
-                st.dataframe(top_pairs, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    top_pairs, use_container_width=True, hide_index=True,
+                    column_config=_pairs_column_config,
+                )
             with tab_bottom:
-                st.dataframe(bottom_pairs, use_container_width=True, hide_index=True)
+                st.dataframe(
+                    bottom_pairs, use_container_width=True, hide_index=True,
+                    column_config=_pairs_column_config,
+                )
 
         with col_dist:
             # `corr` used to be set as a script-level global inside
@@ -1494,16 +1511,25 @@ def _render_tab_pairs(
             # The dataframe itself is sortable; users pick by sorting the
             # `rank_score` / `current_zscore` columns and typing the ticker
             # pair in Pair Analysis directly.
+            # All columns labeled to avoid raw underscored headers
+            # (`ticker_a`, `sector_b`, `n_signals` etc.) rendering as
+            # demo-day eyesores. Labels mirror what the user sees in
+            # Pair Analysis + top_bottom_pairs.
             st.dataframe(
                 _disp_cands,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "correlation": st.column_config.NumberColumn(format="%.4f"),
-                    "beta": st.column_config.NumberColumn(format="%.4f"),
-                    "half_life": st.column_config.NumberColumn("Half-Life (days)", format="%.1f"),
+                    "ticker_a":       st.column_config.TextColumn("Ticker A"),
+                    "ticker_b":       st.column_config.TextColumn("Ticker B"),
+                    "sector_a":       st.column_config.TextColumn("Sector A"),
+                    "sector_b":       st.column_config.TextColumn("Sector B"),
+                    "correlation":    st.column_config.NumberColumn("ρ", format="%.4f"),
+                    "beta":           st.column_config.NumberColumn("β", format="%.4f"),
+                    "half_life":      st.column_config.NumberColumn("Half-life (days)", format="%.1f"),
                     "current_zscore": st.column_config.NumberColumn("Current Z", format="%.3f"),
-                    "rank_score": st.column_config.NumberColumn("Score", format="%.4f"),
+                    "n_signals":      st.column_config.NumberColumn("Signals"),
+                    "rank_score":     st.column_config.NumberColumn("Score", format="%.4f"),
                 },
             )
         else:
