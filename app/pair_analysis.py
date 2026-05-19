@@ -408,11 +408,23 @@ def render(
                 _cols = ["ticker", "annualized_return", "annualized_vol",
                          "skewness", "kurtosis", "min_return", "max_return"]
                 _sub = _summary[_summary["ticker"].isin([ticker_a, ticker_b])][_cols].copy()
-                for _c in ["annualized_return", "annualized_vol", "min_return", "max_return"]:
+                # Rename to human-readable headers so the table doesn't
+                # render raw underscored names like "annualized_return".
+                _sub = _sub.rename(columns={
+                    "ticker":            "Ticker",
+                    "annualized_return": "Annualized return",
+                    "annualized_vol":    "Annualized volatility",
+                    "skewness":          "Skewness",
+                    "kurtosis":          "Excess kurtosis",
+                    "min_return":        "Worst daily log return",
+                    "max_return":        "Best daily log return",
+                })
+                for _c in ["Annualized return", "Annualized volatility",
+                           "Worst daily log return", "Best daily log return"]:
                     _sub[_c] = _sub[_c].map(lambda v: f"{v:.4f}")
-                for _c in ["skewness", "kurtosis"]:
+                for _c in ["Skewness", "Excess kurtosis"]:
                     _sub[_c] = _sub[_c].map(lambda v: f"{v:.2f}")
-                st.dataframe(_sub.set_index("ticker"), use_container_width=True)
+                st.dataframe(_sub.set_index("Ticker"), use_container_width=True)
             except Exception:
                 pass
 
@@ -801,7 +813,14 @@ def render(
                             _disp = _window_signals.copy()
                             _disp["date"] = pd.to_datetime(_disp["date"]).dt.strftime("%Y-%m-%d")
                             _disp["zscore_value"] = _disp["zscore_value"].map(lambda v: f"{v:.4f}")
-                            st.dataframe(_disp, hide_index=True, use_container_width=True)
+                            st.dataframe(
+                                _disp, hide_index=True, use_container_width=True,
+                                column_config={
+                                    "date":         st.column_config.TextColumn("Date"),
+                                    "signal":       st.column_config.TextColumn("Signal"),
+                                    "zscore_value": st.column_config.TextColumn("Z-score"),
+                                },
+                            )
                 else:
                     st.warning("Not enough data to compute Z-score for the selected window.")
 

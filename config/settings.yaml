@@ -16,13 +16,27 @@ preprocessing:
   anomaly_return_threshold: 0.30
   forward_fill: false
   # Unhandled yfinance Adj-Close back-adjustment failures on Borsa Istanbul.
-  # Each (ticker, date) cell in log_returns is set to NaN before anomaly
-  # detection runs. Audited 2026-05-17 by inspecting pre/post prices.
+  # Schema (per entry):
+  #   2-tuple [ticker, "YYYY-MM-DD"]
+  #       Null only the log_returns cell. Leaves the cliff in adj_close.
+  #       (Legacy behavior — `compute_spread` reading np.log(adj_close)
+  #        still sees the discontinuity.)
+  #   3-tuple [ticker, "YYYY-MM-DD", ratio]
+  #       ALSO back-adjust adj_close BEFORE compute_log_returns runs.
+  #         ratio > 0   missed-split case   (pre-event /= ratio)
+  #         ratio < 0   over-adjusted case  (pre-event *= |ratio|)
+  #       Closes the demo-day risk in Pair Analysis Spread/Z-score (was
+  #       showing ~6σ Z-score spike on CCOLA pairs for 3-4 months
+  #       following the split). Audit log written to
+  #       data/<market>/processed/applied_split_adjustments.csv.
+  #
+  # All four entries below upgraded to 3-tuples on 2026-05-19.
+  # Ratios derived from the documented Close jumps in the comments.
   manual_anomaly_nulls:
-    - ["CCOLA", "2024-08-01"]   # 828.44 -> 76.65 (10.81x bonus issue)
-    - ["HEKTS", "2024-09-09"]   # 11.76 -> 4.13 (2.84x bonus issue)
-    - ["HEKTS", "2021-04-30"]   # 1.62 -> 2.33 (1.45x bonus issue, opposite sign)
-    - ["AYGAZ", "2022-09-01"]   # 21.18 -> 36.54 (1.72x bonus issue, opposite sign)
+    - ["CCOLA", "2024-08-01", 10.81]   # 828.44 -> 76.65 (10.81x bonus issue)
+    - ["HEKTS", "2024-09-09", 2.84]    # 11.76 -> 4.13 (2.84x bonus issue)
+    - ["HEKTS", "2021-04-30", -1.45]   # 1.62 -> 2.33 (1.45x bonus, opposite sign — over-adjusted)
+    - ["AYGAZ", "2022-09-01", -1.72]   # 21.18 -> 36.54 (1.72x bonus, opposite sign — over-adjusted)
 
 analysis:
   correlation_method: "pearson"
