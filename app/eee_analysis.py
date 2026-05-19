@@ -355,93 +355,92 @@ def render_rmt(sector_map: dict, *, u=None):
         c3.metric("MP Upper Bound", f"{mp_upper:.3f}")
         c4.metric("Variance Explained (Signal)", f"{spectrum.loc[spectrum['is_signal'], 'explained_variance_pct'].sum():.1f}%")
 
-        col_spec, col_mst = st.columns(2)
+        # Eigenvalue spectrum — full-width row.
+        colors = get_colors()
+        fig_spec = go.Figure()
 
-        with col_spec:
-            # Eigenvalue spectrum plot
-            colors = get_colors()
-            fig_spec = go.Figure()
+        # MP noise band
+        fig_spec.add_hrect(
+            y0=mp_lower, y1=mp_upper,
+            fillcolor="rgba(230,57,70,0.12)", line_width=0,
+            annotation_text="MP Noise Band", annotation_position="top right",
+            annotation_font_size=10,
+        )
 
-            # MP noise band
-            fig_spec.add_hrect(
-                y0=mp_lower, y1=mp_upper,
-                fillcolor="rgba(230,57,70,0.12)", line_width=0,
-                annotation_text="MP Noise Band", annotation_position="top right",
-                annotation_font_size=10,
+        # Eigenvalues as bar chart
+        bar_colors = [colors["primary"] if s else colors["muted"]
+                      for s in spectrum["is_signal"]]
+        fig_spec.add_trace(go.Bar(
+            x=list(range(1, len(spectrum) + 1)),
+            y=spectrum["eigenvalue"].values,
+            marker_color=bar_colors,
+            hovertemplate="Eigenvalue #%{x}: %{y:.3f}<extra></extra>",
+        ))
+
+        fig_spec.add_hline(y=mp_upper, line_dash="dash", line_color="#E63946",
+                           annotation_text=f"MP upper = {mp_upper:.3f}",
+                           annotation_font_size=10)
+        apply_chart_style(fig_spec, height=600,
+                          xaxis_title="Eigenvalue Index",
+                          yaxis_title="Eigenvalue",
+                          yaxis_type="log",
+                          showlegend=False)
+        render_chart(fig_spec, chart_id="rmt_spectrum", filename_base="eigenvalue_spectrum",
+                     title_key="rmt_spectrum", default_title="Eigenvalue Spectrum vs MP Bounds")
+
+        # MST network — full-width row below the spectrum.
+        raw_edges = load_mst_edges()
+        denoised_edges = load_denoised_mst_edges()
+
+        mst_choice = st.radio("MST View", ["Raw", "Denoised", "Both (overlay)"],
+                              horizontal=True, key="rmt_mst_view")
+
+        if mst_choice == "Raw":
+            metrics_df = load_mst_metrics()
+            fig = _plot_network(
+                raw_edges, sector_map,
+                edge_weight_col="distance",
+                node_metrics=metrics_df,
+                sector_node_label=_sector_label(u),
+                layout_source="main_mst",
+            )
+        else:
+            metrics_df = load_denoised_mst_metrics()
+            fig = _plot_network(
+                denoised_edges, sector_map,
+                edge_weight_col="distance",
+                node_metrics=metrics_df,
+                sector_node_label=_sector_label(u),
+                layout_source="denoised_mst",
             )
 
-            # Eigenvalues as bar chart
-            bar_colors = [colors["primary"] if s else colors["muted"]
-                          for s in spectrum["is_signal"]]
-            fig_spec.add_trace(go.Bar(
-                x=list(range(1, len(spectrum) + 1)),
-                y=spectrum["eigenvalue"].values,
-                marker_color=bar_colors,
-                hovertemplate="Eigenvalue #%{x}: %{y:.3f}<extra></extra>",
-            ))
-
-            fig_spec.add_hline(y=mp_upper, line_dash="dash", line_color="#E63946",
-                               annotation_text=f"MP upper = {mp_upper:.3f}",
-                               annotation_font_size=10)
-            apply_chart_style(fig_spec, height=420,
-                              xaxis_title="Eigenvalue Index",
-                              yaxis_title="Eigenvalue",
-                              yaxis_type="log",
-                              showlegend=False)
-            render_chart(fig_spec, chart_id="rmt_spectrum", filename_base="eigenvalue_spectrum",
-                         title_key="rmt_spectrum", default_title="Eigenvalue Spectrum vs MP Bounds")
-
-        with col_mst:
-            # Side-by-side MST comparison
-            raw_edges = load_mst_edges()
-            denoised_edges = load_denoised_mst_edges()
-
-            mst_choice = st.radio("MST View", ["Raw", "Denoised", "Both (overlay)"],
-                                  horizontal=True, key="rmt_mst_view")
-
-            if mst_choice == "Raw":
-                metrics_df = load_mst_metrics()
-                fig = _plot_network(
-                    raw_edges, sector_map,
-                    edge_weight_col="distance",
-                    node_metrics=metrics_df,
-                    sector_node_label=_sector_label(u),
-                    layout_source="main_mst",
-                )
-            else:
-                metrics_df = load_denoised_mst_metrics()
-                fig = _plot_network(
-                    denoised_edges, sector_map,
-                    edge_weight_col="distance",
-                    node_metrics=metrics_df,
-                    sector_node_label=_sector_label(u),
-                    layout_source="denoised_mst",
-                )
-
-            render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
-                         title_key="rmt_mst",
-                         default_title=f"MST Network ({mst_choice}, nodes sized by betweenness)")
-            # Sprint 2 PR-I: subtitle clarifies what this MST is vs the
-            # Clustering & Network tab's raw MST and the Wavelet per-scale MSTs.
-            if mst_choice == "Raw":
-                st.caption(
-                    "Raw MST on Pearson correlation distance — same metric as "
-                    "**Clustering & Network → MST**. Toggle 'Denoised' to see "
-                    "the RMT-cleaned version."
-                )
-            elif mst_choice == "Denoised":
-                st.caption(
-                    "Built on the **denoised** correlation matrix — noise "
-                    "eigenvalues (inside the Marchenko–Pastur band) replaced "
-                    "by their mean before reconstruction. Signal-only network "
-                    "backbone."
-                )
-            else:  # "Both (overlay)"
-                st.caption(
-                    "Raw and Denoised MSTs overlaid on the same Kamada-Kawai "
-                    "layout — edges that survive denoising are the structurally "
-                    "meaningful ones."
-                )
+        # Override the helper's default height — full-width row gets more
+        # real estate than the old [50/50] split could allocate.
+        fig.update_layout(height=700)
+        render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
+                     title_key="rmt_mst",
+                     default_title=f"MST Network ({mst_choice}, nodes sized by betweenness)")
+        # Subtitle clarifies what this MST is vs the Clustering & Network
+        # tab's raw MST and the Wavelet per-scale MSTs.
+        if mst_choice == "Raw":
+            st.caption(
+                "Raw MST on Pearson correlation distance — same metric as "
+                "**Clustering & Network → MST**. Toggle 'Denoised' to see "
+                "the RMT-cleaned version."
+            )
+        elif mst_choice == "Denoised":
+            st.caption(
+                "Built on the **denoised** correlation matrix — noise "
+                "eigenvalues (inside the Marchenko–Pastur band) replaced "
+                "by their mean before reconstruction. Signal-only network "
+                "backbone."
+            )
+        else:  # "Both (overlay)"
+            st.caption(
+                "Raw and Denoised MSTs overlaid on the same Kamada-Kawai "
+                "layout — edges that survive denoising are the structurally "
+                "meaningful ones."
+            )
 
         # Denoised correlation heatmap (full width)
         st.markdown("**Denoised Correlation Matrix** — eigenvalues outside the MP band reconstructed; noise eigenvalues replaced with their mean.")

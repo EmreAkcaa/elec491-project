@@ -41,9 +41,11 @@ from src.analysis import compute_distance_matrix
 from src.rolling_correlation import compute_window_correlation
 
 from utils import (
+    SECTOR_PALETTE,
     apply_chart_style,
     current_universe,
     get_colors,
+    load_cluster_assignments,
     load_dendrogram_order,
     load_mst_edges,
     load_pit_dislocation_snapshot,
@@ -167,11 +169,38 @@ def _render_mst(
     *,
     chart_id: str,
     default_title: str,
+    sector_map: dict[str, str] | None = None,
 ) -> None:
-    """Render an MST given its edges + layout. Renders nothing for empty input."""
+    """Render an MST given its edges + layout.
+
+    Nodes are sized by degree (computed from ``edges``) and coloured by
+    sector (looked up in ``sector_map``); a per-sector legend is rendered
+    on the upper-left, matching the Market Overview MST and the Methods
+    Lab RMT MST.
+    """
     if not edges or not pos:
         st.info("No MST data available for this snapshot.")
         return
+
+    sector_map = sector_map or {}
+
+    # Degree per node = how many MST edges touch it.
+    degree_map: dict[str, int] = {}
+    for u, v, _w in edges:
+        degree_map[u] = degree_map.get(u, 0) + 1
+        degree_map[v] = degree_map.get(v, 0) + 1
+
+    # Sector → colour: same SECTOR_PALETTE cycle as the other MST views.
+    _seen_sectors: list[str] = []
+    for n in pos.keys():
+        sec = sector_map.get(n)
+        if not sec or (isinstance(sec, float) and pd.isna(sec)):
+            continue
+        if sec not in _seen_sectors:
+            _seen_sectors.append(sec)
+    sector_colors = {
+        s: SECTOR_PALETTE[i % len(SECTOR_PALETTE)] for i, s in enumerate(sorted(_seen_sectors))
+    }
 
     edge_x: list[float] = []
     edge_y: list[float] = []
@@ -184,30 +213,53 @@ def _render_mst(
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=edge_x, y=edge_y, mode="lines",
-        line=dict(width=0.6, color="#A0A8B8"),
+        line=dict(width=1.4, color="#A0A8B8"),
         hoverinfo="skip", showlegend=False,
     ))
     nodes = list(pos.keys())
     node_x = [pos[n][0] for n in nodes]
     node_y = [pos[n][1] for n in nodes]
+    node_color = [
+        sector_colors.get(sector_map.get(n, ""), get_colors()["muted"])
+        for n in nodes
+    ]
+    # Size scales with degree, matching Market Overview MST's `14 + degree*6`.
+    node_size = [14 + degree_map.get(n, 1) * 6 for n in nodes]
+    node_hover = [
+        f"<b>{n}</b><br>Sector: {sector_map.get(n, 'Unknown')}<br>Degree: {degree_map.get(n, 0)}"
+        for n in nodes
+    ]
     fig.add_trace(go.Scatter(
         x=node_x, y=node_y, mode="markers+text",
         text=nodes,
         textposition="top center",
-        textfont=dict(size=7, color="#2B2D42"),
+        textfont=dict(size=8, color="#2B2D42"),
         marker=dict(
-            size=9, color=get_colors()["primary"],
-            line=dict(width=0.5, color="white"),
+            size=node_size, color=node_color,
+            line=dict(width=1.5, color="white"),
         ),
-        hovertext=nodes, hoverinfo="text",
+        hovertext=node_hover, hoverinfo="text",
         showlegend=False,
     ))
+    # Legend entries — one invisible scatter per sector.
+    for sec in sorted(_seen_sectors):
+        fig.add_trace(go.Scatter(
+            x=[None], y=[None], mode="markers",
+            marker=dict(size=10, color=sector_colors[sec]),
+            name=sec, showlegend=True,
+        ))
+
     apply_chart_style(
-        fig, height=620,
+        fig, height=700,
         margin=dict(l=10, r=10, t=10, b=10),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
                    scaleanchor="x", scaleratio=1),
+        showlegend=bool(_seen_sectors),
+        legend=dict(font=dict(size=9), orientation="v",
+                    yanchor="top", y=0.99, xanchor="left", x=0.01,
+                    bgcolor="rgba(255,255,255,0.85)", borderwidth=1,
+                    bordercolor="#e2e6ee"),
     )
     render_chart(
         fig, chart_id=chart_id, filename_base=chart_id,
@@ -260,6 +312,33 @@ def render(
     )
 
     # ── Master controls ─────────────────────────────────────────────────
+    # Quick-jump presets — user can pick a crisis event and the date input
+    # snaps to it. Setting the date via the preset is a one-time write to
+    # session_state; subsequent manual edits of the date input override it.
+    _CRISIS_PRESETS: dict[str, str] = {
+        "— pick a date manually —": "",
+        "COVID-19 selloff (2020-03-12)": "2020-03-12",
+        "Russia–Ukraine war (2022-02-24)": "2022-02-24",
+        "Türkiye earthquakes (2023-02-15)": "2023-02-15",
+    }
+    _preset_choice = st.selectbox(
+        "Quick-jump to crisis event",
+        list(_CRISIS_PRESETS.keys()),
+        index=0,
+        key="tm_crisis_preset",
+        help="Pre-fill the snapshot date with a known stress event. "
+             "Adjust the date input below freely afterwards.",
+    )
+    _preset_iso = _CRISIS_PRESETS[_preset_choice]
+    if _preset_iso and st.session_state.get("tm_crisis_preset_applied") != _preset_iso:
+        try:
+            _preset_date = pd.Timestamp(_preset_iso).date()
+            if _date_min <= _preset_date <= _date_max:
+                st.session_state["tm_date"] = _preset_date
+                st.session_state["tm_crisis_preset_applied"] = _preset_iso
+        except (ValueError, TypeError):
+            pass
+
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         picked_date = st.date_input(
@@ -270,10 +349,18 @@ def render(
             key="tm_date",
         )
     with c2:
-        window = int(st.selectbox(
+        # Window picker — accepts any value in [30, 504] so users can tune
+        # the rolling-correlation window beyond the precomputed grid. The
+        # precomputed snapshot fast-path only triggers at window=252 +
+        # pearson on BIST/S&P; off-grid values fall back to live compute
+        # (a caption below tells the user which path ran).
+        window = int(st.number_input(
             "Window (days)" if _active.domain == "finance" else "Window (samples)",
-            [60, 120, 252], index=2, key="tm_window",
-            help="Trading-day window for the rolling correlation snapshot.",
+            min_value=30, max_value=504, value=252, step=1,
+            key="tm_window_dyn",
+            help="Trading-day window for the rolling correlation snapshot. "
+                 "Window=252 + Pearson hits the precomputed grid (instant); "
+                 "other values compute live (~50-500 ms on S&P).",
         ))
     with c3:
         method = st.selectbox(
@@ -415,6 +502,14 @@ def render(
             "Toggle to compare against the full-period MST.",
         )
 
+        # Sector map for node coloring — sourced from cluster_assignments so
+        # we get the same ticker → sector mapping every other MST view uses.
+        _cluster_df = load_cluster_assignments()
+        if not _cluster_df.empty and "sector" in _cluster_df.columns:
+            _sector_map = dict(zip(_cluster_df["ticker"], _cluster_df["sector"]))
+        else:
+            _sector_map = {}
+
         build_pit_mst = st.toggle(
             "MST from this snapshot (vs full-period MST)",
             value=True,
@@ -451,6 +546,7 @@ def render(
                     f"PIT MST @ {snap_date.strftime('%Y-%m-%d')} "
                     f"({len(edges)} edges, {len(pos)} nodes)"
                 ),
+                sector_map=_sector_map,
             )
         else:
             # Full-period MST from precomputed artifacts.
@@ -489,6 +585,7 @@ def render(
                     default_title=(
                         f"Full-period MST ({len(_fp_edges)} edges, {len(fp_pos)} nodes)"
                     ),
+                    sector_map=_sector_map,
                 )
 
     # ── Section 3: Top dislocations at this date ────────────────────────

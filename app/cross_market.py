@@ -40,6 +40,7 @@ from utils import (
     # universe-keyed underscored loaders — used directly so we can pass
     # explicit universe keys instead of going through current_universe()
     _load_eigenvalue_spectrum,
+    _load_log_returns,
     _load_mst_edges,
     _load_mst_metrics,
     _load_cluster_assignments,
@@ -54,10 +55,13 @@ from universe_registry import UNIVERSES, get_universe, available_universes
 _BIST_COLOR  = "#E63946"   # red — matches the project's "secondary" palette
 _SP500_COLOR = "#4361EE"   # blue — matches the project's "primary" palette
 
-_CRISIS_EVENTS = [
-    ("2020-03-11", "COVID-19 WHO declaration", "Global shock; visible on both."),
-    ("2022-02-24", "Russia-Ukraine war",      "Global shock; visible on both."),
-    ("2023-02-06", "Türkiye earthquakes",     "Local shock; expected only on BIST."),
+# Default events pre-filled into the editable crisis-windows table. The user
+# can add, remove, or edit any row (including these defaults) via the
+# st.data_editor in the Crisis windows section.
+_DEFAULT_CRISIS_EVENTS: list[tuple[str, str, int]] = [
+    ("2020-03-11", "COVID-19 WHO declaration", 60),
+    ("2022-02-24", "Russia-Ukraine war",       60),
+    ("2023-02-06", "Türkiye earthquakes",      60),
 ]
 
 
@@ -231,23 +235,83 @@ def _mst_fig(
     return fig
 
 
-def _crisis_fig(comp_df: pd.DataFrame) -> go.Figure:
-    """Grouped bar chart: avg pairwise correlation (before/during/after) per crisis × universe."""
+@st.cache_data(show_spinner=False)
+def _avg_pairwise_corr(_returns: pd.DataFrame, cache_key: str,
+                       start_iso: str, end_iso: str) -> float | None:
+    """Mean upper-triangle pairwise correlation in [start, end] (inclusive).
+
+    Underscored ``_returns`` is excluded from Streamlit's hash; identity is
+    driven by ``cache_key`` (encodes universe + endpoints), so repeated
+    (universe, date_range) requests across re-renders hit the cache.
+    Returns None when there's too little data for a stable estimate.
+    """
+    sl = _returns.loc[start_iso:end_iso]
+    if sl.shape[0] < 5 or sl.shape[1] < 2:
+        return None
+    corr = sl.corr()
+    mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
+    vals = corr.values[mask]
+    vals = vals[np.isfinite(vals)]
+    if not vals.size:
+        return None
+    return float(np.mean(vals))
+
+
+def _crisis_fig_live(
+    events_df: pd.DataFrame,
+    returns_bist: pd.DataFrame,
+    returns_sp: pd.DataFrame,
+) -> go.Figure:
+    """Grouped bar chart: live-computed avg pairwise correlation (before/
+    during/after) per user-defined event × universe.
+
+    Phase windows for an event at ``date`` with window ``W`` days:
+      - before: [date - W, date - 1]
+      - during: [date, date + W - 1]
+      - after:  [date + W, date + 2*W - 1]
+    """
     phases = ["before", "during", "after"]
     rows: list[dict] = []
-    for date, label, _note in _CRISIS_EVENTS:
-        for phase in phases:
-            row_key = f"{date}_{phase}"
-            rows.append({
-                "Event": f"{label}\n{date}",
-                "Phase": phase.capitalize(),
-                "BIST":  _get(comp_df, row_key, "BIST"),
-                "S&P-500": _get(comp_df, row_key, "S&P-500"),
-            })
-    long_df = pd.DataFrame(rows)
+    for _, ev in events_df.iterrows():
+        try:
+            ev_date = pd.Timestamp(ev["date"])
+        except (ValueError, TypeError):
+            continue
+        if pd.isna(ev_date):
+            continue
+        try:
+            W = int(ev["window_days"])
+        except (ValueError, TypeError):
+            W = 60
+        if W < 2:
+            W = 2
+        label = str(ev.get("label", "")) or ev_date.strftime("%Y-%m-%d")
 
+        phase_ranges = {
+            "before": (ev_date - pd.Timedelta(days=W),     ev_date - pd.Timedelta(days=1)),
+            "during": (ev_date,                            ev_date + pd.Timedelta(days=W - 1)),
+            "after":  (ev_date + pd.Timedelta(days=W),     ev_date + pd.Timedelta(days=2 * W - 1)),
+        }
+        x_event_label = f"{label}\n{ev_date.strftime('%Y-%m-%d')} (±{W}d)"
+        for phase in phases:
+            s, e = phase_ranges[phase]
+            s_iso, e_iso = s.isoformat(), e.isoformat()
+            ck_bist = f"bist:{s_iso}:{e_iso}"
+            ck_sp   = f"sp500:{s_iso}:{e_iso}"
+            rows.append({
+                "Event":   x_event_label,
+                "Phase":   phase.capitalize(),
+                "BIST":    _avg_pairwise_corr(returns_bist, ck_bist, s_iso, e_iso),
+                "S&P-500": _avg_pairwise_corr(returns_sp,   ck_sp,   s_iso, e_iso),
+            })
+
+    if not rows:
+        fig = go.Figure()
+        apply_chart_style(fig, height=420, yaxis_title="Avg pairwise correlation")
+        return fig
+
+    long_df = pd.DataFrame(rows)
     fig = go.Figure()
-    # Two grouped bars per (event,phase): BIST and S&P
     fig.add_trace(go.Bar(
         x=[long_df["Event"], long_df["Phase"]],
         y=[v if v is not None else np.nan for v in long_df["BIST"]],
@@ -261,7 +325,7 @@ def _crisis_fig(comp_df: pd.DataFrame) -> go.Figure:
     apply_chart_style(
         fig, height=420,
         barmode="group",
-        yaxis_title="Avg pairwise correlation (±60-day window)",
+        yaxis_title="Avg pairwise correlation",
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
         margin=dict(l=40, r=10, t=40, b=80),
     )
@@ -500,26 +564,7 @@ def render() -> None:
     # no longer applies. cross_market.py was the last remaining holder of
     # this anti-pattern. Audit item A2.
     inject_custom_css()
-    page_header(
-        "Cross-Market Comparison",
-        "Same StoNeCoAl toolkit (Pearson, RMT, MST, Glasso, TE, wavelet) applied "
-        "to BIST 100 and the S&P 500 over the same 2020-01 → 2026-03 window. "
-        "Universes selected because they sit at opposite ends of the emerging vs "
-        "developed-market dimension while sharing the same sampling and pipeline.",
-    )
-
-    # Plain-English finance question — the demo first-60-seconds anchor.
-    st.info(
-        ":material/help: **Central question:** How does the structure of BIST-100 "
-        "co-movement compare to a developed-market reference (S&P 500)? Both panels "
-        "run through the identical 12-stage signal-processing pipeline, so any "
-        "difference in the resulting correlation network, sector recovery, or "
-        "crisis response is a property of the underlying market — not the method. "
-        "The clearest single finding: the 2023 Türkiye earthquake spike (mean "
-        "|correlation| 0.44 → 0.66 → 0.58 over the event window) is isolated to "
-        "BIST; the S&P signal stays flat (0.44 → 0.35 → 0.31), validating that "
-        "the toolkit catches market-specific stress events."
-    )
+    page_header("Cross-Market Comparison", "")
 
     # Defence-in-depth filter: only universes flagged eligible_for_cross_market
     # participate here. EEG (eligible_for_cross_market=False) is filtered out
@@ -561,23 +606,10 @@ def render() -> None:
         bist, sp = _kpi_row(comp_df, "mst_sector_purity", "mst_sector_purity", "pct")
         c[6].metric("BIST MST sector purity", bist)
         c[7].metric("S&P MST sector purity",  sp)
-        st.caption(
-            ":material/info: **D_eff is universal (~6.5) across both markets** "
-            "despite a 6.6× ticker-count difference — striking evidence that "
-            "effective-rank co-movement is a market-invariant property at daily "
-            "frequency. **MST sector-purity diverges sharply** — BIST's "
-            "conglomerate-led hubs cross sectors (0.40), whereas S&P's MST is "
-            "strongly sector-coherent (0.80)."
-        )
 
     # ── Section 2: Eigenvalue spectra side-by-side
     with st.container(border=True):
-        section_header(
-            "Spectral structure (RMT)",
-            "Eigenvalues above the Marchenko–Pastur upper bound are real signal "
-            "(coloured). The number of signal eigenvalues is the universe's "
-            "effective factor count; D_eff is the participation ratio."
-        )
+        section_header("Spectral structure (RMT)")
         col_b, col_s = st.columns(2)
         eig_bist = _load_eigenvalue_spectrum("bist")
         eig_sp   = _load_eigenvalue_spectrum("sp500")
@@ -604,13 +636,7 @@ def render() -> None:
 
     # ── Section 3: MST topology side-by-side
     with st.container(border=True):
-        section_header(
-            "MST topology",
-            "Both MSTs use the correlation-distance d = √(2(1-ρ)) and are laid "
-            "out via Kamada-Kawai. Node colour = sector; node size = betweenness "
-            "centrality. Hub names are shown only for nodes above 45% of the "
-            "max-betweenness range to keep the dense S&P plot readable."
-        )
+        section_header("MST topology")
         col_b, col_s = st.columns(2)
         mst_e_b = _load_mst_edges("bist")
         mst_m_b = _load_mst_metrics("bist")
@@ -641,23 +667,138 @@ def render() -> None:
             st.markdown("**Top hubs by betweenness**")
             st.markdown(_top_hubs_text(mst_m_s))
 
-    # ── Section 4: Crisis-window comparison
+    # ── Section 4: Crisis-window comparison (editable, live-computed)
     with st.container(border=True):
-        section_header(
-            "Crisis windows",
-            "Average pairwise correlation in the ±60-day window around each event. "
-            "Global shocks (COVID, Russia-Ukraine) appear in both markets; "
-            "Türkiye-local shock (2023 earthquakes) appears only on BIST."
+        section_header("Crisis windows")
+
+        # Pre-widget cleanup. When the user deletes an event below, we set
+        # `_xm_clear_delete_pick` and call st.rerun(). On the next render
+        # (this block runs BEFORE any widgets are instantiated), we drop
+        # the stored selectbox value — otherwise Streamlit raises a
+        # StreamlitAPIException because the previously-picked event is no
+        # longer in the options list.
+        if st.session_state.pop("_xm_clear_delete_pick", False):
+            st.session_state.pop("xm_delete_pick", None)
+
+        # Seed the editor's in-progress table on first visit.
+        if "xm_events_df" not in st.session_state:
+            st.session_state["xm_events_df"] = pd.DataFrame(
+                [
+                    {"date": pd.Timestamp(d), "label": lab, "window_days": w}
+                    for d, lab, w in _DEFAULT_CRISIS_EVENTS
+                ]
+            )
+        # The "applied" snapshot drives the chart. Mirrors the defaults the
+        # first time the page renders so users see something before clicking
+        # Recompute.
+        if "xm_events_applied" not in st.session_state:
+            st.session_state["xm_events_applied"] = st.session_state["xm_events_df"].copy()
+
+        # Note: no `key=` on the data_editor. With a key, Streamlit stores
+        # the diff under that key and re-applies it to the input every
+        # render — once we write back to `xm_events_df` (so the chart and
+        # editor stay in sync after Recompute), the diff would double-apply.
+        # Capturing the return value and committing it back manually avoids
+        # that pitfall and keeps in-progress edits visible across reruns.
+        events_input = st.data_editor(
+            st.session_state["xm_events_df"],
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "date": st.column_config.DateColumn(
+                    "Event date", required=True,
+                    help="Anchor date for the event. Phases: "
+                         "[date − W, date), [date, date + W), [date + W, date + 2W).",
+                ),
+                "label": st.column_config.TextColumn(
+                    "Label", required=True,
+                    help="Display name for this event.",
+                ),
+                "window_days": st.column_config.NumberColumn(
+                    "Window (days)", min_value=5, max_value=252, step=1, required=True,
+                    help="Half-width W of each phase. ±W days before, "
+                         "during, after the event date.",
+                ),
+            },
         )
-        render_chart(
-            _crisis_fig(comp_df),
-            chart_id="xm_crisis", filename_base="cross_market_crisis_windows",
-        )
-        st.caption(
-            "**Methodology check passes:** the toolkit correctly localises shocks "
-            "to the affected market. BIST 0.32 → 0.62 → 0.54 around the Türkiye "
-            "earthquakes; S&P 0.44 → 0.35 → 0.31 over the same window (no signal)."
-        )
+        # Persist in-progress edits so other widgets re-rendering the page
+        # don't reset the table back to last-applied state.
+        st.session_state["xm_events_df"] = events_input
+
+        _cw1, _cw2 = st.columns([1, 4])
+        with _cw1:
+            if st.button("Recompute", type="primary", use_container_width=True):
+                # Snapshot the editor's current state as the applied view.
+                st.session_state["xm_events_applied"] = events_input.copy()
+        with _cw2:
+            st.caption(
+                ":material/info: Edit the table to add or change rows, then click "
+                "**Recompute** to redraw the chart. To remove an event, open the "
+                "**Remove an event** panel below."
+            )
+
+        # Low-key delete UI tucked inside an expander. Streamlit's
+        # st.data_editor native row-delete (select row → Delete key) is
+        # available but not discoverable; this gives users an explicit
+        # findable path without dominating the section's chrome.
+        with st.expander(":material/delete_outline: Remove an event", expanded=False):
+            _delete_options: list[str] = ["— pick an event to delete —"]
+            _option_to_idx: dict[str, int] = {}
+            for _i, _row in events_input.iterrows():
+                _d = pd.Timestamp(_row["date"]) if not pd.isna(_row["date"]) else None
+                _d_str = _d.strftime("%Y-%m-%d") if _d is not None else "?"
+                _lbl = str(_row.get("label", "") or "(unlabelled)")
+                _opt = f"{_lbl} ({_d_str})"
+                if _opt in _option_to_idx:  # duplicate labels — disambiguate with row index
+                    _opt = f"{_opt} [#{_i}]"
+                _option_to_idx[_opt] = _i
+                _delete_options.append(_opt)
+
+            _cd1, _cd2 = st.columns([3, 1])
+            with _cd1:
+                _to_delete = st.selectbox(
+                    "Event to remove",
+                    _delete_options,
+                    index=0,
+                    key="xm_delete_pick",
+                    label_visibility="collapsed",
+                )
+            with _cd2:
+                _can_delete = _to_delete != "— pick an event to delete —"
+                if st.button(
+                    "Remove",
+                    use_container_width=True,
+                    disabled=not _can_delete,
+                    key="xm_delete_btn",
+                ):
+                    _drop_idx = _option_to_idx.get(_to_delete)
+                    if _drop_idx is not None:
+                        _new_df = events_input.drop(index=_drop_idx).reset_index(drop=True)
+                        st.session_state["xm_events_df"] = _new_df
+                        # Drop from the applied snapshot so the chart updates
+                        # without requiring another Recompute click.
+                        st.session_state["xm_events_applied"] = _new_df.copy()
+                        # Signal the pre-widget cleanup block at the top of
+                        # the section to drop xm_delete_pick on the next
+                        # render. Writing the widget's own key here would
+                        # raise StreamlitAPIException ("can't modify after
+                        # widget is instantiated").
+                        st.session_state["_xm_clear_delete_pick"] = True
+                        st.rerun()
+
+        # Load both universe return streams once; the per-window cache below
+        # keeps the actual compute cheap (~ms on BIST, ~50-200 ms on S&P).
+        _ret_bist = _load_log_returns("bist")
+        _ret_sp   = _load_log_returns("sp500")
+        events_to_plot = st.session_state["xm_events_applied"]
+        if events_to_plot is None or events_to_plot.empty:
+            st.info("No events to plot — add at least one row in the editor and click Recompute.")
+        else:
+            render_chart(
+                _crisis_fig_live(events_to_plot, _ret_bist, _ret_sp),
+                chart_id="xm_crisis", filename_base="cross_market_crisis_windows",
+            )
 
     # ── Section 5: Dependence + Glasso parity
     with st.container(border=True):
@@ -686,11 +827,7 @@ def render() -> None:
 
     # ── Section 6: Pair-dislocation top-1 contrast (real-world headline)
     with st.container(border=True):
-        section_header(
-            "Top dislocation pair, each market",
-            "Highest-ranked candidate from each universe's dislocation_candidates.csv. "
-            "BIST and S&P top pairs differ in sector regime, half-life, and Z-score."
-        )
+        section_header("Top dislocation pair, each market")
         dl_b = _load_dislocation_candidates("bist").head(1)
         dl_s = _load_dislocation_candidates("sp500").head(1)
         cols = st.columns(2)
@@ -723,21 +860,3 @@ def render() -> None:
 
     # ── Section 6b: Numéraire sensitivity (Phase 4 mutable-candy) ─────────
     _render_bist_numeraire_section()
-
-    # ── Section 7: Limitations / methodology footnote
-    with st.container(border=True):
-        section_header("Methodology + limitations")
-        st.markdown(
-            "- Both pipelines use **identical** start/end dates, coverage "
-            "threshold (90%), TE / Glasso / wavelet hyperparameters, and "
-            "Pearson correlation. No methodological tilt favouring either market.\n"
-            "- BIST surviving universe is 73 (post-90%-coverage); S&P is 485 "
-            "after dropping GOOG/FOX/NWS dual-class duplicates. Direct N-comparison "
-            "is misleading; relative properties (D_eff, sector purity, MST hubs) "
-            "are the meaningful contrasts.\n"
-            "- BIST has 4 manually-NaN'd (ticker, date) cells for unhandled "
-            "yfinance corporate-action artifacts (CCOLA, HEKTS×2, AYGAZ). "
-            "Documented in `docs/KNOWN_ISSUES.md` §G-1.\n"
-            "- The XU100 file under `data/sp500/raw/` is named for historical "
-            "reasons but contains the ^GSPC index series."
-        )
