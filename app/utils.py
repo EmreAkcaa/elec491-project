@@ -341,10 +341,19 @@ def inject_custom_css():
     """Inject global CSS for consistent look & feel."""
     st.markdown("""
     <style>
-    /* ── Sidebar styling (chart settings panel) ──────────────── */
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
+    /* ── Sidebar styling ─────────────────────────────────────────
+       HOTFIX 2026-05-19: removed `[data-testid="stSidebarNav"]
+       { display: none !important; }` here. That rule was added during
+       the single-script `dashboard.py` era to hide Streamlit's
+       auto-discovery of a `pages/` directory (which we didn't have, but
+       the testid was the catch-all). Phase 2 (PR #64) moved us to
+       `st.navigation([...], position="sidebar")` which RENDERS into the
+       same `stSidebarNav` testid — so the rule was hiding our own page
+       list. Users could only see the default page (Cross-Market) with
+       no way to navigate. We use `app/views/` (not `pages/`), so
+       auto-discovery never fires and there's no longer a conflict to
+       hide. */
+
     /* Ensure sidebar collapsed control (re-open arrow) is always visible */
     [data-testid="stSidebarCollapsedControl"] {
         display: flex !important;
