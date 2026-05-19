@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None):
     from src.rolling_correlation import run_rolling_analysis
     from src.pair_dislocation import run_pair_dislocation
     from src.pit_snapshots import run_pit_snapshots
+    from src.walk_forward_signals import run_walk_forward_signals
     from src.cross_asset import run_cross_asset
     from src.mst_layouts import run_mst_layouts
     from src.rmt_denoising import run_rmt_denoising
@@ -59,6 +60,14 @@ def main(argv: list[str] | None = None):
             "changed since the last full run."
         ),
     )
+    parser.add_argument(
+        "--skip-walkforward",
+        action="store_true",
+        help=(
+            "Skip the walk-forward signals snapshot stage. Useful for "
+            "dev iterations where pair-selection logic hasn't changed."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logger.info("========== StoNeCoAl Pipeline ==========")
@@ -87,6 +96,15 @@ def main(argv: list[str] | None = None):
         run_pit_snapshots(config)
     else:
         logger.info("PIT snapshots skipped via --skip-pit flag")
+
+    # --- Walk-forward signals (PR #69) ---
+    # Per-date pair re-screening + state machine; powers the Signals
+    # page's "trades to put on as of date D" view past-only at any
+    # historical date. Gated to bist + sp500.
+    if not args.skip_walkforward:
+        run_walk_forward_signals(config)
+    else:
+        logger.info("Walk-forward signals skipped via --skip-walkforward flag")
 
     # --- EEE Analysis Methods ---
     run_rmt_denoising(config)

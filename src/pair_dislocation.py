@@ -294,6 +294,102 @@ def rank_candidate_pairs(
     return df
 
 
+# ---------------------------------------------------------------------------
+# State-machine status labels + as-of state reconstruction
+# ---------------------------------------------------------------------------
+# These live here (not in app/signals.py) so the dashboard page AND the
+# walk-forward signals pipeline stage import from one source. Re-exported
+# from app/signals.py for back-compat with existing tests.
+
+STATUS_LONG_ENTRY = "Long-entry candidate"
+STATUS_SHORT_ENTRY = "Short-entry candidate"
+STATUS_IN_LONG = "In long position"
+STATUS_IN_SHORT = "In short position"
+STATUS_NEAR_ENTRY = "Approaching entry"
+STATUS_FLAT = "Flat"
+STATUS_NA = "Insufficient data"
+
+
+def state_at(
+    zscore: pd.Series,
+    as_of: pd.Timestamp,
+    entry_z: float = 2.0,
+    exit_z: float = 0.5,
+) -> tuple[str, Optional[pd.Timestamp]]:
+    """Reproduce the state-machine state at ``as_of`` using only past data.
+
+    Returns ``(status_label, last_signal_date)`` where ``status_label`` is
+    one of the module-level ``STATUS_*`` constants and ``last_signal_date``
+    is the date of the most recent state transition (or ``None`` if there
+    have never been any).
+
+    Walks the Z-score history up to and including ``as_of`` and replays
+    the same state machine ``detect_signals`` uses. Looking at the latest
+    z-score in isolation would mis-classify the in-position-but-not-yet-
+    exited case (e.g., Z = +1.2 while held short, waiting for it to drop
+    into the ±0.5 exit band).
+    """
+    series = zscore.loc[:as_of].dropna()
+    if series.empty:
+        return STATUS_NA, None
+    state = "flat"
+    last_signal: Optional[pd.Timestamp] = None
+    last_z = float("nan")
+    for date, z in series.items():
+        if state == "flat":
+            if z <= -entry_z:
+                state = "long"
+                last_signal = date
+            elif z >= entry_z:
+                state = "short"
+                last_signal = date
+        elif state == "long":
+            if abs(z) <= exit_z:
+                state = "flat"
+                last_signal = date
+            elif z >= entry_z:
+                state = "short"
+                last_signal = date
+        elif state == "short":
+            if abs(z) <= exit_z:
+                state = "flat"
+                last_signal = date
+            elif z <= -entry_z:
+                state = "long"
+                last_signal = date
+        last_z = z
+
+    # Refine the label from the final (state, z) pair.
+    if state == "long":
+        return STATUS_IN_LONG, last_signal
+    if state == "short":
+        return STATUS_IN_SHORT, last_signal
+    if not np.isfinite(last_z):
+        return STATUS_NA, last_signal
+    if last_z <= -entry_z:
+        return STATUS_LONG_ENTRY, last_signal
+    if last_z >= entry_z:
+        return STATUS_SHORT_ENTRY, last_signal
+    if abs(last_z) >= entry_z * 0.75:
+        return STATUS_NEAR_ENTRY, last_signal
+    return STATUS_FLAT, last_signal
+
+
+def trade_direction(status: str, ticker_a: str, ticker_b: str) -> str:
+    """Translate a status label into a concrete trade string.
+
+    The spread is ``log(ticker_b) − β · log(ticker_a)``. So positive z (B
+    overpriced relative to A) means SHORT B / LONG A; negative z means
+    LONG B / SHORT A. The in-position labels carry the same direction as
+    the entry that opened them.
+    """
+    if status in (STATUS_LONG_ENTRY, STATUS_IN_LONG):
+        return f"LONG {ticker_b} / SHORT {ticker_a}"
+    if status in (STATUS_SHORT_ENTRY, STATUS_IN_SHORT):
+        return f"SHORT {ticker_b} / LONG {ticker_a}"
+    return ""
+
+
 def run_pair_dislocation(config: PipelineConfig) -> None:
     """Pipeline Step 7: pair dislocation analysis."""
     logger.info("Step 7 — Pair dislocation analysis")

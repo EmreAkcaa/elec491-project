@@ -1084,6 +1084,61 @@ def load_dislocation_candidates() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Phase X — Cross-asset (FX / Gold) sensitivity loaders
+# ---------------------------------------------------------------------------
+# Written by ``src/cross_asset.py:run_cross_asset`` for BIST only. Other
+# universes return empty frames; the Signals page hides the cross-asset
+# section in that case. Schema:
+#
+#   cross_asset_summary.parquet        -- columns: ticker, sector,
+#                                         corr_usd_try, n_obs_usd_try,
+#                                         corr_gold_usd, n_obs_gold_usd
+#   cross_asset_corr_rolling_<key>     -- date-indexed panel, columns =
+#                                         tickers, values = 252d rolling
+#                                         Pearson correlation with the
+#                                         base asset's log returns.
+#
+# Look-ahead: none. All inputs are past-only and the rolling computation
+# is left-aligned by date.
+
+@st.cache_data
+def _load_cross_asset_summary(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "cross_asset_summary.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_cross_asset_summary() -> pd.DataFrame:
+    """Per-ticker full-period correlation with USD/TRY + Gold.
+
+    Returns an empty DataFrame for non-BIST universes (the stage gates
+    itself on ``market_id == "bist"``). The Signals page checks
+    ``df.empty`` and hides the cross-asset breakout section accordingly.
+    """
+    return _load_cross_asset_summary(current_universe())
+
+
+@st.cache_data
+def _load_cross_asset_rolling(universe: str, asset_key: str) -> pd.DataFrame:
+    if asset_key not in ("usd_try", "gold_usd"):
+        return pd.DataFrame()
+    path = data_results(universe) / f"cross_asset_corr_rolling_{asset_key}.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame()
+
+
+def load_cross_asset_rolling(asset_key: str) -> pd.DataFrame:
+    """252-day rolling Pearson correlation panel (date x ticker) vs a base asset.
+
+    ``asset_key`` must be ``"usd_try"`` or ``"gold_usd"``. Returns an
+    empty DataFrame for non-BIST universes or when the artifact is missing.
+    """
+    return _load_cross_asset_rolling(current_universe(), asset_key)
+
+
+# ---------------------------------------------------------------------------
 # Phase 3 (slim) — PIT snapshot loaders
 # ---------------------------------------------------------------------------
 # These read precomputed snapshot files written by
@@ -1199,6 +1254,96 @@ def _load_pit_dislocation_snapshot(
 def load_pit_dislocation_snapshot(window: int, date_iso: str) -> pd.DataFrame:
     """Public wrapper: load PIT top dislocations for current universe + date."""
     return _load_pit_dislocation_snapshot(current_universe(), window, date_iso)
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward signals loaders (PR #69)
+# ---------------------------------------------------------------------------
+# Per-date snapshots written by ``src/walk_forward_signals.py``. Each
+# snapshot is a 20-row pair table re-screened past-only at the as-of
+# date — so scrubbing the Signals page date picker shows trades an
+# honest as-of-D observer would have proposed (no hindsight in pair
+# selection, no future leak in state).
+#
+# Grid stride: 5B BIST, 21B S&P. ``snap_to_preceding_snapshot`` below
+# returns the largest grid date ≤ user's pick — never a future date,
+# unlike the existing ``snap_to_nearest_snapshot`` which is correct for
+# Time Machine "around this date" semantic but would silently undo the
+# walk-forward guarantee if reused here.
+
+@st.cache_data(show_spinner=False)
+def _walkforward_signals_dates(universe: str, window: int) -> list[str]:
+    """List the ISO-formatted dates available in the walk-forward grid.
+
+    Returns ``[]`` when the directory doesn't exist (universe not in the
+    precompute set, or pipeline hasn't been run).
+    """
+    d = data_results(universe) / "walkforward_signals" / f"w{window}"
+    if not d.exists():
+        return []
+    out: list[str] = []
+    for f in d.iterdir():
+        if not f.suffix == ".parquet":
+            continue
+        stem = f.stem
+        if (
+            len(stem) == 10 and stem[4] == "-" and stem[7] == "-"
+            and stem[:4].isdigit() and stem[5:7].isdigit() and stem[8:].isdigit()
+        ):
+            out.append(stem)
+    return sorted(out)
+
+
+def walkforward_signals_dates(window: int = 60) -> list[str]:
+    """Public wrapper: walk-forward grid dates for the active universe."""
+    return _walkforward_signals_dates(current_universe(), window)
+
+
+def snap_to_preceding_snapshot(
+    requested_date,
+    *,
+    grid_dates: list[str],
+) -> Optional[str]:
+    """Return the largest grid date ≤ ``requested_date``, or None.
+
+    Unlike ``snap_to_nearest_snapshot`` (which uses absolute distance),
+    this never returns a future date — preserves the no-look-ahead
+    guarantee when used for walk-forward signal lookup.
+
+    Caller passes the grid date list explicitly so this stays cheap and
+    testable in isolation (the standard pattern is
+    ``snap_to_preceding_snapshot(date, grid_dates=walkforward_signals_dates())``).
+    """
+    if not grid_dates:
+        return None
+    requested_ts = pd.Timestamp(requested_date)
+    # grid_dates is sorted ascending; find the rightmost date ≤ requested.
+    last: Optional[str] = None
+    for d in grid_dates:
+        if pd.Timestamp(d) <= requested_ts:
+            last = d
+        else:
+            break
+    return last
+
+
+@st.cache_data(show_spinner=False)
+def _load_walkforward_signals_snapshot(
+    universe: str, window: int, date_iso: str,
+) -> pd.DataFrame:
+    """Read one walk-forward signal snapshot. Returns empty on miss."""
+    path = (
+        data_results(universe) / "walkforward_signals" / f"w{window}"
+        / f"{date_iso}.parquet"
+    )
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
+def load_walkforward_signals_snapshot(date_iso: str, window: int = 60) -> pd.DataFrame:
+    """Public wrapper: load a walk-forward signal snapshot for the active universe."""
+    return _load_walkforward_signals_snapshot(current_universe(), window, date_iso)
 
 
 # ---------------------------------------------------------------------------
