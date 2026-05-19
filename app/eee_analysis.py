@@ -1177,19 +1177,31 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
             )
 
         # Net-TE flow heatmap (full width)
+        # Built from the RAW TE matrix (raw − rawᵀ) rather than the
+        # FDR-filtered matrix. On the full 5256-pair grid at K=1000, 0
+        # pairs survive FDR — so the filtered net matrix is all zeros
+        # and the heatmap looks dead. The raw net carries the actual
+        # directional structure (red = i leads j; blue = i lags j) at
+        # full magnitude resolution. Significance is reported separately
+        # in the FDR-survivor table above + on each individual edge in
+        # hover.
         st.markdown("---")
         st.markdown(
-            "**Net Information Flow Heatmap** — `net[i,j] = TE(i→j) − TE(j→i)`. "
-            "Read row `i`: red cells in column `j` mean information flows from `i` to `j` "
-            "(i leads j); blue cells mean `i` lags `j`."
+            "**Net Information Flow Heatmap** — `net[i,j] = TE(i→j) − TE(j→i)` "
+            "from the raw TE matrix. Red cells in row `i` mean information flows "
+            "from `i` to `j` (i leads j); blue cells mean `i` lags `j`. Significance "
+            "of individual edges is reported in the FDR-survivor table above."
         )
-        net_te = load_net_te_matrix()
-        if not net_te.empty:
+        if not raw_te.empty:
+            raw_arr = raw_te.to_numpy()
+            net_arr = raw_arr - raw_arr.T
+            np.fill_diagonal(net_arr, 0.0)
+            net_raw = pd.DataFrame(net_arr, index=raw_te.index, columns=raw_te.columns)
             order = load_dendrogram_order()
-            v = float(np.nanmax(np.abs(net_te.to_numpy()))) if net_te.size else 1.0
+            v = float(np.nanmax(np.abs(net_arr)))
             v = max(v, 1e-6)
             render_matrix_heatmap(
-                net_te,
+                net_raw,
                 chart_id="te_net_heatmap",
                 filename_base="te_net_flow_heatmap",
                 title_key="te_net_hm",
@@ -1199,7 +1211,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
                 height=520, hover_label="net TE",
             )
         else:
-            st.info("Run the pipeline to generate the net transfer-entropy matrix.")
+            st.info("Run the pipeline to generate the transfer-entropy matrices.")
 
         # ---- FDR-significant directed edges (uses pvals + sig_mask) -----
         pvals = load_te_pvalues()
