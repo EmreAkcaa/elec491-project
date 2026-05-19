@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None):
     from src.mst_layouts import run_mst_layouts
     from src.rmt_denoising import run_rmt_denoising
     from src.partial_correlation import run_partial_correlation
+    from src.glasso_alpha_path import run_glasso_alpha_path
     from src.wavelet_analysis import run_wavelet_analysis
     from src.transfer_entropy import run_transfer_entropy
     from src.info_theory import run_info_theory
@@ -57,6 +58,15 @@ def main(argv: list[str] | None = None):
             "Skip the MST layout precompute stage (Phase Y). Useful "
             "for dev iterations where the MST graph structure hasn't "
             "changed since the last full run."
+        ),
+    )
+    parser.add_argument(
+        "--skip-glasso-path",
+        action="store_true",
+        help=(
+            "Skip the GLASSO α-path sweep (BIST only, adds ~3-5 min). "
+            "The dashboard's precision-sparsity timeline slider needs the "
+            "resulting glasso_alpha_path.npz to function."
         ),
     )
     args = parser.parse_args(argv)
@@ -91,6 +101,15 @@ def main(argv: list[str] | None = None):
     # --- EEE Analysis Methods ---
     run_rmt_denoising(config)
     run_partial_correlation(config)
+
+    # GLASSO α-path snapshot grid for the dashboard's precision-sparsity
+    # timeline slider. BIST-only (gated inside the stage). Skip via
+    # --skip-glasso-path for dev iterations where GLASSO config hasn't moved.
+    if not args.skip_glasso_path:
+        run_glasso_alpha_path(config)
+    else:
+        logger.info("GLASSO α-path skipped via --skip-glasso-path flag")
+
     run_wavelet_analysis(config)
     run_transfer_entropy(config)
     run_info_theory(config)

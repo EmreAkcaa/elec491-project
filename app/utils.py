@@ -222,10 +222,21 @@ def render_matrix_heatmap(
             hovertemplate=hovertemplate,
             colorbar=colorbar,
         ))
+        # scaleanchor="x" + scaleratio=1 locks the heatmap to a 1:1 aspect
+        # ratio so it stays visually square regardless of container width.
+        # Without this, render_chart's width="stretch" pulls the heatmap into
+        # whatever the row width is (often ~1500px on full-width layouts) while
+        # height stays fixed at `height`, distorting cells into rectangles.
         apply_chart_style(
             fig, height=height,
-            xaxis=dict(tickfont=dict(size=8), tickangle=-90, showticklabels=_show_labels),
-            yaxis=dict(tickfont=dict(size=8), autorange="reversed", showticklabels=_show_labels),
+            xaxis=dict(
+                tickfont=dict(size=8), tickangle=-90, showticklabels=_show_labels,
+                constrain="domain",
+            ),
+            yaxis=dict(
+                tickfont=dict(size=8), autorange="reversed", showticklabels=_show_labels,
+                scaleanchor="x", scaleratio=1,
+            ),
         )
         render_chart(fig, chart_id=chart_id, filename_base=filename_base,
                      title_key=title_key, default_title=default_title)
@@ -1332,6 +1343,36 @@ def _load_glasso_metadata(universe: str) -> dict:
 
 def load_glasso_metadata() -> dict:
     return _load_glasso_metadata(current_universe())
+
+
+@st.cache_data(show_spinner="Loading GLASSO α-path snapshots…")
+def _load_glasso_alpha_path(universe: str) -> dict | None:
+    """Load the precomputed α-path snapshots for the precision-sparsity
+    timeline slider. Returns None when the artifact is missing (e.g.
+    non-BIST universe, or pipeline not yet run with the α-path stage).
+
+    Schema mirrors `src/glasso_alpha_path.py` save format:
+        alphas        (K,)       np.float64 α thresholds, ascending
+        n_edges       (K,)       np.int32 edge counts
+        sparsity_pct  (K,)       np.float64 sparsity percentages
+        patterns      (K, N, N)  np.uint8 binary sparsity matrices
+        tickers       (N,)       list[str] ticker symbols
+    """
+    path = data_results(universe) / "glasso_alpha_path.npz"
+    if not path.exists():
+        return None
+    with np.load(path, allow_pickle=True) as data:
+        return {
+            "alphas": np.asarray(data["alphas"], dtype=np.float64),
+            "n_edges": np.asarray(data["n_edges"], dtype=np.int32),
+            "sparsity_pct": np.asarray(data["sparsity_pct"], dtype=np.float64),
+            "patterns": np.asarray(data["patterns"], dtype=np.uint8),
+            "tickers": [str(t) for t in data["tickers"]],
+        }
+
+
+def load_glasso_alpha_path() -> dict | None:
+    return _load_glasso_alpha_path(current_universe())
 
 
 @st.cache_data
