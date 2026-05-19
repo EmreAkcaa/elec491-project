@@ -8,6 +8,8 @@
   "mean_permutation_entropy_norm": 0.9977801700092512,
   "permutation_entropy_embedding_dim": 4,
   "permutation_entropy_delay": 1,
+  "frac_tickers_with_volatility_clustering": 0.5068493150684932,
+  "frac_tickers_persistent_hurst": 0.8767123287671232,
   "mi_bits_units": true,
   "n_bins": 4,
   "rolling_window": 60,

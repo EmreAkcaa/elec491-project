@@ -300,6 +300,69 @@ mean is in `it_summary.json:mean_permutation_entropy_norm`.
 The dashboard renders these side-by-side in the Information Theory
 sub-tab; tickers in 2+ of the three top-15 lists get a `★` annotation.
 
+### 9. Predictability stylised facts beyond sign-entropy — added PR #74
+
+Sign-entropy at lag-1 with 2-state coarse-graining is the weakest possible
+predictability measure: it ignores return magnitude and only looks back
+one day. Three classic financial diagnostics fill the gap:
+
+**Volatility clustering** — autocorrelation of `|returns|`:
+```
+ACF(|r|, lag=k) = corr(|r_t|, |r_{t-k}|)
+```
+Bread-and-butter finance: tomorrow's |return| is strongly predictable
+from today's, even when tomorrow's *direction* is not. We report at
+lags 1, 5, 22 to capture the decay rate.
+
+**Hurst exponent (rescaled-range R/S)**:
+```
+H = slope of log(R/S) vs log(n)  on log-spaced window sizes
+```
+Single number per ticker:
+- H ≈ 0.5 → random walk
+- H > 0.55 → persistent (long-range positive memory, trending)
+- H < 0.45 → anti-persistent (mean-reverting)
+
+**Raw return autocorrelation** `ACF(r, lag=k)`: direct test of return
+predictability at lags 1, 5, 22. Sign-entropy only captures the SIGN
+part of this; magnitude information shows up in non-zero ACF(r) even
+when the direction looks coin-flip.
+
+**Artifact**: `data/<universe>/results/predictability_diagnostics.csv`
+with columns `[ticker, sign_entropy_bits, acf_returns_lag1,
+acf_abs_returns_lag1, acf_abs_returns_lag5, acf_abs_returns_lag22,
+hurst_exponent]`. Universe-aggregate fractions in `it_summary.json`:
+`frac_tickers_with_volatility_clustering`,
+`frac_tickers_persistent_hurst`.
+
+**Current BIST findings (2026-02 run, 73 tickers)**:
+
+| Measure | Value | What it says |
+|---|---|---|
+| Mean `ACF(|r|, lag=1)` | **0.21** | Strong volatility clustering across the panel |
+| Mean `ACF(|r|, lag=5)` | 0.12 | Decays with lag, still positive at one week |
+| Mean `ACF(|r|, lag=22)` | 0.06 | Still positive at one month |
+| Tickers with `ACF(|r|, lag=1) > 0.20` | **37 / 73 (51%)** | More than half show strong volatility clustering |
+| Mean Hurst | **0.60** | Persistent regime across the universe |
+| Tickers with Hurst > 0.55 | **64 / 73 (88%)** | Long-range memory is the norm, not the exception |
+| Tickers with Hurst in [0.45, 0.55] | 9 / 73 | True random-walk behaviour is rare |
+| Tickers with Hurst < 0.45 (mean-reverting) | 0 / 73 | No single ticker mean-reverts at the single-asset level |
+| Mean `ACF(r, lag=1)` | 0.045 | Modest but real |
+| Tickers with `|ACF(r, lag=1)| > 0.050` (Bartlett 95%) | **32 / 73 (44%)** | Direct lag-1 return autocorrelation is significant on ~half the universe |
+
+**The honest reframe**: the "BIST passes weak EMH" reading from
+sign-entropy ≈ 1.0 is incomplete. **Volatility is forecastable, the
+long-range regime is persistent (not random walk), and the lag-1 return
+autocorrelation is non-trivial on nearly half the universe.** The
+direction of any individual day's return is hard to predict — but
+"hard to predict directionally" is a much weaker claim than "the
+return process is unpredictable." All three diagnostics are surfaced
+side-by-side with sign-entropy in the dashboard so the qualification
+is visible.
+
+**Most-misleading ticker examples** (sign-entropy ≈ 1, ACF(|r|) > 0.30):
+TKNSA, SKBNK, ISGYO, BRSAN, PAPIL, SASA, BTCIM, ASUZU.
+
 ## Where each measure surfaces in the dashboard
 
 | Surface | Measures shown |

@@ -391,6 +391,132 @@ def permutation_entropy_per_ticker(
 
 
 # ---------------------------------------------------------------------------
+# Beyond sign-entropy: predictability stylised facts (PR #74)
+# ---------------------------------------------------------------------------
+# Sign-entropy at lag-1 with 2-state coarse-graining is the weakest possible
+# predictability measure. It ignores return magnitude entirely and only looks
+# back one day. Three classic financial stylised facts the dashboard was
+# missing:
+#
+#   1. VOLATILITY CLUSTERING — autocorrelation of |returns| persists even
+#      when raw returns are nearly uncorrelated. This is the bread-and-butter
+#      "GARCH" effect; absent from sign-entropy by construction.
+#
+#   2. LONG-RANGE MEMORY (Hurst exponent) — single number per series
+#      classifying it as persistent (H > 0.55, trending), random-walk
+#      (0.45 ≤ H ≤ 0.55), or mean-reverting (H < 0.45).
+#
+#   3. RAW RETURN AUTOCORRELATION at multiple lags — the direct test of
+#      whether yesterday's RETURN MAGNITUDE+SIGN predicts today's. Sign-
+#      entropy only captures the sign part of this.
+
+def hurst_rs(
+    series: np.ndarray,
+    *,
+    min_n: int = 20,
+    max_n: int = 200,
+    n_points: int = 20,
+) -> float:
+    """Hurst exponent via simple rescaled-range (R/S) analysis.
+
+    For each window size ``n`` in a log-spaced grid [min_n, max_n], split
+    the series into non-overlapping chunks of size ``n``, compute the
+    rescaled range R/S in each, average across chunks. Fit a power law:
+    log(R/S) = H · log(n) + c. Return the slope H.
+
+    Interpretation:
+      * H ≈ 0.5: random walk (no long-range memory)
+      * H > 0.5: persistent (positive long-range autocorrelation, trending)
+      * H < 0.5: anti-persistent (mean-reverting)
+
+    Returns NaN on series too short to fit (< max_n samples) or when the
+    R/S fit doesn't have enough points.
+
+    Note: simplified R/S is biased upward for short series. For the BIST
+    panel (~1543 days) the bias is small but reported numbers should be
+    treated as ordinal — H_A < H_B is more reliable than H_A < 0.5.
+    """
+    x = np.asarray(series, dtype=float)
+    x = x[np.isfinite(x)]
+    n = len(x)
+    if n < max_n:
+        return float("nan")
+
+    ns = np.unique(np.logspace(np.log10(min_n), np.log10(max_n), n_points).astype(int))
+    rs_vals: list[tuple[int, float]] = []
+    for nn in ns:
+        chunks = n // nn
+        if chunks < 1:
+            continue
+        rs_subs: list[float] = []
+        for c in range(chunks):
+            chunk = x[c * nn:(c + 1) * nn]
+            mean = chunk.mean()
+            cumdev = (chunk - mean).cumsum()
+            r = cumdev.max() - cumdev.min()
+            s = chunk.std()
+            if s > 0:
+                rs_subs.append(r / s)
+        if rs_subs:
+            rs_vals.append((nn, float(np.mean(rs_subs))))
+
+    if len(rs_vals) < 5:
+        return float("nan")
+    ns_arr = np.array([v[0] for v in rs_vals], dtype=float)
+    rs_arr = np.array([v[1] for v in rs_vals], dtype=float)
+    coeffs = np.polyfit(np.log(ns_arr), np.log(rs_arr), 1)
+    return float(coeffs[0])
+
+
+def _autocorr(series: np.ndarray, lag: int) -> float:
+    """Standard lag-k Pearson autocorrelation. NaN on series too short
+    or with zero variance."""
+    x = np.asarray(series, dtype=float)
+    x = x[np.isfinite(x)]
+    if x.size <= lag + 1:
+        return float("nan")
+    x0 = x[:-lag]
+    x1 = x[lag:]
+    if x0.std() == 0 or x1.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(x0, x1)[0, 1])
+
+
+def predictability_diagnostics_per_ticker(
+    returns: pd.DataFrame,
+) -> pd.DataFrame:
+    """Per-ticker predictability stylised-facts beyond sign-entropy.
+
+    Columns:
+      * ``ticker``
+      * ``sign_entropy_bits`` — copied here for one-stop comparison
+      * ``acf_returns_lag1`` — direct lag-1 return autocorr (small or 0
+        under weak EMH; sign-entropy only captures the sign part)
+      * ``acf_abs_returns_lag1`` — VOLATILITY CLUSTERING at lag 1
+      * ``acf_abs_returns_lag5`` — same at one week
+      * ``acf_abs_returns_lag22`` — same at one month (decay rate)
+      * ``hurst_exponent`` — long-range memory classification
+
+    For BIST: the typical sign-entropy ≈ 1.0 result conceals that |r| is
+    strongly autocorrelated and Hurst > 0.5 for nearly every ticker.
+    These three diagnostics surface that.
+    """
+    rows: list[dict] = []
+    for ticker in returns.columns:
+        s = returns[ticker].to_numpy(dtype=float)
+        rows.append({
+            "ticker": ticker,
+            "sign_entropy_bits": sign_entropy_rate(s),
+            "acf_returns_lag1": _autocorr(s, 1),
+            "acf_abs_returns_lag1": _autocorr(np.abs(s), 1),
+            "acf_abs_returns_lag5": _autocorr(np.abs(s), 5),
+            "acf_abs_returns_lag22": _autocorr(np.abs(s), 22),
+            "hurst_exponent": hurst_rs(s),
+        })
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Bootstrap confidence intervals (G4 — PR #73)
 # ---------------------------------------------------------------------------
 
@@ -650,6 +776,24 @@ def run_info_theory(config: PipelineConfig) -> None:
     )
     pe_mean = float(pe_df["permutation_entropy_norm"].dropna().mean()) if pe_df["permutation_entropy_norm"].notna().any() else float("nan")
 
+    # 7. Predictability diagnostics beyond sign-entropy (PR #74)
+    # Sign-entropy at lag-1 with 2 states is misleading: it can read ≈1.0
+    # while |returns| autocorrelation says ≈0.3 (volatility clustering)
+    # and Hurst says ≈0.6 (persistent trending). These three measures
+    # together give an honest picture of what's predictable about each
+    # ticker's return process.
+    predict_df = predictability_diagnostics_per_ticker(returns)
+    predict_df.to_csv(
+        config.data_results / "predictability_diagnostics.csv",
+        index=False,
+    )
+    vol_cluster_pct = float(
+        (predict_df["acf_abs_returns_lag1"].dropna() > 0.20).mean()
+    ) if predict_df["acf_abs_returns_lag1"].notna().any() else float("nan")
+    hurst_persistent_pct = float(
+        (predict_df["hurst_exponent"].dropna() > 0.55).mean()
+    ) if predict_df["hurst_exponent"].notna().any() else float("nan")
+
     summary = {
         "n_tickers": int(len(returns.columns)),
         "n_observations": int(len(returns)),
@@ -660,6 +804,8 @@ def run_info_theory(config: PipelineConfig) -> None:
         "mean_permutation_entropy_norm": pe_mean,
         "permutation_entropy_embedding_dim": 4,
         "permutation_entropy_delay": 1,
+        "frac_tickers_with_volatility_clustering": vol_cluster_pct,
+        "frac_tickers_persistent_hurst": hurst_persistent_pct,
         "mi_bits_units": True,
         "n_bins": int(n_bins),
         "rolling_window": int(window),

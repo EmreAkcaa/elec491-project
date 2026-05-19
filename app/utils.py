@@ -2030,6 +2030,25 @@ def load_mi_excess_with_ci() -> pd.DataFrame:
     return _load_mi_excess_with_ci(current_universe())
 
 
+@st.cache_data
+def _load_predictability_diagnostics(universe: str) -> pd.DataFrame:
+    path = data_results(universe) / "predictability_diagnostics.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def load_predictability_diagnostics() -> pd.DataFrame:
+    """Per-ticker stylised-facts beyond sign-entropy: volatility clustering
+    (|return| autocorrelation), Hurst exponent, raw return autocorrelation.
+
+    Schema: ``[ticker, sign_entropy_bits, acf_returns_lag1,
+    acf_abs_returns_lag1, acf_abs_returns_lag5, acf_abs_returns_lag22,
+    hurst_exponent]``.
+    """
+    return _load_predictability_diagnostics(current_universe())
+
+
 # ---------------------------------------------------------------------------
 # Transfer entropy statistical artifacts (PR #71 — IT orphan surface)
 # ---------------------------------------------------------------------------
