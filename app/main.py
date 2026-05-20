@@ -309,7 +309,7 @@ _PAGE_PATHS: dict[str, str] = {
     "Signals":         "views/06_signals.py",
     "Pair Analysis":   "views/04_pair_analysis.py",
     "Methods Lab":     "views/05_methods_lab.py",
-    "Live":            "views/07_live.py",
+    "Upload your data": "views/07_live.py",
 }
 
 # Build the visible-pages list for the active universe.
@@ -326,7 +326,7 @@ if _cap(_active_universe, 'has_pair_trading', True):
     visible_titles.append("Signals")
     visible_titles.append("Pair Analysis")
 visible_titles.append("Methods Lab")
-visible_titles.append("Live")
+visible_titles.append("Upload your data")
 
 
 # ── Page-disappearance pending stash (Phase S #1 semantic, multi-page port) ─
