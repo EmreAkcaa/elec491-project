@@ -19,12 +19,9 @@ is saying RIGHT NOW (or on any historical date):
      interpretation per row. Reads ``cross_asset_summary.parquet`` +
      ``cross_asset_corr_rolling_*.parquet`` from the Phase X stage.
 
-A 4th, collapsed section points users at the Neuromorphic Signals
-sub-tab in Methods Lab for the SNN-vs-classical methodology comparison.
-
-A 5th section documents that information-theoretic lead-lag signals
-(transfer entropy) are precomputed but not yet surfaced as signals —
-that's the next page-shaped piece of work.
+A 4th section documents that transfer-entropy lead-lag signals are
+precomputed but not yet surfaced as signals — that's the next
+page-shaped piece of work.
 
 Look-ahead guarantees:
   * Section 1 computes Z-score with `compute_zscore(spread.loc[:date], …)`

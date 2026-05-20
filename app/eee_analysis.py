@@ -2049,19 +2049,17 @@ def render():
     clusters = load_cluster_assignments()
     sector_map = dict(zip(clusters["ticker"], clusters["sector"])) if not clusters.empty else {}
 
-    # PHASE Y (Y1): replaced `st.tabs(...)` with `render_subtabs(...)` so
-    # only the active sub-tab body executes. Methods Lab previously paid
-    # for all 6 render_*() bodies on every page load (5-15 s on S&P);
-    # now it pays only for the visible sub-tab.
+    # PHASE Y (Y1): lazy sub-tab rendering via render_subtabs(...).
+    # 2026-05-20: "Information Theory" and "Neuromorphic Signals" hidden
+    # entirely across all universes per user direction. The underlying
+    # render functions + pipeline stages stay in place (artifacts on
+    # disk, math is preserved) — we just don't surface the tabs.
     _sub_labels = (
         "RMT Denoising",
         "Graphical LASSO",
         "Wavelet Multi-Scale",
         "Transfer Entropy",
-        "Information Theory",
     )
-    if getattr(_active, "has_snn", True):
-        _sub_labels = _sub_labels + ("Neuromorphic Signals",)
 
     _active_sub = render_subtabs("methods_lab", _sub_labels, label="Method")
 
@@ -2081,7 +2079,3 @@ def render():
             )
     elif _active_sub == "Transfer Entropy":
         render_transfer_entropy(sector_map, u=_active)
-    elif _active_sub == "Information Theory":
-        render_info_theory(sector_map, u=_active)
-    elif _active_sub == "Neuromorphic Signals":
-        render_snn(sector_map, u=_active)
