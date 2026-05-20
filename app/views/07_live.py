@@ -45,7 +45,7 @@ from utils import (
 # ---------------------------------------------------------------------------
 
 inject_custom_css()
-page_header("Live pipeline", "")
+page_header("Upload your data", "")
 
 # Hide Streamlit's default "Limit 200MB per file • CSV" caption inside the
 # uploader dropzone. The size cap is still enforced server-side via
