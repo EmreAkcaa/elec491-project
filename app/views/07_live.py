@@ -316,29 +316,8 @@ if not result.walk_forward_signals.empty:
     wf = wf[keep].rename(columns=_WF_COLS)
     st.dataframe(wf, use_container_width=True, hide_index=True)
 
-# ── Predictability diagnostics (vol clustering + Hurst + return ACF) ──
-# 2026-05-20: sign-entropy column dropped (info-theory measure). Kept:
-# ACF of |returns| (volatility clustering) and Hurst exponent — both
-# classical finance stylised facts, not info theory.
-_PREDICT_COLS = {
-    "ticker": "Ticker",
-    "acf_returns_lag1": "ACF(r) lag-1",
-    "acf_abs_returns_lag1": "ACF(|r|) lag-1",
-    "acf_abs_returns_lag5": "ACF(|r|) lag-5",
-    "acf_abs_returns_lag22": "ACF(|r|) lag-22",
-    "hurst_exponent": "Hurst",
-}
-predict_df = result.it_kpis.get("predictability_table")
-if predict_df is not None and not predict_df.empty:
-    section_header("Predictability diagnostics")
-    disp = predict_df.copy().head(15)
-    for col in ("acf_returns_lag1", "acf_abs_returns_lag1",
-                "acf_abs_returns_lag5", "acf_abs_returns_lag22", "hurst_exponent"):
-        if col in disp.columns:
-            disp[col] = disp[col].round(4)
-    keep = [c for c in _PREDICT_COLS if c in disp.columns]
-    disp = disp[keep].rename(columns=_PREDICT_COLS)
-    st.dataframe(disp, use_container_width=True, hide_index=True)
+# 2026-05-20: predictability diagnostics panel removed per user direction
+# (info-theory family hidden entirely across all dashboard views).
 
 # ── Wavelet correlation matrices (3 scales) ──
 if result.wavelet_corrs:
