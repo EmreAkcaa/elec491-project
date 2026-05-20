@@ -165,29 +165,17 @@ if result is None:
 colors = get_colors()
 
 # ── KPI strip ──
+# 2026-05-20: D_eff / ΔH / mean sign-H removed entirely per user direction
+# (no info-theory anywhere in the dashboard). Tickers + observations stay.
 section_header(
     "Summary",
     f"{int(result.it_kpis.get('n_tickers', 0))} tickers × "
     f"{int(result.it_kpis.get('n_observations', 0))} days",
 )
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2 = st.columns(2)
 c1.metric("Tickers", int(result.it_kpis.get("n_tickers", 0)))
-c2.metric(
-    "D_eff",
-    f"{result.it_kpis.get('d_eff', float('nan')):.2f}",
-    help="Participation ratio of the correlation eigenspectrum. Lower = stronger factor structure.",
-)
-c3.metric(
-    "ΔH (nats)",
-    f"{result.it_kpis.get('log_det_term', float('nan')):.2f}",
-    help="Joint-Gaussian structure: −½ log det Σ.",
-)
-c4.metric(
-    "Mean sign-H (bits)",
-    f"{result.it_kpis.get('mean_sign_entropy_rate_bits', float('nan')):.3f}",
-    help="1.0 = direction unpredictable from lag-1 sign.",
-)
+c2.metric("Days", int(result.it_kpis.get("n_observations", 0)))
 
 # ── Correlation heatmap ──
 if not result.correlation.empty:
@@ -328,10 +316,12 @@ if not result.walk_forward_signals.empty:
     wf = wf[keep].rename(columns=_WF_COLS)
     st.dataframe(wf, use_container_width=True, hide_index=True)
 
-# ── Predictability diagnostics ──
+# ── Predictability diagnostics (vol clustering + Hurst + return ACF) ──
+# 2026-05-20: sign-entropy column dropped (info-theory measure). Kept:
+# ACF of |returns| (volatility clustering) and Hurst exponent — both
+# classical finance stylised facts, not info theory.
 _PREDICT_COLS = {
     "ticker": "Ticker",
-    "sign_entropy_bits": "Sign-entropy (bits)",
     "acf_returns_lag1": "ACF(r) lag-1",
     "acf_abs_returns_lag1": "ACF(|r|) lag-1",
     "acf_abs_returns_lag5": "ACF(|r|) lag-5",
@@ -342,7 +332,7 @@ predict_df = result.it_kpis.get("predictability_table")
 if predict_df is not None and not predict_df.empty:
     section_header("Predictability diagnostics")
     disp = predict_df.copy().head(15)
-    for col in ("sign_entropy_bits", "acf_returns_lag1", "acf_abs_returns_lag1",
+    for col in ("acf_returns_lag1", "acf_abs_returns_lag1",
                 "acf_abs_returns_lag5", "acf_abs_returns_lag22", "hurst_exponent"):
         if col in disp.columns:
             disp[col] = disp[col].round(4)

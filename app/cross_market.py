@@ -5,10 +5,10 @@ This page is universe-independent. It reads from both ``data/bist/`` and
 so it does NOT use ``current_universe()`` — switching the sidebar selector
 does not change what this page shows.
 
-Headline finding: D_eff is universal at ~6.5 across both markets despite a
-6.6× ticker count difference, yet MST sector-purity diverges sharply
-(0.40 BIST vs 0.80 S&P) — direct evidence of BIST's conglomerate-led
-topology vs S&P's sector-coherent topology.
+Headline finding: MST sector-purity diverges sharply (0.40 BIST vs 0.80
+S&P) and the top-eigenvalue share is materially larger on BIST — direct
+evidence of BIST's conglomerate-led topology vs S&P's sector-coherent
+topology, despite a 6.6× ticker count difference.
 """
 
 from __future__ import annotations
@@ -361,9 +361,9 @@ def _render_bist_numeraire_section() -> None:
 
     Phase 4 mutable-candy. Loads the precomputed `bist`, `bist_usd`,
     `bist_gold` results trees and renders three short panels:
-    eigenvalue spectra, KPI strip (D_eff, ΔH, avg-corr, top eig share),
-    and sector purity bars. One paragraph honest interpretation at the
-    bottom.
+    eigenvalue spectra, KPI strip (avg pairwise correlation + top eigen-
+    value share), and sector purity bars. One paragraph honest
+    interpretation at the bottom.
     """
     import json
 
@@ -403,19 +403,15 @@ def _render_bist_numeraire_section() -> None:
 
         # KPI strip
         st.markdown("**Headline numbers** — same universe, three base assets")
-        kpi_cols = st.columns(4)
+        kpi_cols = st.columns(2)
         for col_idx, (label, key) in enumerate([
-            ("D_eff", "d_eff"),
-            ("ΔH (nats)", "log_det_term"),
             ("Avg pairwise ρ", None),  # from market_summary
             ("Top eig share", None),    # computed
         ]):
             with kpi_cols[col_idx]:
                 rows = []
                 for d in (bist_data, usd_data, gold_data):
-                    if key:
-                        rows.append((d["key"], d["summary"].get(key, float("nan"))))
-                    elif label == "Avg pairwise ρ":
+                    if label == "Avg pairwise ρ":
                         rows.append((d["key"], d["meta"].get("avg_pairwise_corr", float("nan"))))
                     else:  # Top eig share
                         eigs = d["eig"]["eigenvalue"].values
@@ -424,10 +420,8 @@ def _render_bist_numeraire_section() -> None:
                 for k, v in rows:
                     if "share" in label.lower():
                         st.markdown(f"- {k}: **{v*100:.2f}%**")
-                    elif "ρ" in label:
+                    else:  # avg pairwise correlation
                         st.markdown(f"- {k}: **{v:.3f}**")
-                    else:
-                        st.markdown(f"- {k}: **{v:.2f}**")
 
         # Eigenvalue-spectrum overlay
         st.markdown("**Eigenvalue spectrum** (log scale; first 15 eigenvalues)")
@@ -539,9 +533,6 @@ def _render_bist_numeraire_section() -> None:
         st.markdown(
             f"**Top-eigenvalue share:** TRY **{_bist_top_pct:.1f}%** → "
             f"USD **{_usd_top_pct:.1f}%** → Gold **{_gold_top_pct:.1f}%**. "
-            f"Effective dimensionality drops from "
-            f"**{bist_data['summary']['d_eff']:.2f}** to "
-            f"**{gold_data['summary']['d_eff']:.2f}**. "
             "TRY volatility is a dispersion source — removing the currency leg "
             "concentrates rather than diffuses the common factor.",
             help=(
@@ -601,19 +592,15 @@ def render() -> None:
     with st.container(border=True):
         section_header("Headline numbers")
         bist, sp = _kpi_row(comp_df, "N", "N", "int")
-        c = st.columns(8)
+        c = st.columns(6)
         c[0].metric("BIST tickers (N)",  bist)
         c[1].metric("S&P tickers (N)",   sp)
-        bist, sp = _kpi_row(comp_df, "D_eff", "D_eff", "float")
-        c[2].metric("BIST D_eff",        bist)
-        c[3].metric("S&P D_eff",         sp)
         bist, sp = _kpi_row(comp_df, "top_eigenvalue_share", "top_eigenvalue_share", "pct")
-        c[4].metric("BIST top-eig share", bist)
-        c[5].metric("S&P top-eig share",  sp)
+        c[2].metric("BIST top-eig share", bist)
+        c[3].metric("S&P top-eig share",  sp)
         bist, sp = _kpi_row(comp_df, "mst_sector_purity", "mst_sector_purity", "pct")
-        c[6].metric("BIST MST sector purity", bist)
-        c[7].metric("S&P MST sector purity",  sp)
-        # PORT arda/ui-cleanup item 12: D_eff explanatory caption removed.
+        c[4].metric("BIST MST sector purity", bist)
+        c[5].metric("S&P MST sector purity",  sp)
 
     # ── Section 2: Eigenvalue spectra side-by-side
     with st.container(border=True):
@@ -623,8 +610,8 @@ def render() -> None:
         eig_bist = _load_eigenvalue_spectrum("bist")
         eig_sp   = _load_eigenvalue_spectrum("sp500")
         with col_b:
-            st.markdown(f"**BIST 100** — D_eff = {_fmt(_get(comp_df, 'D_eff', 'BIST'), 'float')}; "
-                        f"signal eigenvalues: **{_fmt(_get(comp_df, 'n_signal_eigenvalues', 'BIST'), 'int')}**")
+            st.markdown(f"**BIST 100** — signal eigenvalues: "
+                        f"**{_fmt(_get(comp_df, 'n_signal_eigenvalues', 'BIST'), 'int')}**")
             if not eig_bist.empty:
                 render_chart(
                     _eigenvalue_spectrum_fig(eig_bist, _BIST_COLOR, "BIST"),
@@ -633,8 +620,8 @@ def render() -> None:
             else:
                 st.info("BIST eigenvalue spectrum not available.")
         with col_s:
-            st.markdown(f"**S&P 500** — D_eff = {_fmt(_get(comp_df, 'D_eff', 'S&P-500'), 'float')}; "
-                        f"signal eigenvalues: **{_fmt(_get(comp_df, 'n_signal_eigenvalues', 'S&P-500'), 'int')}**")
+            st.markdown(f"**S&P 500** — signal eigenvalues: "
+                        f"**{_fmt(_get(comp_df, 'n_signal_eigenvalues', 'S&P-500'), 'int')}**")
             if not eig_sp.empty:
                 render_chart(
                     _eigenvalue_spectrum_fig(eig_sp, _SP500_COLOR, "S&P"),
