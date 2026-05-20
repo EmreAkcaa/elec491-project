@@ -18,7 +18,7 @@ Usage:
     uv run python scripts/run_basis_variants.py --skip-pipeline  # just write processed/
 
 Run-time on a recent laptop: ~5-10 min per variant (dominated by
-transfer-entropy parallelism). The numéraire transform itself is < 1 s.
+transfer-entropy parallelism). The base currency transform itself is < 1 s.
 """
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ def _run_pipeline_stages(config) -> None:
 
 
 def main(argv: list[str] | None = None):
-    parser = argparse.ArgumentParser(description="BIST numéraire variant runner.")
+    parser = argparse.ArgumentParser(description="BIST base currency variant runner.")
     parser.add_argument(
         "--only",
         choices=["usd", "gold"],

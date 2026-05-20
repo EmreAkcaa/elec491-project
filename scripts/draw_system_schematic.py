@@ -74,7 +74,7 @@ STAGES = [
     ("VISUALISATION", "ui", [
         "Streamlit dashboard (3 pages × N tabs per universe)",
         "Multi-universe sidebar selector (BIST, S&P, BIST/USD, BIST/Gold, EEG)",
-        "Cross-market comparison + numéraire sensitivity sub-tabs",
+        "Cross-market comparison + base-currency sensitivity sub-tabs",
     ]),
 ]
 

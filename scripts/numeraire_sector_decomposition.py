@@ -1,8 +1,8 @@
-"""Per-eigenmode sector decomposition across BIST numéraires.
+"""Per-eigenmode sector decomposition across BIST base currencies.
 
-Phase 4 follow-up. The headline numéraire result (TRY → USD → Gold pushes
+Phase 4 follow-up. The headline base currency result (TRY → USD → Gold pushes
 top-eigenvalue share 38.9% → 45.1% → 51.5%) is real but tells only half
-the story. Decomposing each numéraire's correlation matrix into its top
+the story. Decomposing each base currency's correlation matrix into its top
 3 eigenmodes and projecting the eigenvectors onto sector labels exposes
 **which factor structure collapses** when the currency leg is removed:
 
@@ -90,8 +90,8 @@ def _decompose_one(market: str, sector_map: dict) -> dict:
 
 
 def _build_svg(report: dict) -> str:
-    """Two-panel SVG: top eigenvalue share per numéraire, plus bank-mass
-    in each of the top 3 modes per numéraire."""
+    """Two-panel SVG: top eigenvalue share per base currency, plus bank-mass
+    in each of the top 3 modes per base currency."""
     W, H = 1100, 460
     pad_l, pad_r, pad_t, pad_b = 70, 30, 60, 70
     plot_w = (W - pad_l - pad_r - 60) / 2
@@ -107,14 +107,14 @@ def _build_svg(report: dict) -> str:
         '.cap{font:italic 11px Inter,Helvetica,Arial,sans-serif;fill:#4B5563}'
         '</style>',
         f'<text x="{W/2}" y="26" text-anchor="middle" class="title">'
-        'BIST numéraire decomposition — where the variance moves</text>',
+        'BIST base-currency decomposition — where the variance moves</text>',
     ]
 
     nums = report["per_numeraire"]
     keys = list(nums.keys())
     colors = {label: c for _, label, c in NUMERAIRES}
 
-    # ── Panel A: top-3 mode eigenvalue shares grouped by numéraire ────────────
+    # ── Panel A: top-3 mode eigenvalue shares grouped by base currency ────────────
     panel_a_x = pad_l
     panel_a_y = pad_t
     parts.append(
@@ -240,7 +240,7 @@ def main() -> None:
         per_numeraire[market] = {"label": label, **_decompose_one(market, sector_map)}
 
     # Pretty-print headlines for the operator
-    print(f"BIST numéraire eigenmode decomposition — {len(NUMERAIRES)} numéraires, top 3 modes each\n")
+    print(f"BIST base currency eigenmode decomposition — {len(NUMERAIRES)} base currencies, top 3 modes each\n")
     for market, label, _ in NUMERAIRES:
         modes = per_numeraire[market]["modes"]
         print(f"=== {label} ({market}) ===")

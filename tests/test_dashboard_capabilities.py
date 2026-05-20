@@ -57,8 +57,8 @@ FINANCIAL_UNIVERSE_KEYS = {"bist", "bist_usd", "bist_gold", "sp500"}
 def test_pair_trading_filter_segregates_universes(registry):
     """app/dashboard.py's nav-level gate checks `has_pair_trading`; this test
     pins the expected split between financial and non-financial universes.
-    BIST numéraire variants (bist_usd, bist_gold) inherit the finance flags
-    so they participate in pair analysis like the source BIST universe."""
+    BIST base-currency variants (bist_usd, bist_gold) inherit the finance
+    flags so they participate in pair analysis like the source BIST universe."""
     pair_capable = {u.key for u in registry.UNIVERSES.values() if u.has_pair_trading}
     pair_incapable = {u.key for u in registry.UNIVERSES.values() if not u.has_pair_trading}
     assert pair_capable == FINANCIAL_UNIVERSE_KEYS, (
@@ -80,7 +80,7 @@ def test_snn_filter_segregates_universes(registry):
 
 def test_cross_market_eligibility_filter(registry):
     """app/cross_market.py's defence-in-depth filter requires at least 2
-    universes with `eligible_for_cross_market=True`. The BIST numéraire
+    universes with `eligible_for_cross_market=True`. The BIST base-currency
     variants are intentionally EXCLUDED from cross-market eligibility —
     the BIST↔S&P comparison page only knows the two source markets, not
     the FX/gold-denominated variants."""
@@ -99,7 +99,7 @@ def test_cross_market_eligibility_filter(registry):
 def test_anomaly_detection_filter_segregates_universes(registry):
     """app/dashboard.py's Anomalies section reads `has_anomaly_detection`.
     EEG has no concept of |log return| > threshold so it's off; financial
-    universes (including BIST numéraire variants) keep it on."""
+    universes (including BIST base-currency variants) keep it on."""
     anom_capable = {u.key for u in registry.UNIVERSES.values() if u.has_anomaly_detection}
     assert anom_capable == FINANCIAL_UNIVERSE_KEYS
 

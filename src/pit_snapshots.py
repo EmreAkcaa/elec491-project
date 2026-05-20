@@ -17,7 +17,7 @@ Storage budget (~125 MB total):
 
 Gating:
   - bist_usd / bist_gold: skipped. These re-express the SAME 73 BIST
-    tickers in a different numéraire; the correlation MATRIX shifts
+    tickers in a different base currency; the correlation MATRIX shifts
     modestly but the user is rarely scrubbing on these views. Live
     compute (50-200 ms) is acceptable when the user does flip basis.
   - eeg_motor_left_right: skipped. EEG doesn't have the same crisis-
