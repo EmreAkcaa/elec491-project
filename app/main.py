@@ -21,7 +21,7 @@ What lives here:
   3. `st.set_page_config` + `inject_custom_css` (Streamlit's "only one set_page_config
      per app" rule means this MUST live in main.py — pages MUST NOT call it).
   4. Phase Y Y3 two-tier pre-warm hook.
-  5. Sidebar render (dataset selector + BIST numéraire sub-switcher).
+  5. Sidebar render (dataset selector + BIST base-currency sub-switcher).
   6. Capability-gated page list build + page-disappearance pending stash
      (the Phase S #1 round-trip semantic carried forward to multi-page).
   7. `st.navigation(pages, position="sidebar").run()` — Streamlit's native
@@ -201,7 +201,7 @@ if "_prewarm_dispatched" not in st.session_state:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Sidebar: 3-dataset selector + BIST numéraire sub-switcher
+# Sidebar: 3-dataset selector + BIST base-currency sub-switcher
 # ══════════════════════════════════════════════════════════════════════════════
 # Sidebar runs on every page navigation (main.py re-executes per Streamlit's
 # multi-page model). The sidebar widgets persist their values in session_state

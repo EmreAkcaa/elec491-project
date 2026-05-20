@@ -1,4 +1,4 @@
-"""Fetch numéraire base assets (FX, gold) for the basis-variant experiment.
+"""Fetch base currency base assets (FX, gold) for the basis-variant experiment.
 
 Phase 4 of the mutable-candy rescue. The BIST log-returns panel is
 re-expressed in USD and in gold by subtracting the log-return of the

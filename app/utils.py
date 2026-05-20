@@ -768,14 +768,14 @@ for _p in (str(PROJECT_ROOT), str(APP_DIR)):
 DASHBOARD_UNIVERSE = os.environ.get("DASHBOARD_UNIVERSE", "bist")
 
 
-# BIST family numéraire mapping. The sidebar exposes (dataset, bist_basis)
+# BIST family base-currency mapping. The sidebar exposes (dataset, bist_basis)
 # as two controls; this dict resolves the (dataset="bist", bist_basis=…)
 # pair to the on-disk universe key. Other datasets (sp500, eeg_*) are used
 # verbatim and ignore bist_basis.
 _BIST_BASIS_TO_KEY = {
     "try":  "bist",       # default — TRY-denominated original
-    "usd":  "bist_usd",   # numéraire-converted via USD/TRY
-    "gold": "bist_gold",  # numéraire-converted via gold spot
+    "usd":  "bist_usd",   # base-currency-converted via USD/TRY
+    "gold": "bist_gold",  # base-currency-converted via gold spot
 }
 
 

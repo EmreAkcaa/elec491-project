@@ -1,4 +1,4 @@
-"""Numéraire transform: re-express a log-return panel in a new base asset.
+"""Base currency transform: re-express a log-return panel in a new base asset.
 
 Phase 4 of the mutable-candy rescue. ``apply_numeraire`` subtracts the
 log-return of the chosen base asset from every ticker's log-return — the
@@ -27,7 +27,7 @@ def apply_numeraire(
     log_returns: pd.DataFrame,
     base_log_returns: pd.Series,
 ) -> pd.DataFrame:
-    """Re-express a log-return panel in a different numéraire.
+    """Re-express a log-return panel in a different base currency.
 
     Mathematically:
 

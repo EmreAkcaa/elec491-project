@@ -95,8 +95,8 @@ UNIVERSES: dict[str, Universe] = {
         config_path="config/settings_bist_usd.yaml",
         description=(
             "Same BIST universe re-expressed in USD by dividing each ticker's "
-            "price by the USDTRY spot rate. Numéraire sensitivity probe: how "
-            "much of BIST co-movement is FX vs equity?"
+            "price by the USDTRY spot rate. Base-currency sensitivity probe: "
+            "how much of BIST co-movement is FX vs equity?"
         ),
         currency="USD",
         index_ticker="XU100",
@@ -115,8 +115,8 @@ UNIVERSES: dict[str, Universe] = {
         config_path="config/settings_bist_gold.yaml",
         description=(
             "Same BIST universe re-expressed in gold (XAU/TRY) by dividing "
-            "each ticker's price by the gold-TRY rate. Numéraire sensitivity "
-            "probe: real-purchasing-power view of BIST co-movement."
+            "each ticker's price by the gold-TRY rate. Base-currency "
+            "sensitivity probe: real-purchasing-power view of BIST co-movement."
         ),
         currency="XAU",
         index_ticker="XU100",

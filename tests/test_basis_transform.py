@@ -1,4 +1,4 @@
-"""Tests for the numéraire transform (Phase 4 mutable-candy).
+"""Tests for the base-currency transform (Phase 4 mutable-candy).
 
 Pins the canonical invariants of ``apply_numeraire``:
 
@@ -70,7 +70,7 @@ class TestApplyNumeraire:
         assert panel.index[3] not in out.index
 
     def test_subtract_then_recompose(self, panel):
-        """Apply numéraire and add base back → recover original panel."""
+        """Apply base-currency transform and add base back → recover original panel."""
         base = pd.Series(
             np.linspace(0.001, 0.002, len(panel)),
             index=panel.index, name="lin",

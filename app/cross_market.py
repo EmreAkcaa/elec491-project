@@ -357,7 +357,7 @@ def _kpi_row(comp_df: pd.DataFrame, label: str, key: str, kind: str = "raw") -> 
 # ---------------------------------------------------------------------------
 
 def _render_bist_numeraire_section() -> None:
-    """BIST in TRY / USD / Gold side-by-side numéraire sensitivity probe.
+    """BIST in TRY / USD / Gold side-by-side base-currency sensitivity probe.
 
     Phase 4 mutable-candy. Loads the precomputed `bist`, `bist_usd`,
     `bist_gold` results trees and renders three short panels:
@@ -375,11 +375,12 @@ def _render_bist_numeraire_section() -> None:
 
     with st.container(border=True):
         section_header(
-            "BIST Numéraire Sensitivity",
-            "Same BIST universe re-expressed in three numéraires (TRY, USD, "
-            "gold). The hypothesis was that removing the currency leg should "
-            "strip out a common factor and reduce the dominant eigenvalue's "
-            "share. The experiment refutes this: the share goes UP, not down.",
+            "BIST Base-currency Sensitivity",
+            "Same BIST universe re-expressed in three base currencies (TRY, "
+            "USD, gold). The hypothesis was that removing the currency leg "
+            "should strip out a common factor and reduce the dominant "
+            "eigenvalue's share. The experiment refutes this: the share "
+            "goes UP, not down.",
         )
 
         def _load_market(market_dir, key):
@@ -464,12 +465,12 @@ def _render_bist_numeraire_section() -> None:
                 .agg(lambda s: s.value_counts().iloc[0] / len(s))
                 .mean()
             )
-            sector_purity_rows.append({"Numéraire": d["key"], "Mean cluster purity": purity})
+            sector_purity_rows.append({"Base currency": d["key"], "Mean cluster purity": purity})
         purity_df = pd.DataFrame(sector_purity_rows)
         fig_pur = go.Figure(go.Bar(
-            x=purity_df["Numéraire"],
+            x=purity_df["Base currency"],
             y=purity_df["Mean cluster purity"],
-            marker_color=[palette[k] for k in purity_df["Numéraire"]],
+            marker_color=[palette[k] for k in purity_df["Base currency"]],
             text=[f"{v:.2%}" for v in purity_df["Mean cluster purity"]],
             textposition="outside",
         ))
@@ -485,7 +486,7 @@ def _render_bist_numeraire_section() -> None:
             fig_pur, chart_id="num_sector_purity",
             filename_base="numeraire_sector_purity",
             title_key="num_sector_purity",
-            default_title="Mean cluster sector-purity across BIST numéraires",
+            default_title="Mean cluster sector-purity across BIST base currencies",
         )
 
         # Per-sector eigenmode decomposition (Phase 4 follow-up)
@@ -503,7 +504,7 @@ def _render_bist_numeraire_section() -> None:
                 for mode in decomp["per_numeraire"][market_key]["modes"]:
                     top_sec = mode["top_sectors"][0]
                     rows.append({
-                        "Numéraire": label,
+                        "Base currency": label,
                         "Mode": f"#{mode['rank']}",
                         "λ": f"{mode['eigenvalue']:.2f}",
                         "Variance share": f"{mode['variance_share'] * 100:.2f}%",
@@ -518,8 +519,8 @@ def _render_bist_numeraire_section() -> None:
                     caption=(
                         "Variance share per eigenmode (left) and banking-sector "
                         "mass in each mode (right). 7 BIST banks are 9.6% of the "
-                        "universe but carry ~60% of mode #2 under every numéraire "
-                        "— a real banking-orthogonal factor."
+                        "universe but carry ~60% of mode #2 under every base "
+                        "currency — a real banking-orthogonal factor."
                     ),
                     use_container_width=True,
                 )
@@ -541,10 +542,10 @@ def _render_bist_numeraire_section() -> None:
                 "the OPPOSITE — exporters and importers respond oppositely to "
                 "TRY moves, so removing the currency amplifies the residual "
                 "global-equity-risk common factor. Mode #2 of BIST's correlation "
-                "matrix is a pure banking factor under every numéraire; its share "
-                "weakens 22% under USD/Gold, telling us the bank-vs-market spread "
-                "is largely TRY-rate-driven. Numéraire choice is a substantive "
-                "modelling decision, not a noise-removal step."
+                "matrix is a pure banking factor under every base currency; its "
+                "share weakens 22% under USD/Gold, telling us the bank-vs-market "
+                "spread is largely TRY-rate-driven. Base-currency choice is a "
+                "substantive modelling decision, not a noise-removal step."
             ),
         )
 
@@ -847,7 +848,7 @@ def render() -> None:
                     f"- current Z = {float(r.get('current_zscore', np.nan)):.2f}"
                 )
 
-    # ── Section 6b: Numéraire sensitivity (Phase 4 mutable-candy) ─────────
+    # ── Section 6b: Base-currency sensitivity (Phase 4 mutable-candy) ─────
     _render_bist_numeraire_section()
 
     # PORT arda/ui-cleanup item 13: "Methodology + limitations" footnote

@@ -77,7 +77,7 @@ def test_signals_renders_on_bist():
 
 
 def test_signals_renders_on_bist_usd():
-    """Numeraire flip (TRY→USD) shouldn't break the page."""
+    """Base-currency flip (TRY→USD) shouldn't break the page."""
     at = _at("bist_usd", basis="usd")
     at.run()
     assert not at.exception, (
