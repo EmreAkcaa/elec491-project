@@ -489,15 +489,16 @@ def _render_bist_numeraire_section() -> None:
             default_title="Mean cluster sector-purity across BIST base currencies",
         )
 
-        # Per-sector eigenmode decomposition (Phase 4 follow-up)
+        # Per-sector eigenmode decomposition.
         decomp_json = PROJECT_ROOT / "data" / "results" / "numeraire_decomposition.json"
-        decomp_svg = PROJECT_ROOT / "docs" / "figures" / "numeraire_sector_shift.svg"
         if decomp_json.exists():
             import json
             decomp = json.loads(decomp_json.read_text())
             st.markdown(
                 "**Per-mode sector decomposition — what factor structure shifts**"
             )
+
+            # Per-mode table
             rows = []
             for market_key in ("bist", "bist_usd", "bist_gold"):
                 label = decomp["per_numeraire"][market_key]["label"]
@@ -513,17 +514,105 @@ def _render_bist_numeraire_section() -> None:
                     })
             decomp_df = pd.DataFrame(rows)
             st.dataframe(decomp_df, use_container_width=True, hide_index=True)
-            if decomp_svg.exists():
-                st.image(
-                    str(decomp_svg),
-                    caption=(
-                        "Variance share per eigenmode (left) and banking-sector "
-                        "mass in each mode (right). 7 BIST banks are 9.6% of the "
-                        "universe but carry ~60% of mode #2 under every base "
-                        "currency — a real banking-orthogonal factor."
-                    ),
-                    use_container_width=True,
+
+            # ── Replace the legacy static SVG with a plotly grouped-bar pair.
+            # Two side-by-side plots: variance share per mode (left) and
+            # banking-sector mass per mode (right). Three bars per mode for
+            # the three base currencies.
+            currencies = [
+                ("bist", "TRY", "#1F77B4"),
+                ("bist_usd", "USD", "#2CA02C"),
+                ("bist_gold", "Gold", "#FFC400"),
+            ]
+            mode_labels = ["Mode 1", "Mode 2", "Mode 3"]
+            n_bank_tickers = int(decomp.get("n_bank_tickers_in_universe", 7))
+            # Compute a baseline = banks / universe size, averaged across
+            # the three currencies (universes are the same shape).
+            avg_n = int(np.mean([
+                decomp["per_numeraire"][k]["n_tickers"] for k, *_ in currencies
+            ]))
+            baseline_pct = 100.0 * n_bank_tickers / avg_n
+
+            _col_var, _col_bank = st.columns(2)
+
+            with _col_var:
+                fig_var = go.Figure()
+                for market_key, label, colour in currencies:
+                    modes = decomp["per_numeraire"][market_key]["modes"][:3]
+                    y_vals = [m["variance_share"] * 100 for m in modes]
+                    fig_var.add_trace(go.Bar(
+                        x=mode_labels[:len(modes)],
+                        y=y_vals,
+                        name=label,
+                        marker_color=colour,
+                        text=[f"{v:.1f}%" for v in y_vals],
+                        textposition="outside",
+                        hovertemplate=f"<b>{label}</b><br>%{{x}}: %{{y:.2f}}%<extra></extra>",
+                    ))
+                fig_var.update_layout(
+                    barmode="group",
+                    yaxis_title="Variance share",
+                    yaxis_ticksuffix="%",
+                    yaxis_range=[0, max(60, max(
+                        m["variance_share"] * 100
+                        for k, *_ in currencies
+                        for m in decomp["per_numeraire"][k]["modes"][:3]
+                    ) * 1.15)],
+                    height=380,
+                    margin=dict(l=40, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
                 )
+                render_chart(
+                    fig_var, chart_id="num_var_share",
+                    filename_base="variance_share_per_mode",
+                    default_title="Variance share per mode (top 3 eigenvalues)",
+                )
+
+            with _col_bank:
+                fig_bank = go.Figure()
+                for market_key, label, colour in currencies:
+                    modes = decomp["per_numeraire"][market_key]["modes"][:3]
+                    y_vals = [m["bank_mass_share"] * 100 for m in modes]
+                    fig_bank.add_trace(go.Bar(
+                        x=mode_labels[:len(modes)],
+                        y=y_vals,
+                        name=label,
+                        marker_color=colour,
+                        text=[f"{v:.1f}%" for v in y_vals],
+                        textposition="outside",
+                        hovertemplate=f"<b>{label}</b><br>%{{x}}: %{{y:.1f}}%<extra></extra>",
+                    ))
+                fig_bank.add_hline(
+                    y=baseline_pct, line_dash="dash",
+                    line_color="rgba(0,0,0,0.4)",
+                    annotation_text=f"baseline {n_bank_tickers}/{avg_n} = {baseline_pct:.1f}%",
+                    annotation_position="bottom right",
+                    annotation_font_size=10,
+                )
+                fig_bank.update_layout(
+                    barmode="group",
+                    yaxis_title="Banking-sector mass",
+                    yaxis_ticksuffix="%",
+                    yaxis_range=[0, max(75, max(
+                        m["bank_mass_share"] * 100
+                        for k, *_ in currencies
+                        for m in decomp["per_numeraire"][k]["modes"][:3]
+                    ) * 1.15)],
+                    height=380,
+                    margin=dict(l=40, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                )
+                render_chart(
+                    fig_bank, chart_id="num_bank_mass",
+                    filename_base="bank_mass_per_mode",
+                    default_title=f"Banking-sector mass per mode ({n_bank_tickers} of {avg_n} tickers baseline)",
+                )
+
+            st.caption(
+                f"7 BIST banks are {baseline_pct:.1f}% of the universe but carry "
+                "~60% of mode #2 under every base currency — a banking-orthogonal "
+                "factor that survives the base-currency change."
+            )
 
         # PHASE S (S10): trimmed from a 20-sentence "Reading." wall to a
         # 3-sentence punchline + numbers. Long-form interpretation moved to
