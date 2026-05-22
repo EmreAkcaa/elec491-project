@@ -398,25 +398,32 @@ def render(
     # Row 2: 5 KPI cards across full width.
     # Same metrics, same order — only the DOM layout differs from the
     # prior 7-col single row.
-    # vertical_alignment="bottom" so the theme button lines up with the date
-    # INPUT box, not the "Date range" label above it (columns top-align by
-    # default, which left the button floating next to the title).
-    _date_col, _theme_col = st.columns([1.5, 0.9], vertical_alignment="bottom")
+    if _cap(active_universe, 'has_date_filter', True):
+        # vertical_alignment="bottom" so the theme button lines up with the date
+        # INPUT box, not the "Date range" label above it (columns top-align by
+        # default, which left the button floating next to the title).
+        _date_col, _theme_col = st.columns([1.5, 0.9], vertical_alignment="bottom")
 
-    with _theme_col:
-        render_theme_popover()
+        with _theme_col:
+            render_theme_popover()
 
-    with _date_col:
-        date_range = st.date_input(
-            "Date range",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
-        )
+        with _date_col:
+            date_range = st.date_input(
+                "Date range",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+            )
 
-    if len(date_range) == 2:
-        start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
+        if len(date_range) == 2:
+            start_dt, end_dt = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
+        else:
+            start_dt, end_dt = pd.Timestamp(min_date), pd.Timestamp(max_date)
     else:
+        # EEG (no calendar axis): the date index is a synthetic datetime layered
+        # over a continuous 160 Hz recording, so a date filter is meaningless.
+        # Skip it, analyze the full recording, show just the theme control.
+        render_theme_popover()
         start_dt, end_dt = pd.Timestamp(min_date), pd.Timestamp(max_date)
 
     returns = full_returns.loc[start_dt:end_dt]
