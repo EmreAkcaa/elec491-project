@@ -431,15 +431,21 @@ def render(
     window_length = len(returns)
     dynamic_min_periods = max(30, int(window_length * 0.6))
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric(_cap(active_universe, 'items_label', 'Tickers'), f"{returns.shape[1]}")
-    m2.metric(
+    # The "Date Range" KPI is meaningless on a universe with a synthetic date
+    # axis (EEG layers a fake 2020-01 datetime over a continuous 160 Hz
+    # recording) — same gate as the date picker above. Show 4 KPIs on EEG, 5
+    # on finance.
+    _show_date_kpi = _cap(active_universe, 'has_date_filter', True)
+    _kpi = st.columns(5 if _show_date_kpi else 4)
+    _kpi[0].metric(_cap(active_universe, 'items_label', 'Tickers'), f"{returns.shape[1]}")
+    _kpi[1].metric(
         "Samples" if _cap(active_universe, 'domain', 'finance') == "neuroscience" else "Trading Days",
         f"{returns.shape[0]:,}",
     )
-    m3.metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
-    m4.metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
-    m5.metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
+    _kpi[2].metric("Avg Correlation", f"{market_summary.get('avg_pairwise_corr', 0):.4f}")
+    _kpi[3].metric("Median Correlation", f"{market_summary.get('median_pairwise_corr', 0):.4f}")
+    if _show_date_kpi:
+        _kpi[4].metric("Date Range", f"{start_dt.strftime('%Y-%m')} to {end_dt.strftime('%Y-%m')}")
 
     returns_cache_key = (
         f"{active_universe.key}:{start_dt.date().isoformat()}:"
