@@ -131,9 +131,15 @@ if _run_clicked:
     status = st.status("Running pipeline…", expanded=True)
     progress_lines: list[str] = []
 
+    # Info-theory stages still RUN (their output feeds the tickers/days counts)
+    # but are hidden from the progress log — no IT surfaces on this page.
+    _HIDDEN_PROGRESS_STAGES = {"it_kpis", "predictability_diagnostics"}
+
     def _progress_cb(name: str, state: str, message: str) -> None:
         # Render one line per stage transition. Streamlit's st.status
         # accepts incremental write calls.
+        if name in _HIDDEN_PROGRESS_STAGES:
+            return
         if state == "running":
             line = f":material/hourglass_top: **{name}** — running…"
         elif state == "ok":
