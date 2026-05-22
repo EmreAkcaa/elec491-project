@@ -376,11 +376,7 @@ def _render_bist_numeraire_section() -> None:
     with st.container(border=True):
         section_header(
             "BIST Base-currency Sensitivity",
-            "Same BIST universe re-expressed in three base currencies (TRY, "
-            "USD, gold). The hypothesis was that removing the currency leg "
-            "should strip out a common factor and reduce the dominant "
-            "eigenvalue's share. The experiment refutes this: the share "
-            "goes UP, not down.",
+            "Same BIST universe re-expressed in three base currencies (TRY, USD, gold).",
         )
 
         def _load_market(market_dir, key):

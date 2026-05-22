@@ -1004,31 +1004,6 @@ def _render_tab_clustering(
             st.metric("Clusters Found", n_clusters)
 
             if "sector" in cluster_df.columns:
-                # Universe-appropriate sanity-check banners.
-                for group_label, members in (_cap(active_universe, 'sanity_check_groups', None) or {}).items():
-                    present = cluster_df[cluster_df["ticker"].isin(members)]
-                    if present.empty:
-                        continue
-                    present_clusters = present["cluster_id"].unique()
-                    names = present["ticker"].tolist()
-                    if len(names) > 12:
-                        names_str = ", ".join(names[:12]) + f", … (+{len(names) - 12} more)"
-                    else:
-                        names_str = ", ".join(names)
-                    if len(present_clusters) == 1:
-                        st.success(
-                            f"**{group_label} sanity check passed.** All "
-                            f"{len(present)} members ({names_str}) are in "
-                            f"Cluster {present_clusters[0]}."
-                        )
-                    else:
-                        st.warning(
-                            f"**{group_label}:** {len(present)} members span "
-                            f"{len(present_clusters)} clusters "
-                            f"({', '.join(str(c) for c in sorted(present_clusters))}). "
-                            f"Members: {names_str}"
-                        )
-
                 st.markdown("**Cluster Purity**")
                 purity_rows = []
                 for cid, grp in cluster_df.groupby("cluster_id"):

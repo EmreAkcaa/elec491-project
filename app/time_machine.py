@@ -527,8 +527,7 @@ def render(
             key="tm_build_pit_mst",
             help=(
                 "ON: derive an MST from the windowed correlation above. "
-                "OFF: show the full-period MST baked at pipeline time. "
-                "Compare to see how the network's backbone changes during stress."
+                "OFF: show the full-period MST baked at pipeline time."
             ),
         )
 

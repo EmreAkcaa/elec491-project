@@ -346,8 +346,7 @@ def render_rmt(sector_map: dict, *, u=None):
         section_header(
             "RMT Correlation Denoising",
             "Random Matrix Theory separates signal from noise in the correlation matrix "
-            "using the Marchenko-Pastur distribution. Eigenvalues within the MP bounds "
-            "are indistinguishable from random noise.",
+            "using the Marchenko-Pastur distribution.",
         )
 
         spectrum = load_eigenvalue_spectrum()
@@ -439,14 +438,11 @@ def render_rmt(sector_map: dict, *, u=None):
             st.caption(
                 "Built on the **denoised** correlation matrix — noise "
                 "eigenvalues (inside the Marchenko–Pastur band) replaced "
-                "by their mean before reconstruction. Signal-only network "
-                "backbone."
+                "by their mean before reconstruction."
             )
         elif mst_choice == "Both (overlay)":
             st.caption(
-                "Raw and Denoised MSTs overlaid on the same Kamada-Kawai "
-                "layout — edges that survive denoising are the structurally "
-                "meaningful ones."
+                "Raw and Denoised MSTs overlaid on the same Kamada-Kawai layout."
             )
 
         # Denoised correlation heatmap (full width)
@@ -507,8 +503,7 @@ def render_glasso(sector_map: dict, *, u=None):
         section_header(
             "Graphical LASSO — Partial Correlation Network",
             "L1-regularized sparse precision matrix estimation. Non-zero entries represent "
-            "direct (conditional) dependencies, filtering out indirect correlations. "
-            "If A correlates with B only because both correlate with C, the GLASSO removes the A-B edge.",
+            "direct (conditional) dependencies, filtering out indirect correlations.",
         )
 
         # Permanent explainer for the L1 regularization knob — sits above the
@@ -923,8 +918,7 @@ def _render_wavelet_for_scale(
     # elsewhere in the app.
     st.caption(
         f"Built on DWT detail coefficients at scale {scale_level} "
-        f"({scale_label}) — isolates co-movement at this frequency band only. "
-        "Contrasts with the full-period MST in **Clustering & Network**."
+        f"({scale_label}) — isolates co-movement at this frequency band only."
     )
 
 
@@ -1013,8 +1007,7 @@ def render_transfer_entropy(sector_map: dict, *, u=None):
         section_header(
             "Transfer Entropy — Directed Information Flow",
             "Unlike correlation (symmetric), transfer entropy measures directed causality: "
-            f"'Does {_il} A's past reduce uncertainty about {_il} B's future?' "
-            f"Produces an asymmetric network revealing which {_items_lower} lead and which follow.",
+            f"'Does {_il} A's past reduce uncertainty about {_il} B's future?'",
         )
 
         roles = load_te_node_roles()
