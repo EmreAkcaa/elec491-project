@@ -6,10 +6,12 @@
 # `streamlit run` from inside app/, copy this file under app/.streamlit/.
 
 [theme]
-primaryColor = "#4361EE"
-backgroundColor = "#FAFBFC"
-secondaryBackgroundColor = "#F0F2F6"
-textColor = "#2B2D42"
+# "Light Scientific Instrument" palette. The real font (IBM Plex Sans/Mono)
+# is applied via app/utils.py:inject_custom_css(); `font` here stays generic.
+primaryColor = "#2F3D6E"
+backgroundColor = "#FCFCFA"
+secondaryBackgroundColor = "#F5F5F2"
+textColor = "#1B1D24"
 font = "sans serif"
 
 [server]
