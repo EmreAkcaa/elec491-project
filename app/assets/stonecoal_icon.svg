@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56" role="img" aria-label="StoNeCoAl">
+  <!-- Square network-glyph mark for the favicon + collapsed-sidebar icon. -->
+  <g fill="none" stroke="#8D99AE" stroke-width="2.4" stroke-linecap="round">
+    <line x1="28" y1="29" x2="14" y2="15"/>
+    <line x1="28" y1="29" x2="15" y2="44"/>
+    <line x1="28" y1="29" x2="44" y2="19"/>
+  </g>
+  <circle cx="28" cy="29" r="6" fill="#4361EE"/>
+  <circle cx="14" cy="15" r="4.5" fill="#2EC4B6"/>
+  <circle cx="15" cy="44" r="4.5" fill="#2B2D42"/>
+  <circle cx="44" cy="19" r="4.5" fill="#2EC4B6"/>
+</svg>

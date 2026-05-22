@@ -152,12 +152,29 @@ except Exception:  # noqa: BLE001 — SessionInfo not yet initialised
 
 _active_universe = get_universe(_active_universe_key)
 
+# Brand assets (top-left logo + favicon). Paths resolved relative to this
+# file so `streamlit run app/main.py` works from any cwd.
+_ASSETS = Path(__file__).resolve().parent / "assets"
+_LOGO_PATH = _ASSETS / "stonecoal_logo.svg"
+_LOGO_ICON_PATH = _ASSETS / "stonecoal_icon.svg"
+
 st.set_page_config(
     page_title=f"StoNeCoAl — {_cap(_active_universe, 'short_label', 'BIST 100')}",
-    page_icon="<svg xmlns='http://www.w3.org/2000/svg'/>",
+    page_icon=str(_LOGO_ICON_PATH) if _LOGO_ICON_PATH.exists() else "📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Top-left brand logo (above the sidebar nav). `icon_image` is the compact
+# network glyph shown when the sidebar is collapsed.
+if _LOGO_PATH.exists():
+    st.logo(
+        str(_LOGO_PATH),
+        size="large",
+        link="https://stonecoal.io",
+        icon_image=str(_LOGO_ICON_PATH) if _LOGO_ICON_PATH.exists() else None,
+    )
+
 inject_custom_css()
 
 
