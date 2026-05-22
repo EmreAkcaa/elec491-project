@@ -453,10 +453,6 @@ def _render_bist_numeraire_section() -> None:
         )
 
         # Sector purity bars
-        st.markdown(
-            "**Sector purity** — share of each cluster occupied by its modal sector. "
-            "Higher = cleaner sector recovery."
-        )
         sector_purity_rows = []
         for d in (bist_data, usd_data, gold_data):
             clusters = d["clusters"].dropna(subset=["sector", "cluster_id"])
@@ -608,35 +604,6 @@ def _render_bist_numeraire_section() -> None:
                     default_title=f"Banking-sector mass per mode ({n_bank_tickers} of {avg_n} tickers baseline)",
                 )
 
-            st.caption(
-                f"7 BIST banks are {baseline_pct:.1f}% of the universe but carry "
-                "~60% of mode #2 under every base currency — a banking-orthogonal "
-                "factor that survives the base-currency change."
-            )
-
-        # PHASE S (S10): trimmed from a 20-sentence "Reading." wall to a
-        # 3-sentence punchline + numbers. Long-form interpretation moved to
-        # the section header's `help=` tooltip (hover for full explanation).
-        _bist_top_pct = bist_data['eig']['eigenvalue'].max() / bist_data['eig']['eigenvalue'].sum() * 100
-        _usd_top_pct = usd_data['eig']['eigenvalue'].max() / usd_data['eig']['eigenvalue'].sum() * 100
-        _gold_top_pct = gold_data['eig']['eigenvalue'].max() / gold_data['eig']['eigenvalue'].sum() * 100
-        st.markdown(
-            f"**Top-eigenvalue share:** TRY **{_bist_top_pct:.1f}%** → "
-            f"USD **{_usd_top_pct:.1f}%** → Gold **{_gold_top_pct:.1f}%**. "
-            "TRY volatility is a dispersion source — removing the currency leg "
-            "concentrates rather than diffuses the common factor.",
-            help=(
-                "Naïve hypothesis: stripping the TRY leg removes a market-wide "
-                "common factor and reduces the top eigenvalue's share. Result: "
-                "the OPPOSITE — exporters and importers respond oppositely to "
-                "TRY moves, so removing the currency amplifies the residual "
-                "global-equity-risk common factor. Mode #2 of BIST's correlation "
-                "matrix is a pure banking factor under every base currency; its "
-                "share weakens 22% under USD/Gold, telling us the bank-vs-market "
-                "spread is largely TRY-rate-driven. Base-currency choice is a "
-                "substantive modelling decision, not a noise-removal step."
-            ),
-        )
 
 
 def render() -> None:

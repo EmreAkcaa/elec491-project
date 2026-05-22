@@ -56,6 +56,7 @@ class Universe:
     has_snn: bool = True
     has_anomaly_detection: bool = True
     has_validation_report: bool = True
+    has_transfer_entropy: bool = True
     eligible_for_cross_market: bool = True
 
     # ── Domain category (rarely used directly; mostly for future logic) ──
@@ -82,6 +83,7 @@ UNIVERSES: dict[str, Universe] = {
         currency="TRY",
         index_ticker="XU100",
         index_display_name="XU100 (Borsa İstanbul 100)",
+        has_transfer_entropy=False,
         sanity_check_groups={
             "Banking sector": [
                 "AKBNK", "GARAN", "YKBNK", "VAKBN", "HALKB", "SKBNK", "ISCTR",
@@ -141,6 +143,7 @@ UNIVERSES: dict[str, Universe] = {
         currency="USD",
         index_ticker="^GSPC",
         index_display_name="^GSPC (S&P 500)",
+        has_transfer_entropy=False,
         sanity_check_groups={
             "Mega-cap tech": ["AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN"],
         },

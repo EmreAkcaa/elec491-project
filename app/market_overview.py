@@ -1180,13 +1180,6 @@ def _render_tab_rolling(
         # PHASE S (S2): window selector standardised to {60, 120, 252}
         # matching Time Machine. Removes the freeform 20–504 number_input
         # that was producing arbitrary cache-missing values.
-        st.caption(
-            ":material/touch_app: Configure window / step / method, then click "
-            "**Recompute** to apply. Default combo (window=252, step=5, pearson, "
-            "rolling) loads instantly; off-grid params take ~10–15 s on S&P. "
-            "**EWM α** only applies when *Window type = ewm*."
-        )
-
         with st.form("rolling_params", border=False):
             # PHASE S (S3): widgets in one row, Recompute button in its own
             # row below, horizontally centered. Previous layout crammed the
