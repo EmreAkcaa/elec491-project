@@ -398,7 +398,10 @@ def render(
     # Row 2: 5 KPI cards across full width.
     # Same metrics, same order — only the DOM layout differs from the
     # prior 7-col single row.
-    _date_col, _theme_col = st.columns([1.5, 0.9])
+    # vertical_alignment="bottom" so the theme button lines up with the date
+    # INPUT box, not the "Date range" label above it (columns top-align by
+    # default, which left the button floating next to the title).
+    _date_col, _theme_col = st.columns([1.5, 0.9], vertical_alignment="bottom")
 
     with _theme_col:
         render_theme_popover()

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="212" height="56" viewBox="0 0 212 56" role="img" aria-label="StoNeCoAl">
+  <!-- Network glyph: a small correlation graph (hub + 3 nodes), echoing the
+       MST backbone the project is built around. -->
+  <g fill="none" stroke="#8D99AE" stroke-width="2" stroke-linecap="round">
+    <line x1="32" y1="28" x2="13" y2="13"/>
+    <line x1="32" y1="28" x2="13" y2="44"/>
+    <line x1="32" y1="28" x2="50" y2="18"/>
+  </g>
+  <circle cx="32" cy="28" r="5.5" fill="#4361EE"/>
+  <circle cx="13" cy="13" r="4" fill="#2EC4B6"/>
+  <circle cx="13" cy="44" r="4" fill="#2B2D42"/>
+  <circle cx="50" cy="18" r="4" fill="#2EC4B6"/>
+
+  <!-- Wordmark: the camelCase capitals S-N-C-A (blue) spell the method:
+       Stock Network Correlation Analysis. -->
+  <text x="66" y="37"
+        font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="27" font-weight="700" letter-spacing="-0.6">
+    <tspan fill="#4361EE">S</tspan><tspan fill="#2B2D42">to</tspan><tspan fill="#4361EE">N</tspan><tspan fill="#2B2D42">e</tspan><tspan fill="#4361EE">C</tspan><tspan fill="#2B2D42">o</tspan><tspan fill="#4361EE">A</tspan><tspan fill="#2B2D42">l</tspan>
+  </text>
+</svg>
