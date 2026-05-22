@@ -582,8 +582,7 @@ def render(
         with st.container(border=True):
             section_header(
                 "Return Distributions & Rolling Volatility",
-                "Left: overlaid return histograms. Right: annualized rolling volatility — "
-                "simultaneous spikes indicate shared systematic risk.",
+                "Left: overlaid return histograms. Right: annualized rolling volatility.",
             )
 
             _vol_sel, _vol_spacer = st.columns([1, 5])
@@ -652,8 +651,7 @@ def render(
         with st.container(border=True):
             section_header(
                 "Drawdown Analysis",
-                "Percentage decline from running peak. Overlapping filled areas "
-                "highlight joint drawdown periods.",
+                "Percentage decline from running peak.",
             )
 
             if ticker_a in prices_window.columns and ticker_b in prices_window.columns:
