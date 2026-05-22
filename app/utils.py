@@ -373,6 +373,22 @@ def inject_custom_css():
     """Inject global CSS for consistent look & feel."""
     st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+    /* ── Typography — "Light Scientific Instrument" (IBM Plex pairing)
+       Plex Sans for text/headers; Plex Mono (tabular figures) for
+       numbers + labels → instrument-readout feel. System-stack
+       fallbacks so a blocked/slow font load degrades to system sans
+       and never breaks layout. */
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] {
+        font-family: 'IBM Plex Sans', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    /* Tabular monospace for data: KPI values + dataframe cells. Ticker
+       symbols + aligned numbers read like a terminal. */
+    [data-testid="stMetricValue"], .stDataFrame table {
+        font-family: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+        font-feature-settings: 'tnum' 1;
+    }
+
     /* ── Sidebar styling ─────────────────────────────────────────
        HOTFIX 2026-05-19: removed `[data-testid="stSidebarNav"]
        { display: none !important; }` here. That rule was added during
@@ -420,35 +436,38 @@ def inject_custom_css():
         font-size: 16px !important;
     }
 
-    /* ── Metric cards ────────────────────────────────────────── */
+    /* ── Metric cards → flat hairline panels (instrument readout) ─
+       No gradient, no shadow, sharp 2px corners. Mono tabular value,
+       small-caps mono label. */
     [data-testid="stMetric"] {
-        background: linear-gradient(135deg, #f8f9fc 0%, #eef1f6 100%);
-        border: 1px solid #e2e6ee;
-        border-radius: 8px;
-        padding: 12px 16px 8px 16px;
-        box-shadow: 0 1px 3px rgba(43,45,66,0.06);
+        background: #FFFFFF;
+        border: 1px solid #DADCE0;
+        border-radius: 2px;
+        padding: 10px 14px 8px 14px;
+        box-shadow: none;
     }
     [data-testid="stMetricValue"] {
-        font-size: 1.3rem;
-        font-weight: 700;
-        color: #2B2D42;
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: #1B1D24;
     }
     [data-testid="stMetricLabel"] {
-        font-size: 0.75rem;
+        font-size: 0.68rem;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #6c757d;
+        letter-spacing: 0.08em;
+        color: #6A7079;
+        font-family: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
     }
 
-    /* ── Segmented control — dark nav bar ────────────────────── */
+    /* ── Segmented control — light instrument track ──────────── */
     div[data-testid="stSegmentedControl"] {
-        background: #1a1c2e;
-        border-radius: 8px;
+        background: #EFEFEC;
+        border-radius: 3px;
         padding: 4px;
     }
     div[data-testid="stSegmentedControl"] button {
-        color: #8D99AE !important;
-        border-radius: 6px !important;
+        color: #6A7079 !important;
+        border-radius: 2px !important;
         font-weight: 600 !important;
         font-size: 0.92rem !important;
         padding: 8px 28px !important;
@@ -463,15 +482,15 @@ def inject_custom_css():
        Box-shadow + bold + solid bg make the active state pop; hover bg
        cues clickability on the inactive ones. */
     button[data-testid="stBaseButton-segmented_controlActive"] {
-        background: #4361EE !important;
+        background: #2F3D6E !important;
         color: #ffffff !important;
         font-weight: 700 !important;
-        box-shadow: 0 2px 8px rgba(67, 97, 238, 0.30) !important;
-        border-color: #4361EE !important;
+        box-shadow: 0 1px 4px rgba(47, 61, 110, 0.25) !important;
+        border-color: #2F3D6E !important;
     }
     button[data-testid="stBaseButton-segmented_control"]:hover {
-        background: rgba(67, 97, 238, 0.15) !important;
-        color: #4361EE !important;
+        background: rgba(47, 61, 110, 0.12) !important;
+        color: #2F3D6E !important;
         cursor: pointer;
     }
 
@@ -481,30 +500,30 @@ def inject_custom_css():
        sub-tab without squinting. */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0;
-        border-bottom: 2px solid #e9ecef;
+        border-bottom: 2px solid #DADCE0;
     }
     .stTabs [data-baseweb="tab"] {
         font-weight: 600;
         font-size: 0.88rem;
-        color: #8D99AE;
+        color: #6A7079;
         border-bottom: 2px solid transparent;
         padding: 10px 20px;
         margin-bottom: -2px;
         transition: all 0.15s ease;
     }
     .stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) {
-        color: #4361EE;
-        background: rgba(67, 97, 238, 0.04);
+        color: #2F3D6E;
+        background: rgba(47, 61, 110, 0.04);
         cursor: pointer;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        color: #4361EE;
-        border-bottom: 3px solid #4361EE;
-        background: rgba(67, 97, 238, 0.06);
+        color: #2F3D6E;
+        border-bottom: 3px solid #2F3D6E;
+        background: rgba(47, 61, 110, 0.06);
         font-weight: 700;
     }
     .stTabs [data-baseweb="tab-highlight"] {
-        background-color: #4361EE !important;
+        background-color: #2F3D6E !important;
         height: 3px !important;
     }
 
@@ -523,7 +542,7 @@ def inject_custom_css():
        major bumps. */
     .subtab-as-tabs {
         margin-bottom: 0.4rem;
-        border-bottom: 2px solid #e9ecef;
+        border-bottom: 2px solid #DADCE0;
     }
     .subtab-as-tabs div[data-testid="stSegmentedControl"] {
         background: transparent !important;
@@ -533,7 +552,7 @@ def inject_custom_css():
     .subtab-as-tabs button[data-testid="stBaseButton-segmented_control"],
     .subtab-as-tabs button[data-testid="stBaseButton-segmented_controlActive"] {
         background: transparent !important;
-        color: #8D99AE !important;
+        color: #6A7079 !important;
         font-weight: 600 !important;
         font-size: 0.88rem !important;
         border: none !important;
@@ -545,42 +564,42 @@ def inject_custom_css():
         transition: all 0.15s ease !important;
     }
     .subtab-as-tabs button[data-testid="stBaseButton-segmented_control"]:hover {
-        color: #4361EE !important;
-        background: rgba(67, 97, 238, 0.04) !important;
+        color: #2F3D6E !important;
+        background: rgba(47, 61, 110, 0.04) !important;
         cursor: pointer;
     }
     .subtab-as-tabs button[data-testid="stBaseButton-segmented_controlActive"] {
-        color: #4361EE !important;
-        border-bottom: 3px solid #4361EE !important;
-        background: rgba(67, 97, 238, 0.06) !important;
+        color: #2F3D6E !important;
+        border-bottom: 3px solid #2F3D6E !important;
+        background: rgba(47, 61, 110, 0.06) !important;
         font-weight: 700 !important;
         box-shadow: none !important;
     }
 
-    /* ── Popover panels ──────────────────────────────────────── */
+    /* ── Popover panels — sharp hairline ─────────────────────── */
     [data-testid="stPopoverBody"] {
-        border: 1px solid #e2e6ee;
-        border-radius: 10px;
-        box-shadow: 0 4px 16px rgba(43,45,66,0.10);
+        border: 1px solid #DADCE0;
+        border-radius: 3px;
+        box-shadow: 0 4px 14px rgba(27,29,36,0.08);
         padding: 4px;
     }
 
-    /* ── Section dividers ────────────────────────────────────── */
+    /* ── Section dividers — thin rule above headers ──────────── */
     .stMarkdown hr {
         border: none;
-        border-top: 1px solid #e9ecef;
+        border-top: 1px solid #DADCE0;
         margin: 1.2rem 0;
     }
 
-    /* ── Bordered containers — card appearance ───────────────── */
+    /* ── Bordered containers — flat hairline panels ──────────── */
     [data-testid="stVerticalBlock"] > div[data-testid="stExpander"],
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 10px;
+        border-radius: 2px;
     }
 
-    /* ── Dataframe styling ───────────────────────────────────── */
+    /* ── Dataframe — sharp corners, mono numerics ────────────── */
     .stDataFrame {
-        border-radius: 8px;
+        border-radius: 2px;
         overflow: hidden;
     }
 
@@ -593,7 +612,7 @@ def inject_custom_css():
     .stSelectbox label, .stDateInput label, .stSlider label {
         font-size: 0.82rem;
         font-weight: 500;
-        color: #555;
+        color: #6A7079;
     }
 
     /* ── UX polish — Loading-state indicator (single top progress bar)
@@ -628,9 +647,9 @@ def inject_custom_css():
         height: 2px;
         background: linear-gradient(
             90deg,
-            rgba(67,97,238,0) 0%,
-            rgba(67,97,238,1.0) 50%,
-            rgba(67,97,238,0) 100%
+            rgba(47,61,110,0) 0%,
+            rgba(47,61,110,1.0) 50%,
+            rgba(47,61,110,0) 100%
         );
         background-size: 35% 100%;
         background-repeat: no-repeat;

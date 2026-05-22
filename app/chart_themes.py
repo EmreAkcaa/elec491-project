@@ -33,17 +33,20 @@ class ChartTheme:
     """Immutable snapshot of all visual settings for charts."""
 
     # -- Typography --------------------------------------------------------
-    font_family: str = "Inter, -apple-system, sans-serif"
+    # "Light Scientific Instrument" default. IBM Plex Sans matches the
+    # dashboard chrome (set in inject_custom_css). Named presets below
+    # override these fields explicitly, so they are unaffected.
+    font_family: str = "IBM Plex Sans, -apple-system, sans-serif"
     font_size: int = 12
-    font_color: str = "#2B2D42"
+    font_color: str = "#1B1D24"
     title_font_size: int = 14
 
-    # -- Primary palette ---------------------------------------------------
-    color_primary: str = "#4361EE"
-    color_secondary: str = "#E63946"
-    color_tertiary: str = "#2EC4B6"
-    color_muted: str = "#8D99AE"
-    color_bg: str = "#FAFBFC"
+    # -- Primary palette (instrument: deep slate-indigo + muted brick/teal) -
+    color_primary: str = "#2F3D6E"
+    color_secondary: str = "#B5523A"
+    color_tertiary: str = "#3E8A86"
+    color_muted: str = "#9AA0A8"
+    color_bg: str = "#FCFCFA"
 
     # -- Lines -------------------------------------------------------------
     line_width: float = 2.2
