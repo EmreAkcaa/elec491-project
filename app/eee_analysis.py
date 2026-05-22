@@ -435,22 +435,14 @@ def render_rmt(sector_map: dict, *, u=None):
         render_chart(fig, chart_id="rmt_mst", filename_base="rmt_mst",
                      title_key="rmt_mst",
                      default_title=f"MST Network ({mst_choice}, nodes sized by betweenness)")
-        # Subtitle clarifies what this MST is vs Clustering & Network's
-        # raw MST and the Wavelet per-scale MSTs.
-        if mst_choice == "Raw":
-            st.caption(
-                "Raw MST on Pearson correlation distance — same metric as "
-                "**Clustering & Network → MST**. Toggle 'Denoised' to see "
-                "the RMT-cleaned version."
-            )
-        elif mst_choice == "Denoised":
+        if mst_choice == "Denoised":
             st.caption(
                 "Built on the **denoised** correlation matrix — noise "
                 "eigenvalues (inside the Marchenko–Pastur band) replaced "
                 "by their mean before reconstruction. Signal-only network "
                 "backbone."
             )
-        else:  # "Both (overlay)"
+        elif mst_choice == "Both (overlay)":
             st.caption(
                 "Raw and Denoised MSTs overlaid on the same Kamada-Kawai "
                 "layout — edges that survive denoising are the structurally "
@@ -458,7 +450,6 @@ def render_rmt(sector_map: dict, *, u=None):
             )
 
         # Denoised correlation heatmap (full width)
-        st.markdown("**Denoised Correlation Matrix** — eigenvalues outside the MP band reconstructed; noise eigenvalues replaced with their mean.")
         denoised = load_denoised_corr()
         order = load_dendrogram_order()
         render_matrix_heatmap(
@@ -2054,11 +2045,17 @@ def render():
     # entirely across all universes per user direction. The underlying
     # render functions + pipeline stages stay in place (artifacts on
     # disk, math is preserved) — we just don't surface the tabs.
-    _sub_labels = (
-        "RMT Denoising",
-        "Graphical LASSO",
-        "Wavelet Multi-Scale",
-        "Transfer Entropy",
+    # Transfer Entropy is gated by the Universe.has_transfer_entropy flag
+    # (hidden for BIST 100 and S&P 500; surfaced for the EEG universe
+    # where the methodology demo is more defensible).
+    _sub_labels = tuple(
+        label for label in (
+            "RMT Denoising",
+            "Graphical LASSO",
+            "Wavelet Multi-Scale",
+            "Transfer Entropy",
+        )
+        if label != "Transfer Entropy" or getattr(_active, "has_transfer_entropy", True)
     )
 
     _active_sub = render_subtabs("methods_lab", _sub_labels, label="Method")
