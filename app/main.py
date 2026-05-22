@@ -321,7 +321,8 @@ visible_titles: list[str] = []
 if _cap(_active_universe, 'eligible_for_cross_market', True):
     visible_titles.append("Cross-Market")
 visible_titles.append("Market Overview")
-visible_titles.append("Time Machine")
+if _cap(_active_universe, 'has_time_machine', True):
+    visible_titles.append("Time Machine")
 if _cap(_active_universe, 'has_pair_trading', True):
     visible_titles.append("Signals")
     visible_titles.append("Pair Analysis")
