@@ -57,6 +57,8 @@ class Universe:
     has_anomaly_detection: bool = True
     has_validation_report: bool = True
     has_transfer_entropy: bool = True
+    has_time_machine: bool = True
+    has_rolling_analysis: bool = True
     eligible_for_cross_market: bool = True
 
     # ── Domain category (rarely used directly; mostly for future logic) ──
@@ -173,6 +175,14 @@ UNIVERSES: dict[str, Universe] = {
         has_snn=False,
         has_anomaly_detection=False,
         has_validation_report=False,
+        # Time Machine is calendar-date-driven (PIT snapshots across 2020-2026);
+        # EEG has no calendar axis (placeholder dates) so the page is meaningless.
+        has_time_machine=False,
+        # Rolling Analysis is framed as rolling *market* correlation over trading
+        # days; on 160 Hz neural data the window/axis/"market" semantics are wrong.
+        has_rolling_analysis=False,
+        # has_transfer_entropy inherits default True — TE is surfaced on EEG
+        # (methodology demo) and hidden on BIST/S&P (PR #84).
         eligible_for_cross_market=False,
         # Domain
         domain="neuroscience",

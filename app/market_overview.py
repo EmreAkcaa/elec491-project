@@ -436,15 +436,22 @@ def render(
         f"{end_dt.date().isoformat()}:{returns.shape[0]}x{returns.shape[1]}"
     )
 
-    # ── Sub-tab layout (Pairs & Dislocations gated by capability) ───────
-    _tab_labels = ["Data & Stats", "Correlation", "Clustering & Network", "Rolling Analysis"]
+    # ── Sub-tab layout (Rolling Analysis + Pairs & Dislocations gated) ──
+    # Rolling Analysis is framed as rolling *market* correlation over trading
+    # days; on EEG (160 Hz, no calendar) that semantic is wrong, so it's hidden.
+    _tab_labels = ["Data & Stats", "Correlation", "Clustering & Network"]
+    if _cap(active_universe, 'has_rolling_analysis', True):
+        _tab_labels.append("Rolling Analysis")
     if _cap(active_universe, 'has_pair_trading', True):
         _tab_labels.append("Pairs & Dislocations")
     _active_main_tab = render_subtabs("market_overview", tuple(_tab_labels))
     _show_tab_data    = _active_main_tab == "Data & Stats"
     _show_tab_corr    = _active_main_tab == "Correlation"
     _show_tab_cluster = _active_main_tab == "Clustering & Network"
-    _show_tab_rolling = _active_main_tab == "Rolling Analysis"
+    _show_tab_rolling = (
+        _active_main_tab == "Rolling Analysis"
+        and "Rolling Analysis" in _tab_labels
+    )
     _show_tab_pairs   = (
         _active_main_tab == "Pairs & Dislocations"
         and "Pairs & Dislocations" in _tab_labels

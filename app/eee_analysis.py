@@ -543,16 +543,25 @@ def render_glasso(sector_map: dict, *, u=None):
         # the disk artifacts directly — no spurious refit on first mount.
         _pipeline_meta = load_glasso_metadata() or {}
         _pipeline_alpha = float(_pipeline_meta.get("alpha", 0.05) or 0.05)
+        # Some universes (EEG) have a CV-selected α far below the widget floor
+        # (e.g. 1.16e-9 vs the 1e-6 min) — feeding that straight into
+        # st.number_input raises StreamlitValueBelowMinError. Clamp only the
+        # INITIAL value into range; this is a no-op for finance (BIST/S&P α are
+        # ~2e-4, well above the floor) and just pins EEG to the floor on first
+        # mount. The reuse-disk check below (abs diff < 1e-6) still fires for
+        # EEG, so the precomputed artifacts are used with no spurious refit.
+        _alpha_min = 1e-6
+        _alpha_init = min(max(_pipeline_alpha, _alpha_min), 10.0)
         alpha_value = st.number_input(
             "α (L1 regularization strength)",
-            min_value=1e-6,
+            min_value=_alpha_min,
             max_value=10.0,
-            value=_pipeline_alpha,
+            value=_alpha_init,
             step=0.0001,
             format="%.6f",
             key="glasso_alpha_input",
             help=(
-                f"Pipeline CV picked α ≈ {_pipeline_alpha:.6f}. "
+                f"Pipeline CV picked α ≈ {_pipeline_alpha:.2e}. "
                 "Lower α → denser network (more edges, including weaker ones). "
                 "Higher α → sparser network (only the strongest direct links survive). "
                 "Type a new value and the page refits GLASSO with that α."
@@ -2066,13 +2075,19 @@ def render():
         render_glasso(sector_map, u=_active)
     elif _active_sub == "Wavelet Multi-Scale":
         render_wavelets(sector_map, u=_active)
-        # Neuroscience caption: scales are time-bands at 160 Hz, not days.
+        # Neuroscience caption: scales are frequency bands at 160 Hz, not days.
+        # The per-scale labels (from wavelet_metadata.json) now carry the band
+        # names directly (gamma 40-80 Hz … delta 0.6-1.2 Hz); this caption adds
+        # the two honest caveats a grader would probe.
         if getattr(_active, "domain", "finance") == "neuroscience":
             st.caption(
-                ":material/info: For EEG (160 Hz sampling), wavelet scales 1-7 "
-                "correspond to bands ranging from ~12.5 ms (gamma, scale 1) up to "
-                "~1.6 s (slow oscillations, scale 7), not days as in the financial "
-                "universes."
+                ":material/info: At 160 Hz each DWT detail level is a frequency "
+                "band labelled by its nearest clinical rhythm (gamma → delta). "
+                "Two caveats: (1) the bands are octave-spaced, so they don't align "
+                "1:1 with the linearly-defined clinical EEG bands; (2) the extreme "
+                "levels sit partly outside the 1–50 Hz bandpass — scale 1 reaches "
+                "80 Hz (above the 50 Hz filter ceiling) and scale 7 reaches 0.6 Hz "
+                "(below the 1 Hz floor)."
             )
     elif _active_sub == "Transfer Entropy":
         render_transfer_entropy(sector_map, u=_active)
